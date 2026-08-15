@@ -15,6 +15,8 @@ struct neko_idApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appModel)
+                .preferredColorScheme(.light)
+                .tint(.pink)
         }
     }
 }
