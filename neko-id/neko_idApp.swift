@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct neko_idApp: App {
+    @StateObject private var appModel = NekoAppModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(appModel)
         }
     }
 }
