@@ -66,6 +66,34 @@ struct NekoServerAPIClient {
         )
     }
 
+    func generateCatVoice(
+        profile: CatProfile,
+        persona: CatPersonaResult?,
+        imageData: Data,
+        scene: String,
+        accessToken: String
+    ) async throws -> CatVoiceResult {
+        let body = VoiceRequest(
+            profile: ServerCatProfile(
+                name: profile.name,
+                gender: profile.gender.rawValue,
+                ageStage: profile.ageStage.rawValue,
+                quiz: [:],
+                videoCount: 0,
+                updatedAt: Int64((profile.updatedAt ?? Date()).timeIntervalSince1970 * 1000)
+            ),
+            persona: persona,
+            imageDataUrl: try MediaUploadProcessor.makeAIImageDataURL(from: imageData),
+            scene: scene.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        return try await perform(
+            path: "/api/ios/voice",
+            body: body,
+            accessToken: accessToken
+        )
+    }
+
     private func perform<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody,
@@ -143,6 +171,13 @@ private struct DetectCatFaceRequest: Encodable {
 private struct PersonaRequest: Encodable {
     let profile: ServerCatProfile
     let imageDataUrl: String?
+}
+
+private struct VoiceRequest: Encodable {
+    let profile: ServerCatProfile
+    let persona: CatPersonaResult?
+    let imageDataUrl: String
+    let scene: String
 }
 
 private struct ServerCatProfile: Encodable {

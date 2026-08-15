@@ -165,6 +165,58 @@ struct SupabaseRESTClient {
         return try await updateCatAvatarObjectKey(objectKey, for: profile, session: session)
     }
 
+    func saveCatVoice(
+        _ voice: CatVoiceResult,
+        imageUpload: PreparedImageUpload,
+        for profile: CatProfile,
+        session: NekoSession
+    ) async throws -> CatVoiceResult {
+        let voiceId = (voice.cloudId?.isEmpty == false ? voice.cloudId! : UUID().uuidString).lowercased()
+        let objectKey = "\(session.user.id)/voices/\(voiceId)/media.\(imageUpload.fileExtension)"
+
+        _ = try await perform(
+            path: "storage/v1/object/\(AppConfig.supabaseMediaBucket)/\(objectKey)",
+            method: "POST",
+            body: imageUpload.data,
+            prefer: nil,
+            accessToken: session.accessToken,
+            contentType: imageUpload.mimeType,
+            extraHeaders: [
+                "Cache-Control": "3600",
+                "x-upsert": "true"
+            ]
+        )
+
+        let createdAtDate = voice.createdAt.map {
+            Date(timeIntervalSince1970: Double($0) / 1000)
+        } ?? Date()
+        let request = CreateVoiceRequest(
+            id: voiceId,
+            catId: profile.id,
+            userId: session.user.id,
+            voice: voice,
+            mediaObjectKey: objectKey,
+            createdAt: Self.iso8601WithFractionalSeconds.string(from: createdAtDate)
+        )
+
+        let data = try await perform(
+            path: "rest/v1/cat_voices",
+            queryItems: [
+                URLQueryItem(name: "select", value: "id,text,analysis,location,tags,media_object_key,media_type,aspect,video_duration,grad,local_time_label,created_at")
+            ],
+            method: "POST",
+            body: encode(request),
+            prefer: "return=representation",
+            accessToken: session.accessToken
+        )
+
+        guard let saved = try decoder.decode([VoiceRow].self, from: data).first?.voice else {
+            throw SupabaseError.invalidResponse
+        }
+
+        return saved
+    }
+
     private func upsertPersona(_ persona: CatPersonaResult, for profile: CatProfile, session: NekoSession) async throws {
         let request = UpsertPersonaRequest(
             catId: profile.id,
@@ -546,6 +598,53 @@ private struct PersonaRow: Decodable {
     }
 }
 
+private struct VoiceRow: Decodable {
+    let id: String
+    let text: String
+    let analysis: String?
+    let location: String?
+    let tags: [String]
+    let mediaObjectKey: String?
+    let mediaType: String?
+    let aspect: String?
+    let videoDuration: String?
+    let grad: String?
+    let localTimeLabel: String?
+    let createdAt: Date?
+
+    var voice: CatVoiceResult {
+        CatVoiceResult(
+            cloudId: id,
+            time: localTimeLabel ?? "刚刚",
+            grad: grad ?? "linear-gradient(135deg, oklch(0.9 0.06 280), oklch(0.92 0.05 320))",
+            text: text,
+            location: location,
+            tags: tags,
+            createdAt: createdAt.map { Int64($0.timeIntervalSince1970 * 1000) },
+            mediaObjectKey: mediaObjectKey,
+            mediaType: mediaType,
+            aspect: aspect,
+            videoDuration: videoDuration,
+            analysis: analysis
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case text
+        case analysis
+        case location
+        case tags
+        case mediaObjectKey = "media_object_key"
+        case mediaType = "media_type"
+        case aspect
+        case videoDuration = "video_duration"
+        case grad
+        case localTimeLabel = "local_time_label"
+        case createdAt = "created_at"
+    }
+}
+
 private struct CreateCatRequest: Encodable {
     let userId: String
     let name: String
@@ -561,6 +660,66 @@ private struct CreateCatRequest: Encodable {
         case ageStage = "age_stage"
         case quiz
         case isActive = "is_active"
+    }
+}
+
+private struct CreateVoiceRequest: Encodable {
+    let id: String
+    let catId: String
+    let userId: String
+    let text: String
+    let analysis: String?
+    let location: String?
+    let tags: [String]
+    let mediaObjectKey: String
+    let mediaType: String
+    let aspect: String
+    let videoDuration: String?
+    let grad: String
+    let localTimeLabel: String
+    let createdAt: String
+
+    init(
+        id: String,
+        catId: String,
+        userId: String,
+        voice: CatVoiceResult,
+        mediaObjectKey: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.catId = catId
+        self.userId = userId
+        self.text = voice.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "今天也想被你看见。"
+            : voice.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.analysis = voice.analysis
+        self.location = voice.location
+        self.tags = Array(voice.tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(6))
+        self.mediaObjectKey = mediaObjectKey
+        self.mediaType = voice.mediaType ?? "photo"
+        self.aspect = voice.aspect ?? "3:4"
+        self.videoDuration = voice.videoDuration
+        self.grad = voice.grad
+        self.localTimeLabel = voice.time
+        self.createdAt = createdAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case catId = "cat_id"
+        case userId = "user_id"
+        case text
+        case analysis
+        case location
+        case tags
+        case mediaObjectKey = "media_object_key"
+        case mediaType = "media_type"
+        case aspect
+        case videoDuration = "video_duration"
+        case grad
+        case localTimeLabel = "local_time_label"
+        case createdAt = "created_at"
     }
 }
 

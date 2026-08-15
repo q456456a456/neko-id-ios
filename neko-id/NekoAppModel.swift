@@ -170,6 +170,31 @@ final class NekoAppModel: ObservableObject {
         }
     }
 
+    func publishCatVoice(imageData: Data, scene: String) async throws -> CatVoiceResult {
+        guard let profile = catProfile else {
+            phase = .onboarding
+            throw NekoAppError.missingCatProfile
+        }
+
+        let activeSession = try await authenticatedSession()
+        let generated = try await serverAPI.generateCatVoice(
+            profile: profile,
+            persona: persona,
+            imageData: imageData,
+            scene: scene,
+            accessToken: activeSession.accessToken
+        )
+        let upload = try MediaUploadProcessor.prepareAvatarImage(from: imageData)
+        let saved = try await api.saveCatVoice(
+            generated,
+            imageUpload: upload,
+            for: profile,
+            session: activeSession
+        )
+        noticeMessage = "猫咪动态已发布。"
+        return saved
+    }
+
     func signOut() {
         KeychainStore.delete(account: sessionAccount)
         session = nil
@@ -229,11 +254,14 @@ final class NekoAppModel: ObservableObject {
 
 enum NekoAppError: LocalizedError {
     case signedOut
+    case missingCatProfile
 
     var errorDescription: String? {
         switch self {
         case .signedOut:
             return "登录状态已过期，请重新登录。"
+        case .missingCatProfile:
+            return "还没有猫咪档案，请先创建档案。"
         }
     }
 }

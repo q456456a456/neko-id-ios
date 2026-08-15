@@ -168,6 +168,83 @@ struct CatPersonaResult: Codable, Equatable {
     }
 }
 
+struct CatVoiceResult: Codable, Equatable, Identifiable {
+    var id: String { cloudId ?? "\(createdAt ?? 0)-\(text)" }
+
+    var cloudId: String?
+    var time: String
+    var grad: String
+    var text: String
+    var location: String?
+    var tags: [String]
+    var createdAt: Int64?
+    var mediaObjectKey: String?
+    var mediaType: String?
+    var aspect: String?
+    var videoDuration: String?
+    var analysis: String?
+
+    enum CodingKeys: String, CodingKey {
+        case cloudId
+        case time
+        case grad
+        case text
+        case location
+        case tags
+        case createdAt
+        case mediaObjectKey
+        case mediaType
+        case aspect
+        case videoDuration
+        case analysis
+    }
+
+    init(
+        cloudId: String? = nil,
+        time: String,
+        grad: String,
+        text: String,
+        location: String? = nil,
+        tags: [String] = [],
+        createdAt: Int64? = nil,
+        mediaObjectKey: String? = nil,
+        mediaType: String? = "photo",
+        aspect: String? = "3:4",
+        videoDuration: String? = nil,
+        analysis: String? = nil
+    ) {
+        self.cloudId = cloudId
+        self.time = time
+        self.grad = grad
+        self.text = text
+        self.location = location
+        self.tags = tags
+        self.createdAt = createdAt
+        self.mediaObjectKey = mediaObjectKey
+        self.mediaType = mediaType
+        self.aspect = aspect
+        self.videoDuration = videoDuration
+        self.analysis = analysis
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cloudId = try container.decodeIfPresent(String.self, forKey: .cloudId)
+        time = try container.decodeIfPresent(String.self, forKey: .time) ?? "刚刚"
+        grad = try container.decodeIfPresent(String.self, forKey: .grad)
+            ?? "linear-gradient(135deg, oklch(0.9 0.06 280), oklch(0.92 0.05 320))"
+        text = try container.decode(String.self, forKey: .text)
+        location = try container.decodeIfPresent(String.self, forKey: .location)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt)
+        mediaObjectKey = try container.decodeIfPresent(String.self, forKey: .mediaObjectKey)
+        mediaType = try container.decodeIfPresent(String.self, forKey: .mediaType) ?? "photo"
+        aspect = try container.decodeIfPresent(String.self, forKey: .aspect) ?? "3:4"
+        videoDuration = try container.decodeIfPresent(String.self, forKey: .videoDuration)
+        analysis = try container.decodeIfPresent(String.self, forKey: .analysis)
+    }
+}
+
 struct OnboardingVideoClip: Identifiable, Equatable {
     let id: UUID
     let label: String
