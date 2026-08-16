@@ -33,6 +33,7 @@ struct NativeOnboardingFlowView: View {
     @State private var isAnalyzing = false
     @State private var isValidatingProfile = false
     @State private var isValidatingVideo = false
+    @State private var didHydrateExistingProfile = false
 
     var body: some View {
         ZStack {
@@ -41,14 +42,20 @@ struct NativeOnboardingFlowView: View {
             Group {
                 switch step {
                 case .welcome:
-                    OnboardingWelcomeScreen {
-                        goForward()
-                    }
+                    OnboardingWelcomeScreen(
+                        onExit: appModel.catProfile == nil ? nil : {
+                            appModel.cancelOnboardingIfPossible()
+                        },
+                        onStart: {
+                            goForward()
+                        }
+                    )
                 case .profile:
                     OnboardingProfileScreen(
                         draft: $draft,
                         selectedAvatarItem: $selectedAvatarItem,
                         avatarPreviewImage: avatarPreviewImage,
+                        avatarRemoteURL: appModel.catProfile?.avatarURL,
                         isValidating: isValidatingProfile,
                         onNext: validateProfileAndContinue,
                         onBack: goBack
@@ -97,6 +104,9 @@ struct NativeOnboardingFlowView: View {
                     .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
+        .onAppear {
+            hydrateExistingProfileForRetest()
+        }
         .onChange(of: selectedAvatarItem) { _, item in
             Task { await loadAvatar(from: item) }
         }
@@ -130,6 +140,10 @@ struct NativeOnboardingFlowView: View {
         guard !isValidatingProfile else { return }
 
         guard let avatarImageData else {
+            if appModel.catProfile?.avatarURL != nil || appModel.catProfile?.avatarObjectKey != nil {
+                step = .video
+                return
+            }
             appModel.errorMessage = "先选择一张猫咪正脸照片吧。"
             return
         }
@@ -183,6 +197,27 @@ struct NativeOnboardingFlowView: View {
                 persona: personaPreview,
                 videoCount: videoClips.count
             )
+        }
+    }
+
+    private func hydrateExistingProfileForRetest() {
+        guard !didHydrateExistingProfile, let profile = appModel.catProfile else { return }
+        didHydrateExistingProfile = true
+        draft = CatProfileDraft(profile: profile)
+
+        guard avatarImageData == nil, let url = profile.avatarURL else { return }
+        Task { await loadExistingAvatar(from: url) }
+    }
+
+    @MainActor
+    private func loadExistingAvatar(from url: URL) async {
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let prepared = try MediaUploadProcessor.prepareAvatarImage(from: data)
+            avatarImageData = prepared.data
+            avatarPreviewImage = UIImage(data: prepared.data)
+        } catch {
+            avatarImageData = nil
         }
     }
 
@@ -338,69 +373,187 @@ struct NativeOnboardingFlowView: View {
     }
 }
 
+private enum OnboardingWeb {
+    static let ink = Color(red: 0.1975, green: 0.1897, blue: 0.2562)           // oklch(0.32 0.03 290)
+    static let muted = Color(red: 0.4928, green: 0.4600, blue: 0.5608)         // oklch(0.58 0.04 300)
+    static let label = Color(red: 0.4656, green: 0.4149, blue: 0.5641)         // oklch(0.55 0.06 300)
+    static let labelPink = Color(red: 0.5272, green: 0.3845, blue: 0.5598)     // oklch(0.55 0.08 320)
+    static let border = Color(red: 0.8863, green: 0.8572, blue: 0.9106)        // oklch(0.9 0.02 310)
+    static let creamTop = Color(red: 0.9986, green: 0.9854, blue: 0.9642)      // oklch(0.99 0.008 80)
+    static let creamBottom = Color(red: 0.9703, green: 0.9338, blue: 0.9785)   // oklch(0.96 0.018 320)
+    static let welcomeMid = Color(red: 0.9913, green: 0.9204, blue: 1.0000)    // oklch(0.96 0.035 320)
+    static let welcomeBottom = Color(red: 0.9120, green: 0.9264, blue: 1.0000) // oklch(0.95 0.04 280)
+    static let soulViolet = Color(red: 0.7829, green: 0.6484, blue: 0.9415)    // oklch(0.78 0.11 305)
+    static let soulPink = Color(red: 0.9892, green: 0.6991, blue: 0.7843)      // oklch(0.84 0.09 0)
+    static let soulOpal = Color(red: 0.7160, green: 0.8254, blue: 1.0000)      // oklch(0.86 0.07 260)
+    static let activeBar = Color(red: 0.8834, green: 0.6872, blue: 0.9282)     // oklch(0.82 0.1 320)
+    static let videoPink = Color(red: 0.9694, green: 0.7106, blue: 0.7853)     // oklch(0.84 0.08 0)
+    static let plusStart = Color(red: 0.7011, green: 0.5265, blue: 0.8931)     // oklch(0.70 0.14 305)
+    static let plusEnd = Color(red: 0.9195, green: 0.5763, blue: 0.6828)       // oklch(0.76 0.11 0)
+    static let questionNumber = Color(red: 0.4870, green: 0.3103, blue: 0.5273)
+    static let whitePink = Color(red: 1.0000, green: 0.9665, blue: 1.0000)
+
+    static let creamGradient = LinearGradient(
+        colors: [creamTop, creamBottom],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let welcomeGradient = LinearGradient(
+        colors: [Color(red: 0.999, green: 0.983, blue: 0.954), welcomeMid, welcomeBottom],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let ctaGradient = LinearGradient(
+        colors: [Color(red: 0.682, green: 0.561, blue: 0.906), Color(red: 0.898, green: 0.667, blue: 0.800)], // #AE8FE7 → #E5AACC
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+
+    static let selectedGradient = LinearGradient(
+        colors: [Color(red: 0.780, green: 0.702, blue: 0.949), Color(red: 0.922, green: 0.776, blue: 0.851)], // #C7B3F2 → #EBC6D9
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+
+    static let soulGradient = LinearGradient(
+        colors: [Color(red: 0.78, green: 0.67, blue: 0.94), Color(red: 0.99, green: 0.70, blue: 0.78), Color(red: 0.72, green: 0.83, blue: 1.0)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
 private struct NekoOnboardingBackground: View {
     var body: some View {
-        NekoBackground()
+        ZStack {
+            OnboardingWeb.creamGradient
+            Circle()
+                .fill(OnboardingWeb.soulPink.opacity(0.32))
+                .frame(width: 330, height: 330)
+                .blur(radius: 92)
+                .position(x: 80, y: 90)
+            Circle()
+                .fill(OnboardingWeb.soulViolet.opacity(0.30))
+                .frame(width: 360, height: 360)
+                .blur(radius: 96)
+                .position(x: 340, y: 190)
+            Circle()
+                .fill(OnboardingWeb.soulOpal.opacity(0.28))
+                .frame(width: 380, height: 380)
+                .blur(radius: 104)
+                .position(x: 210, y: 780)
+            NekoSparkles(count: 22)
+        }
+        .ignoresSafeArea()
     }
 }
 
 private struct OnboardingWelcomeScreen: View {
+    let onExit: (() -> Void)?
     let onStart: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 44)
+        ZStack(alignment: .topLeading) {
+            OnboardingWeb.welcomeGradient.ignoresSafeArea()
+            NekoSparkles(count: 36)
+            if let onExit {
+                WebBackButton(onBack: onExit)
+            }
 
-            ZStack {
-                Circle()
-                    .stroke(.white.opacity(0.65), lineWidth: 1)
-                    .frame(width: 230, height: 230)
-                Circle()
-                    .stroke(NekoTheme.softPink.opacity(0.48), lineWidth: 1)
-                    .frame(width: 176, height: 176)
-                Circle()
-                    .fill(.white.opacity(0.72))
-                    .frame(width: 154, height: 154)
-                    .shadow(color: NekoTheme.soulViolet.opacity(0.20), radius: 30, x: 0, y: 18)
+            VStack(spacing: 0) {
+                OnboardingHeroImage()
+                    .padding(.top, 104)
 
-                Image(systemName: "pawprint.fill")
-                    .font(.system(size: 58, weight: .semibold))
-                    .foregroundStyle(
-                        NekoTheme.primaryGradient
+                VStack(spacing: 0) {
+                    Text("N E K O . I D")
+                        .font(.system(size: 11, weight: .regular))
+                        .tracking(6.1)
+                        .foregroundStyle(OnboardingWeb.labelPink)
+
+                    (
+                        Text("读懂它的")
+                            .foregroundColor(OnboardingWeb.ink)
+                        +
+                        Text("小世界")
+                            .foregroundColor(OnboardingWeb.soulPink)
+                            .italic()
                     )
+                    .font(.system(size: 28, weight: .light))
+                    .padding(.top, 12)
+
+                    Text("AI 将通过照片、视频和行为分析\n生成专属于它的人格档案")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(OnboardingWeb.muted)
+                        .lineSpacing(6)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 12)
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 40)
+
+                Spacer(minLength: 24)
+
+                VStack(spacing: 0) {
+                    Button {
+                        onStart()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("开始创建猫咪人格档案")
+                                .tracking(1)
+                            Text("✨")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(OnboardingPrimaryButtonStyle())
+                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 10)
             }
-
-            VStack(spacing: 12) {
-                Text("N E K O . I D")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(6)
-                    .foregroundStyle(NekoTheme.soulViolet)
-
-                Text("读懂它的小世界")
-                    .font(.system(size: 32, weight: .light))
-                    .foregroundStyle(NekoTheme.ink)
-
-                Text("通过照片、视频和行为问答，生成一份专属于猫咪的人格档案。")
-                    .font(.system(size: 14))
-                    .foregroundStyle(NekoTheme.muted)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(5)
-                    .frame(maxWidth: 300)
-            }
-            .padding(.top, 34)
-
-            Spacer()
-
-            Button {
-                onStart()
-            } label: {
-                Label("开始创建猫咪人格档案", systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(OnboardingPrimaryButtonStyle())
-            .padding(.horizontal, 28)
-            .padding(.bottom, 28)
         }
+    }
+}
+
+private struct OnboardingHeroImage: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [OnboardingWeb.soulPink.opacity(0.68), OnboardingWeb.soulViolet.opacity(0.34), .clear],
+                        center: .center,
+                        startRadius: 20,
+                        endRadius: 115
+                    )
+                )
+                .blur(radius: 28)
+                .frame(width: 230, height: 230)
+
+            Circle()
+                .stroke(OnboardingWeb.soulPink.opacity(0.55), lineWidth: 1)
+                .frame(width: 178, height: 178)
+            Circle()
+                .stroke(OnboardingWeb.soulOpal.opacity(0.45), lineWidth: 1)
+                .frame(width: 134, height: 134)
+
+            Image("neko-hero")
+                .resizable()
+                .scaledToFill()
+                .frame(width: 150, height: 150)
+                .clipShape(Circle())
+                .padding(6)
+                .background(.white, in: Circle())
+                .shadow(color: OnboardingWeb.soulViolet.opacity(0.32), radius: 30, x: 0, y: 18)
+
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(.white)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: OnboardingWeb.soulPink.opacity(0.75), radius: 6)
+                    .offset(x: CGFloat(cos(Double(index) * 2.094)) * 118, y: CGFloat(sin(Double(index) * 2.094)) * 118)
+            }
+        }
+        .frame(width: 230, height: 230)
     }
 }
 
@@ -408,48 +561,102 @@ private struct OnboardingProfileScreen: View {
     @Binding var draft: CatProfileDraft
     @Binding var selectedAvatarItem: PhotosPickerItem?
     let avatarPreviewImage: UIImage?
+    let avatarRemoteURL: URL?
     let isValidating: Bool
     let onNext: () -> Void
     let onBack: () -> Void
 
     var body: some View {
-        OnboardingScrollableStep(step: 1, title: "上传猫咪正脸照片", subtitle: "头像会用于生成人格档案，图片不超过 10MB。", onBack: onBack) {
-            VStack(alignment: .leading, spacing: 18) {
+        OnboardingScrollableStep(
+            step: 1,
+            title: "上传猫咪正脸照片",
+            subtitle: "头像会用于生成人格档案 · 图片不超过 10MB",
+            onBack: onBack
+        ) {
+            VStack(spacing: 0) {
                 PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
-                    VStack(spacing: 12) {
-                        FlowAvatarView(image: avatarPreviewImage, size: 168)
-                        Text(avatarPreviewImage == nil ? "轻触选择照片" : "照片已选择，可轻触更换")
-                            .font(.system(size: 12, weight: .medium))
-                            .tracking(1.8)
-                            .foregroundStyle(NekoTheme.soulViolet)
+                    ZStack(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [OnboardingWeb.soulPink.opacity(0.55), .clear],
+                                    center: .center,
+                                    startRadius: 12,
+                                    endRadius: 88
+                                )
+                            )
+                            .blur(radius: 22)
+                            .frame(width: 170, height: 170)
+
+                        Circle()
+                            .stroke(OnboardingWeb.activeBar.opacity(0.60), style: StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                            .frame(width: 170, height: 170)
+
+                        FlowAvatarView(
+                            image: avatarPreviewImage,
+                            size: 144,
+                            remoteURL: avatarRemoteURL,
+                            placeholderTitle: "上传正脸",
+                            placeholderSubtitle: "JPG / PNG",
+                            placeholderIcon: "photo.badge.plus"
+                        )
+                        .padding(13)
+
+                        Text("＋")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(
+                                LinearGradient(colors: [OnboardingWeb.plusStart, OnboardingWeb.plusEnd], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: Circle()
+                            )
+                            .shadow(color: OnboardingWeb.soulViolet.opacity(0.42), radius: 10, x: 0, y: 5)
+                            .offset(x: 4, y: 4)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .frame(height: 178)
                 }
+                .buttonStyle(.plain)
 
-                OnboardingCard {
+                Text("点击上传 · JPG / PNG")
+                    .font(.system(size: 10, weight: .regular))
+                    .tracking(3.0)
+                    .foregroundStyle(OnboardingWeb.label)
+                    .padding(.top, 12)
+
+                OnboardingCard(cornerRadius: 24, topPadding: 20) {
                     OnboardingFieldTitle("猫咪名称")
-                    TextField("它叫什么名字呀～", text: $draft.name)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .padding()
-                        .background(.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .onChange(of: draft.name) { _, value in
-                            draft.name = String(value.prefix(40))
-                        }
+                    HStack(spacing: 8) {
+                        TextField("它叫什么名字呀～", text: $draft.name)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(OnboardingWeb.ink)
+                            .onChange(of: draft.name) { _, value in
+                                draft.name = String(value.prefix(12))
+                            }
+                        Text("\(draft.trimmedName.count) / 12")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(OnboardingWeb.label)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 13)
+                    .background(.white.opacity(0.70), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
 
-                OnboardingCard {
+                OnboardingCard(cornerRadius: 24, topPadding: 12) {
                     OnboardingFieldTitle("性别")
-                    Picker("性别", selection: $draft.gender) {
-                        ForEach(CatGender.allCases) { gender in
-                            Text(gender.rawValue).tag(gender)
+                    HStack(spacing: 10) {
+                        ChoiceChip(title: "小公猫", subtitle: nil, isSelected: draft.gender == .male) {
+                            draft.gender = .male
+                        }
+                        ChoiceChip(title: "小母猫", subtitle: nil, isSelected: draft.gender == .female) {
+                            draft.gender = .female
                         }
                     }
-                    .pickerStyle(.segmented)
                 }
 
-                OnboardingCard {
+                OnboardingCard(cornerRadius: 24, topPadding: 12) {
                     OnboardingFieldTitle("年龄阶段")
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                         ForEach(CatAgeStage.allCases) { stage in
@@ -473,7 +680,7 @@ private struct OnboardingProfileScreen: View {
                         ProgressView()
                             .tint(.white)
                     }
-                    Text(isValidating ? "识别猫脸中…" : "继续")
+                    Text(isValidating ? "识别中…" : "继续")
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -485,11 +692,11 @@ private struct OnboardingProfileScreen: View {
     private func subtitle(for stage: CatAgeStage) -> String {
         switch stage {
         case .kitten:
-            return "0–1 岁"
+            return "0 – 1 岁"
         case .young:
-            return "1–4 岁"
+            return "1 – 4 岁"
         case .adult:
-            return "4–8 岁"
+            return "4 – 8 岁"
         case .senior:
             return "8 岁+"
         }
@@ -504,65 +711,115 @@ private struct OnboardingVideoScreen: View {
     let onBack: () -> Void
 
     var body: some View {
-        OnboardingScrollableStep(step: 2, title: "上传猫咪视频", subtitle: "选择 1～3 段日常视频；单个不超过 100MB，本轮只用于分析，不长期保存。", onBack: onBack) {
-            VStack(alignment: .leading, spacing: 18) {
+        OnboardingScrollableStep(
+            step: 2,
+            title: "上传猫咪视频",
+            subtitle: "上传 1～3 个视频展示猫咪日常，单个不超过 100MB",
+            onBack: onBack
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
                 PhotosPicker(
                     selection: $selectedVideoItems,
                     maxSelectionCount: max(1, 3 - videoClips.count),
                     matching: .videos
                 ) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 50, weight: .light))
-                            .foregroundStyle(NekoTheme.soulViolet)
-                        Text(videoClips.count >= 3 ? "最多 3 段视频" : "轻触选择视频")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(NekoTheme.ink)
-                        Text("建议捕捉走动、叫声、玩耍、靠近等自然片段")
-                            .font(.system(size: 12))
-                            .foregroundStyle(NekoTheme.muted)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.white.opacity(0.60))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                    .stroke(OnboardingWeb.activeBar.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
+                            }
+
+                        Circle()
+                            .fill(OnboardingWeb.activeBar.opacity(0.36))
+                            .frame(width: 150, height: 150)
+                            .blur(radius: 34)
+                            .offset(x: -112, y: -88)
+
+                        Circle()
+                            .fill(OnboardingWeb.soulOpal.opacity(0.28))
+                            .frame(width: 150, height: 150)
+                            .blur(radius: 34)
+                            .offset(x: 110, y: 86)
+
+                        VStack(spacing: 0) {
+                            Text("▶")
+                                .font(.system(size: 23, weight: .medium))
+                                .foregroundStyle(.white)
+                                .frame(width: 64, height: 64)
+                                .background(
+                                    LinearGradient(colors: [OnboardingWeb.activeBar, OnboardingWeb.videoPink], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                    in: Circle()
+                                )
+                                .shadow(color: OnboardingWeb.soulViolet.opacity(0.34), radius: 20, x: 0, y: 10)
+                                .padding(.top, 4)
+
+                            Text(videoClips.count >= 3 ? "最多只能上传 3 个视频" : "轻触上传视频")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(OnboardingWeb.ink)
+                                .padding(.top, 12)
+
+                            Text("每次 1 个 · 可添加 3 次 · ≤ 100MB")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(OnboardingWeb.label)
+                                .padding(.top, 5)
+                        }
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 190)
-                    .background(.white.opacity(0.54), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(NekoTheme.soulViolet.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
-                    }
+                    .frame(minHeight: 200)
                 }
+                .buttonStyle(.plain)
                 .disabled(videoClips.count >= 3)
 
                 if !videoClips.isEmpty {
-                    OnboardingCard {
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            OnboardingFieldTitle("已选择 · \(videoClips.count) / 3")
+                            Text("已上传 · \(videoClips.count) / 3")
+                                .font(.system(size: 10, weight: .regular))
+                                .tracking(4)
+                                .foregroundStyle(OnboardingWeb.label)
                             Spacer()
-                            Text("不上传云端")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(NekoTheme.muted)
+                            if videoClips.count < 3 {
+                                Text("可继续添加 \(3 - videoClips.count) 个")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(OnboardingWeb.label)
+                            }
                         }
+                        .padding(.horizontal, 1)
 
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 10) {
                                 ForEach(videoClips) { clip in
                                     VideoClipCard(clip: clip) {
                                         videoClips.removeAll { $0.id == clip.id }
                                     }
-                                    .frame(width: 132)
+                                    .frame(width: 142)
                                 }
                             }
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, 1)
+                            .padding(.bottom, 2)
                         }
                     }
+                    .padding(.top, 16)
                 }
 
-                OnboardingCard {
+                OnboardingCard(cornerRadius: 20, topPadding: 18) {
                     OnboardingFieldTitle("建议捕捉")
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         CaptureTip(emoji: "🐾", title: "走动")
                         CaptureTip(emoji: "🔊", title: "叫声")
                         CaptureTip(emoji: "🎾", title: "玩耍")
                     }
+                    HStack(spacing: 8) {
+                        Text("💡")
+                        Text("越自然的日常画面，AI 越能感受到它的性格")
+                            .font(.system(size: 10))
+                            .foregroundStyle(OnboardingWeb.labelPink)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(Color(red: 0.97, green: 0.93, blue: 0.98).opacity(0.80), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }
         } footer: {
@@ -574,7 +831,7 @@ private struct OnboardingVideoScreen: View {
                         ProgressView()
                             .tint(.white)
                     }
-                    Text(isValidating ? "校验视频中…" : "继续")
+                    Text(isValidating ? "识别中…" : "继续")
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -591,24 +848,30 @@ private struct OnboardingQuizScreen: View {
     let onBack: () -> Void
 
     var body: some View {
-        OnboardingScrollableStep(step: 3, title: "行为小测试", subtitle: "帮助 NEKO 更准确理解它；也可以先跳过，之后再补。", onBack: onBack) {
+        OnboardingScrollableStep(
+            step: 3,
+            title: "行为小测试",
+            subtitle: "帮助 AI 更准确理解它（可跳过）",
+            onBack: onBack,
+            skipAction: onSkip
+        ) {
             VStack(spacing: 12) {
                 ForEach(QuizQuestion.onboarding) { question in
-                    OnboardingCard {
-                        HStack(alignment: .top, spacing: 10) {
+                    OnboardingCard(cornerRadius: 22, topPadding: 0) {
+                        HStack(alignment: .center, spacing: 8) {
                             Text("\(question.id + 1)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(NekoTheme.soulViolet)
-                                .frame(width: 24, height: 24)
-                                .background(NekoTheme.softPink.opacity(0.52), in: Circle())
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(OnboardingWeb.questionNumber)
+                                .frame(width: 20, height: 20)
+                                .background(Color(red: 0.984, green: 0.904, blue: 1.0), in: Circle())
 
                             Text(question.question)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(NekoTheme.ink)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(OnboardingWeb.ink)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             QuizOptionButton(
                                 label: "A",
                                 text: question.optionA,
@@ -625,6 +888,7 @@ private struct OnboardingQuizScreen: View {
                                 toggleAnswer(question.id, .b)
                             }
                         }
+                        .padding(.top, 2)
                     }
                 }
             }
@@ -633,16 +897,19 @@ private struct OnboardingQuizScreen: View {
                 Button {
                     onNext()
                 } label: {
-                    Label("好了，开始解析", systemImage: "sparkles")
-                        .frame(maxWidth: .infinity)
+                    HStack(spacing: 8) {
+                        Text("好了，开始解析")
+                        Text("✨")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(OnboardingPrimaryButtonStyle())
 
-                Button("先跳过问答") {
-                    onSkip()
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(NekoTheme.muted)
+                Text("AI 将结合测试结果，\n生成更准确的人格分析")
+                    .font(.system(size: 10.5, weight: .regular))
+                    .lineSpacing(3)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(OnboardingWeb.muted)
             }
         }
     }
@@ -667,64 +934,50 @@ private struct OnboardingAnalyzingScreen: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            OnboardingTopBar(step: 4, onBack: onBack)
+        ZStack(alignment: .topLeading) {
+            OnboardingWeb.welcomeGradient.ignoresSafeArea()
+            NekoSparkles(count: 34)
+            WebBackButton(onBack: onBack)
 
-            Spacer(minLength: 24)
+            VStack(spacing: 0) {
+                Text("A I · A N A L Y Z I N G")
+                    .font(.system(size: 10, weight: .regular))
+                    .tracking(4.5)
+                    .foregroundStyle(OnboardingWeb.labelPink)
+                    .padding(.top, 64)
 
-            Text("A I · A N A L Y Z I N G")
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(5)
-                .foregroundStyle(NekoTheme.soulViolet)
+                Text("AI 分析中")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(OnboardingWeb.ink)
+                    .padding(.top, 8)
 
-            Text("AI 分析中")
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(NekoTheme.ink)
-                .padding(.top, 8)
+                Text("正在构建属于它的人格画像")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(OnboardingWeb.muted)
+                    .padding(.top, 3)
 
-            Text("正在构建属于它的人格画像")
-                .font(.system(size: 13))
-                .foregroundStyle(NekoTheme.muted)
-                .padding(.top, 4)
+                AnalysisRing(progress: progress, avatarImage: avatarImage)
+                    .padding(.top, 28)
 
-            ZStack {
-                Circle()
-                    .stroke(.white.opacity(0.72), lineWidth: 5)
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        NekoTheme.primaryGradient,
-                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                FlowAvatarView(image: avatarImage, size: 142)
-                Text("\(Int(progress * 100))%")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(NekoTheme.soulViolet)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(.white.opacity(0.86), in: Capsule())
-                    .offset(y: 86)
-            }
-            .frame(width: 220, height: 220)
-            .padding(.top, 28)
-
-            VStack(spacing: 10) {
-                ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
-                    let threshold = Double(index + 1) / Double(steps.count)
-                    AnalysisStepRow(title: title, isActive: progress <= threshold && progress > threshold - 1 / Double(steps.count), isDone: progress >= threshold)
+                VStack(spacing: 8) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
+                        let activeIndex = min(steps.count - 1, Int(progress * Double(steps.count)))
+                        AnalysisStepRow(title: title, isActive: index == activeIndex, isDone: index < activeIndex)
+                    }
                 }
+                .padding(.horizontal, 28)
+                .padding(.top, 34)
+
+                Spacer()
+
+                Text("每只猫，\n都有独一无二的灵魂")
+                    .font(.system(size: 12, weight: .regular))
+                    .lineSpacing(5)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(OnboardingWeb.muted)
+                    .padding(.bottom, 26)
             }
-            .padding(.top, 34)
-            .padding(.horizontal, 28)
-
-            Spacer()
-
-            Text("每只猫，都有独一无二的灵魂。")
-                .font(.system(size: 12))
-                .foregroundStyle(NekoTheme.muted)
-                .padding(.bottom, 26)
+            .frame(maxWidth: .infinity)
         }
     }
 }
@@ -738,80 +991,142 @@ private struct OnboardingResultScreen: View {
     let onSave: () -> Void
     let onRestartAnalysis: () -> Void
     let onBack: () -> Void
+    @State private var shareOpen = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            OnboardingTopBar(step: 4, onBack: onBack)
+        ZStack {
+            OnboardingWeb.welcomeGradient.ignoresSafeArea()
+            NekoSparkles(count: 22)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    ResultHeroCard(draft: draft, avatarImage: avatarImage, persona: safePersona)
+                VStack(alignment: .leading, spacing: 0) {
+                    ResultTopBar(onBack: onBack) {
+                        shareOpen = true
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 50)
 
-                    ResultSection(title: "AI 内心独白", hint: "INNER · VOICE") {
-                        Text("“\(safePersona.monologue)”")
-                            .font(.system(size: 16, weight: .light))
-                            .italic()
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(6)
-                            .frame(maxWidth: .infinity)
+                    ResultHeroCard(draft: draft, avatarImage: avatarImage, persona: safePersona)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+
+                    ResultSection(title: "AI 内心独白", hint: "INNER · VOICE", tone: true) {
+                        ZStack(alignment: .topLeading) {
+                            Text("“")
+                                .font(.system(size: 34, weight: .regular, design: .serif))
+                                .foregroundStyle(OnboardingWeb.soulViolet.opacity(0.35))
+                                .offset(x: -6, y: -12)
+                            Text(safePersona.monologue)
+                                .font(.system(size: 14, weight: .light))
+                                .italic()
+                                .lineSpacing(8)
+                                .foregroundStyle(OnboardingWeb.ink)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 14)
+                                .padding(.top, 4)
+                            Text("”")
+                                .font(.system(size: 34, weight: .regular, design: .serif))
+                                .foregroundStyle(OnboardingWeb.soulViolet.opacity(0.35))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                                .offset(x: 4, y: 8)
+                        }
+                        Text("—— \(draft.trimmedName) · by NEKO")
+                            .font(.system(size: 10, weight: .regular))
+                            .tracking(2.5)
+                            .foregroundStyle(OnboardingWeb.label)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.top, 12)
                     }
 
-                    ResultSection(title: "AI 人格解析", hint: "PERSONALITY") {
+                    ResultSection(title: "AI 人格解析", hint: "PERSONALITY · ANALYSIS") {
                         Text(safePersona.analysis)
-                            .font(.system(size: 13))
-                            .lineSpacing(5)
+                            .font(.system(size: 12.5, weight: .regular))
+                            .lineSpacing(7)
+                            .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
                     }
 
                     ResultSection(title: "它眼中的你", hint: "YOUR · ROLE") {
                         Text(safePersona.ownerRole)
-                            .font(.system(size: 13))
-                            .lineSpacing(5)
+                            .font(.system(size: 12.5, weight: .regular))
+                            .lineSpacing(7)
+                            .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
+                        HStack(spacing: 6) {
+                            ForEach(["温柔", "安全感", "可信", "陪伴者"], id: \.self) { tag in
+                                Text(tag)
+                                    .font(.system(size: 10, weight: .regular))
+                                    .tracking(1)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(OnboardingWeb.selectedGradient, in: Capsule())
+                            }
+                        }
+                        .padding(.top, 10)
                     }
 
-                    ResultSection(title: "个性画像", hint: "TRAITS") {
-                        HStack(spacing: 10) {
-                            ForEach(safePersona.traits) { trait in
+                    ResultSection(title: "个性画像", hint: "PERSONALITY · PORTRAIT") {
+                        HStack(spacing: 8) {
+                            ForEach(Array(safePersona.traits.prefix(3))) { trait in
                                 TraitRing(trait: trait)
                             }
                         }
                     }
 
-                    ResultSection(title: "人格标签", hint: "TAGS") {
-                        FlowWrap(items: safePersona.tags)
+                    ResultSection(title: "人格标签", hint: "TAGS · 06", actionTitle: "查看全部 ›") {
+                        FlowWrap(items: Array(safePersona.tags.prefix(6)))
                     }
 
                     ResultSection(title: "AI 观察依据", hint: "WHY · AI · THINKS · SO") {
-                        VStack(spacing: 8) {
-                            ForEach(safePersona.observations) { item in
-                                HStack {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("最近 30 天观察")
+                                .font(.system(size: 10.5, weight: .regular))
+                                .tracking(1.2)
+                                .foregroundStyle(OnboardingWeb.label)
+
+                            ForEach(safePersona.observations.prefix(4)) { item in
+                                VStack(alignment: .leading, spacing: 6) {
                                     Text(item.label)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(NekoTheme.muted)
-                                    Spacer()
+                                        .font(.system(size: 10, weight: .regular))
+                                        .tracking(2.2)
+                                        .foregroundStyle(OnboardingWeb.label)
                                     Text(item.value)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(NekoTheme.ink)
-                                        .multilineTextAlignment(.trailing)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .lineSpacing(5)
+                                        .foregroundStyle(OnboardingWeb.questionNumber)
                                 }
-                                .padding(12)
-                                .background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(OnboardingWeb.border.opacity(0.70), lineWidth: 1)
+                                }
                             }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("AI 发现")
+                                    .font(.system(size: 10, weight: .regular))
+                                    .tracking(3.0)
+                                    .foregroundStyle(OnboardingWeb.labelPink)
+                                Text("它更倾向于观察后行动，因此形成明显的观察型人格特征。")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .lineSpacing(6)
+                                    .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                     }
-
-                    Text("视频已参与本次分析：\(videoCount) 段。本轮不会把 onboarding 视频保存到云端。")
-                        .font(.system(size: 11))
-                        .foregroundStyle(NekoTheme.muted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 6)
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 14)
-                .padding(.bottom, 128)
+                .padding(.bottom, 110)
             }
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 12) {
-                    Button("重新分析") {
+                    Button("重新识别") {
                         onRestartAnalysis()
                     }
                     .buttonStyle(OnboardingSecondaryButtonStyle())
@@ -820,14 +1135,21 @@ private struct OnboardingResultScreen: View {
                         onSave()
                     } label: {
                         Text(isSaving ? "保存中…" : "保存结果")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(OnboardingPrimaryButtonStyle())
                     .disabled(isSaving || persona == nil)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 14)
-                .background(.ultraThinMaterial)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+                .background(OnboardingFooterFade())
+            }
+
+            if shareOpen {
+                ResultShareSheet {
+                    shareOpen = false
+                }
             }
         }
     }
@@ -847,87 +1169,155 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
     let title: String
     let subtitle: String
     let onBack: () -> Void
+    let skipAction: (() -> Void)?
     @ViewBuilder let content: Content
     @ViewBuilder let footer: Footer
 
+    init(
+        step: Int,
+        title: String,
+        subtitle: String,
+        onBack: @escaping () -> Void,
+        skipAction: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder footer: () -> Footer
+    ) {
+        self.step = step
+        self.title = title
+        self.subtitle = subtitle
+        self.onBack = onBack
+        self.skipAction = skipAction
+        self.content = content()
+        self.footer = footer()
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            OnboardingTopBar(step: step, onBack: onBack)
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        StepBar(step: step)
+                            .padding(.top, 58)
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(title)
-                            .font(.system(size: 28, weight: .light))
-                            .foregroundStyle(NekoTheme.ink)
-                        Text(subtitle)
-                            .font(.system(size: 13))
-                            .foregroundStyle(NekoTheme.muted)
-                            .lineSpacing(4)
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(title)
+                                    .font(.system(size: 22, weight: .light))
+                                    .foregroundStyle(OnboardingWeb.ink)
+                                Spacer()
+                                if let skipAction {
+                                    Button {
+                                        skipAction()
+                                    } label: {
+                                        Text("跳过 ›")
+                                            .font(.system(size: 10, weight: .regular))
+                                            .tracking(3)
+                                            .foregroundStyle(OnboardingWeb.label)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+
+                            Text(subtitle)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(OnboardingWeb.muted)
+                                .lineSpacing(4)
+                                .padding(.top, 6)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 2)
+
+                        content
+                            .padding(.horizontal, 20)
+                            .padding(.top, 24)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-
-                    content
-                        .padding(.horizontal, 20)
+                    .padding(.bottom, 152)
                 }
-                .padding(.bottom, 118)
+                .safeAreaInset(edge: .bottom) {
+                    footer
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
+                        .padding(.bottom, 10)
+                        .background(OnboardingFooterFade())
+                }
             }
-            .safeAreaInset(edge: .bottom) {
-                footer
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 14)
-                    .background(.ultraThinMaterial)
-            }
+
+            WebBackButton(onBack: onBack)
         }
     }
 }
 
-private struct OnboardingTopBar: View {
-    let step: Int
+private struct WebBackButton: View {
     let onBack: () -> Void
 
     var body: some View {
+        Button {
+            onBack()
+        } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(OnboardingWeb.soulViolet)
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.80), in: Circle())
+                .shadow(color: OnboardingWeb.soulViolet.opacity(0.18), radius: 15, x: 0, y: 7)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 20)
+        .padding(.top, 18)
+        .zIndex(30)
+    }
+}
+
+private struct StepBar: View {
+    let step: Int
+
+    var body: some View {
         HStack {
-            Button {
-                onBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(NekoTheme.soulViolet)
-                    .frame(width: 38, height: 38)
-                    .background(.white.opacity(0.74), in: Circle())
-            }
-
             Spacer()
-
             HStack(spacing: 6) {
                 ForEach(1...4, id: \.self) { index in
                     Capsule()
-                        .fill(index <= step ? NekoTheme.soulViolet.opacity(0.62) : .white.opacity(0.72))
-                        .frame(width: index <= step ? 24 : 12, height: 5)
+                        .fill(index <= step ? OnboardingWeb.activeBar : OnboardingWeb.border.opacity(0.75))
+                        .frame(width: index <= step ? 24 : 12, height: 4)
                 }
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 10)
+        .padding(.horizontal, 28)
+        .padding(.bottom, 16)
     }
 }
 
 private struct OnboardingCard<Content: View>: View {
+    let cornerRadius: CGFloat
+    let topPadding: CGFloat
     @ViewBuilder let content: Content
+
+    init(cornerRadius: CGFloat = 24, topPadding: CGFloat = 0, @ViewBuilder content: () -> Content) {
+        self.cornerRadius = cornerRadius
+        self.topPadding = topPadding
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             content
         }
-        .padding(16)
-        .background(.white.opacity(0.50), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [.white.opacity(0.85), OnboardingWeb.whitePink.opacity(0.65)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.54), lineWidth: 1)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(.white.opacity(0.70), lineWidth: 1)
         }
+        .shadow(color: OnboardingWeb.soulViolet.opacity(0.10), radius: 16, x: 0, y: 8)
+        .padding(.top, topPadding)
     }
 }
 
@@ -940,15 +1330,15 @@ private struct OnboardingFieldTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(3)
-            .foregroundStyle(NekoTheme.muted)
+            .font(.system(size: 10, weight: .regular))
+            .tracking(4)
+            .foregroundStyle(OnboardingWeb.label)
     }
 }
 
 private struct ChoiceChip: View {
     let title: String
-    let subtitle: String
+    let subtitle: String?
     let isSelected: Bool
     let onTap: () -> Void
 
@@ -956,22 +1346,31 @@ private struct ChoiceChip: View {
         Button {
             onTap()
         } label: {
-            VStack(spacing: 3) {
+            HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(subtitle)
-                    .font(.system(size: 10))
-                    .opacity(0.78)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 10, weight: .regular))
+                        .lineLimit(1)
+                }
             }
-            .foregroundStyle(isSelected ? .white : NekoTheme.ink)
+            .foregroundStyle(isSelected ? .white : OnboardingWeb.ink)
             .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
             .padding(.vertical, 12)
             .background(
                 isSelected
-                    ? AnyShapeStyle(NekoTheme.primaryGradient)
+                    ? AnyShapeStyle(OnboardingWeb.selectedGradient)
                     : AnyShapeStyle(Color.white.opacity(0.70)),
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? .clear : OnboardingWeb.border.opacity(0.60), lineWidth: 1)
+            }
+            .shadow(color: isSelected ? OnboardingWeb.soulViolet.opacity(0.18) : .clear, radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
     }
@@ -989,23 +1388,27 @@ private struct QuizOptionButton: View {
         } label: {
             HStack(alignment: .center, spacing: 8) {
                 Text(label)
-                    .font(.system(size: 10, weight: .bold))
-                    .frame(width: 22, height: 22)
-                    .background(active ? .white.opacity(0.22) : NekoTheme.softPink.opacity(0.52), in: Circle())
+                    .font(.system(size: 10, weight: .medium))
+                    .frame(width: 20, height: 20)
+                    .background(active ? .white.opacity(0.25) : Color(red: 0.95, green: 0.92, blue: 0.98), in: Circle())
                 Text(text)
-                    .font(.system(size: 12, weight: active ? .semibold : .regular))
+                    .font(.system(size: 12, weight: active ? .medium : .regular))
                     .lineLimit(2)
                     .minimumScaleFactor(0.86)
             }
-            .foregroundStyle(active ? .white : NekoTheme.ink)
-            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-            .padding(.horizontal, 10)
+            .foregroundStyle(active ? .white : OnboardingWeb.ink)
+            .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+            .padding(.horizontal, 12)
             .background(
                 active
-                    ? AnyShapeStyle(NekoTheme.primaryGradient)
+                    ? AnyShapeStyle(OnboardingWeb.selectedGradient)
                     : AnyShapeStyle(Color.white.opacity(0.70)),
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(active ? .clear : OnboardingWeb.border.opacity(0.55), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -1014,33 +1417,69 @@ private struct QuizOptionButton: View {
 private struct FlowAvatarView: View {
     let image: UIImage?
     let size: CGFloat
+    var remoteURL: URL?
+    var placeholderTitle: String = "上传正脸"
+    var placeholderSubtitle: String? = nil
+    var placeholderIcon: String = "photo"
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(.white.opacity(0.78))
-                .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 24, x: 0, y: 12)
+                .fill(.white)
+                .shadow(color: OnboardingWeb.soulViolet.opacity(0.22), radius: 22, x: 0, y: 12)
 
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: size * 0.24, weight: .semibold))
-                    Text("上传正脸")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(2)
+            } else if let remoteURL {
+                AsyncImage(url: remoteURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        fallback
+                    }
                 }
-                .foregroundStyle(NekoTheme.soulViolet)
+            } else {
+                fallback
             }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
         .overlay {
             Circle()
-                .stroke(.white.opacity(0.88), lineWidth: 3)
+                .stroke(.white.opacity(0.92), lineWidth: 3)
+        }
+    }
+
+    private var fallback: some View {
+        ZStack {
+            RadialGradient(
+                colors: [.white.opacity(0.96), OnboardingWeb.whitePink.opacity(0.92), OnboardingWeb.creamBottom],
+                center: UnitPoint(x: 0.5, y: 0.38),
+                startRadius: 8,
+                endRadius: size * 0.60
+            )
+            VStack(spacing: 6) {
+                Image(systemName: placeholderIcon)
+                    .font(.system(size: size * 0.18, weight: .regular))
+                    .frame(width: 48, height: 48)
+                    .background(.white.opacity(0.82), in: Circle())
+                    .shadow(color: OnboardingWeb.soulViolet.opacity(0.12), radius: 12, x: 0, y: 6)
+                Text(placeholderTitle)
+                    .font(.system(size: 11, weight: .regular))
+                    .tracking(2.2)
+                if let placeholderSubtitle {
+                    Text(placeholderSubtitle)
+                        .font(.system(size: 9, weight: .regular))
+                        .tracking(1.8)
+                        .foregroundStyle(OnboardingWeb.muted.opacity(0.75))
+                }
+            }
+            .foregroundStyle(OnboardingWeb.labelPink)
         }
     }
 }
@@ -1052,56 +1491,60 @@ private struct VideoClipCard: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [NekoTheme.softPink.opacity(0.64), NekoTheme.softLilac.opacity(0.62)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                LinearGradient(colors: [OnboardingWeb.activeBar.opacity(0.70), OnboardingWeb.videoPink.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing)
 
                 if let data = clip.thumbnailData, let image = UIImage(data: data) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
                 } else {
-                    Image(systemName: "video.fill")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.white.opacity(0.86))
+                    Text("▶")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
                 }
 
-                VStack {
-                    Spacer()
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(clip.label)
-                            .font(.system(size: 11, weight: .semibold))
-                            .lineLimit(1)
-                        Text("\(clip.durationLabel) · \(clip.sizeLabel)")
-                            .font(.system(size: 9, weight: .medium))
-                            .opacity(0.86)
-                    }
+                LinearGradient(colors: [.clear, .black.opacity(0.36)], startPoint: .center, endPoint: .bottom)
+
+                Text("▶")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(OnboardingWeb.questionNumber)
+                    .frame(width: 28, height: 28)
+                    .background(.white.opacity(0.85), in: Circle())
+
+                Text(clip.durationLabel)
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(
-                        LinearGradient(colors: [.clear, .black.opacity(0.48)], startPoint: .top, endPoint: .bottom)
-                    )
-                }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(.black.opacity(0.35), in: Capsule())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(7)
+
+                Text(clip.label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
             }
-            .frame(height: 176)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .aspectRatio(3 / 4, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: OnboardingWeb.soulViolet.opacity(0.16), radius: 12, x: 0, y: 8)
 
             Button {
                 onRemove()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(NekoTheme.ink)
-                    .frame(width: 26, height: 26)
-                    .background(.white.opacity(0.88), in: Circle())
+                Text("×")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(OnboardingWeb.ink)
+                    .frame(width: 24, height: 24)
+                    .background(.white.opacity(0.90), in: Circle())
+                    .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 2)
             }
-            .padding(8)
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(6)
         }
     }
 }
@@ -1113,14 +1556,52 @@ private struct CaptureTip: View {
     var body: some View {
         VStack(spacing: 6) {
             Text(emoji)
-                .font(.system(size: 22))
+                .font(.system(size: 20))
             Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NekoTheme.muted)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(OnboardingWeb.labelPink)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: OnboardingWeb.soulViolet.opacity(0.08), radius: 7, x: 0, y: 3)
+    }
+}
+
+private struct AnalysisRing: View {
+    let progress: Double
+    let avatarImage: UIImage?
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(colors: [OnboardingWeb.soulPink.opacity(0.46), OnboardingWeb.soulOpal.opacity(0.16), .clear], center: .center, startRadius: 24, endRadius: 106)
+                )
+                .blur(radius: 28)
+                .frame(width: 206, height: 206)
+            Circle()
+                .stroke(.white.opacity(0.72), lineWidth: 4)
+                .frame(width: 184, height: 184)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(OnboardingWeb.selectedGradient, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: 184, height: 184)
+
+            FlowAvatarView(image: avatarImage, size: 154, placeholderTitle: "等待头像", placeholderIcon: "cat")
+
+            Text("\(Int(progress * 100))%")
+                .font(.system(size: 11, weight: .medium))
+                .tracking(2.7)
+                .foregroundStyle(OnboardingWeb.questionNumber)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(.white.opacity(0.92), in: Capsule())
+                .shadow(color: OnboardingWeb.soulViolet.opacity(0.16), radius: 10, x: 0, y: 6)
+                .offset(y: 76)
+        }
+        .frame(width: 212, height: 212)
     }
 }
 
@@ -1132,24 +1613,73 @@ private struct AnalysisStepRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Circle()
-                .fill(isDone ? NekoTheme.soulPink.opacity(0.78) : isActive ? NekoTheme.soulViolet.opacity(0.72) : .white.opacity(0.8))
-                .frame(width: 9, height: 9)
+                .fill(isDone ? OnboardingWeb.soulViolet : isActive ? OnboardingWeb.soulPink : OnboardingWeb.border)
+                .frame(width: 8, height: 8)
+                .shadow(color: isActive ? OnboardingWeb.soulPink.opacity(0.70) : .clear, radius: 5)
 
-            Text(title)
-                .font(.system(size: 13, weight: isActive ? .semibold : .regular))
-                .foregroundStyle(isDone || isActive ? NekoTheme.ink : NekoTheme.muted)
+            Text(title + (isActive ? "" : "..."))
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(isDone || isActive ? OnboardingWeb.ink : OnboardingWeb.muted.opacity(0.70))
 
             Spacer()
 
             if isDone {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(NekoTheme.soulViolet)
+                Text("✓")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(OnboardingWeb.labelPink)
+            } else if isActive {
+                HStack(spacing: 4) {
+                    Circle().frame(width: 4, height: 4)
+                    Circle().frame(width: 4, height: 4)
+                    Circle().frame(width: 4, height: 4)
+                }
+                .foregroundStyle(OnboardingWeb.labelPink)
             }
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 12)
-        .background(.white.opacity(isActive ? 0.82 : 0.56), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(.white.opacity(isActive ? 0.85 : 0.65), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: isActive ? OnboardingWeb.soulViolet.opacity(0.14) : .clear, radius: 10, x: 0, y: 5)
+        .scaleEffect(isActive ? 1.01 : 1)
+        .opacity(isDone || isActive ? 1 : 0.55)
+    }
+}
+
+private struct ResultTopBar: View {
+    let onBack: () -> Void
+    let onShare: () -> Void
+
+    var body: some View {
+        HStack {
+            HStack(spacing: 12) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(OnboardingWeb.labelPink)
+                        .frame(width: 36, height: 36)
+                        .background(.white.opacity(0.80), in: Circle())
+                        .shadow(color: OnboardingWeb.soulViolet.opacity(0.16), radius: 14, x: 0, y: 7)
+                }
+                .buttonStyle(.plain)
+
+                Text("N E K O · I D")
+                    .font(.system(size: 10, weight: .regular))
+                    .tracking(5)
+                    .foregroundStyle(OnboardingWeb.labelPink)
+            }
+
+            Spacer()
+
+            Button(action: onShare) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(LinearGradient(colors: [Color(red: 0.714, green: 0.604, blue: 0.937), Color(red: 0.902, green: 0.722, blue: 0.812)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                    .shadow(color: OnboardingWeb.soulViolet.opacity(0.32), radius: 12, x: 0, y: 6)
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
@@ -1159,51 +1689,89 @@ private struct ResultHeroCard: View {
     let persona: CatPersonaResult
 
     var body: some View {
-        HStack(spacing: 16) {
-            FlowAvatarView(image: avatarImage, size: 112)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("人格匹配度")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(NekoTheme.muted)
-                    Text("\(persona.matchScore)%")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(NekoTheme.soulViolet)
+        ZStack(alignment: .topTrailing) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .stroke(OnboardingWeb.soulPink.opacity(0.45), lineWidth: 1)
+                        .frame(width: 112, height: 112)
+                    Circle()
+                        .stroke(OnboardingWeb.soulOpal.opacity(0.40), lineWidth: 1)
+                        .frame(width: 96, height: 96)
+                    FlowAvatarView(image: avatarImage, size: 100, placeholderTitle: "本次头像", placeholderIcon: "cat")
                 }
 
-                Text(draft.trimmedName)
-                    .font(.system(size: 17, weight: .light))
-                    .foregroundStyle(NekoTheme.muted)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(draft.trimmedName)
+                        .font(.system(size: 15, weight: .light))
+                        .foregroundStyle(OnboardingWeb.label)
 
-                Text(persona.type)
-                    .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(
-                        NekoTheme.primaryGradient
-                    )
+                    Text(persona.type)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(LinearGradient(colors: [Color(red: 0.659, green: 0.545, blue: 0.918), Color(red: 0.784, green: 0.588, blue: 0.878), Color(red: 0.937, green: 0.686, blue: 0.784)], startPoint: .leading, endPoint: .trailing))
+                        .padding(.top, 6)
 
-                HStack(spacing: 6) {
-                    Text("MBTI")
-                        .font(.system(size: 10, weight: .medium))
-                        .tracking(2)
-                        .foregroundStyle(NekoTheme.muted)
-                    Text(persona.mbti)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(NekoTheme.ink)
+                    HStack(spacing: 8) {
+                        Text("MBTI")
+                            .font(.system(size: 9, weight: .regular))
+                            .tracking(3)
+                            .foregroundStyle(OnboardingWeb.label)
+                        Text(persona.mbti)
+                            .font(.system(size: 11.5, weight: .medium))
+                            .tracking(1)
+                            .foregroundStyle(OnboardingWeb.questionNumber)
+                    }
+                    .padding(.top, 8)
+
+                    HStack(spacing: 5) {
+                        ForEach(Array(persona.tags.prefix(4)), id: \.self) { tag in
+                            Text(tag)
+                                .font(.system(size: 9.5, weight: .regular))
+                                .tracking(0.8)
+                                .foregroundStyle(OnboardingWeb.labelPink)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(.white.opacity(0.80), in: Capsule())
+                                .overlay {
+                                    Capsule().stroke(OnboardingWeb.border.opacity(0.60), lineWidth: 1)
+                                }
+                        }
+                    }
+                    .padding(.top, 8)
                 }
-
-                Text("\(draft.gender.rawValue) · \(draft.ageStage.rawValue)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(NekoTheme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(16)
+            .background(
+                LinearGradient(
+                    colors: [.white.opacity(0.92), Color(red: 0.98, green: 0.93, blue: 0.98).opacity(0.82), Color(red: 0.96, green: 0.95, blue: 1.0).opacity(0.75)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(.white.opacity(0.70), lineWidth: 1)
+            }
+            .shadow(color: OnboardingWeb.soulViolet.opacity(0.15), radius: 24, x: 0, y: 14)
 
-            Spacer(minLength: 0)
-        }
-        .padding(18)
-        .background(.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.64), lineWidth: 1)
+            HStack(spacing: 4) {
+                Text("人格匹配度")
+                    .foregroundStyle(OnboardingWeb.label)
+                Text("\(persona.matchScore)%")
+                    .fontWeight(.semibold)
+            }
+            .font(.system(size: 9.5, weight: .regular))
+            .tracking(0.4)
+            .foregroundStyle(OnboardingWeb.questionNumber)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.white.opacity(0.80), in: Capsule())
+            .overlay {
+                Capsule().stroke(OnboardingWeb.border.opacity(0.60), lineWidth: 1)
+            }
+            .padding(12)
         }
     }
 }
@@ -1211,29 +1779,48 @@ private struct ResultHeroCard: View {
 private struct ResultSection<Content: View>: View {
     let title: String
     let hint: String
+    var tone = false
+    var actionTitle: String?
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(NekoTheme.ink)
+            HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(OnboardingWeb.ink)
+                    Text(hint)
+                        .font(.system(size: 8, weight: .regular))
+                        .tracking(2.4)
+                        .foregroundStyle(OnboardingWeb.labelPink)
+                }
                 Spacer()
-                Text(hint)
-                    .font(.system(size: 9, weight: .medium))
-                    .tracking(2)
-                    .foregroundStyle(NekoTheme.muted)
+                if let actionTitle {
+                    Text(actionTitle)
+                        .font(.system(size: 10, weight: .regular))
+                        .tracking(0.8)
+                        .foregroundStyle(OnboardingWeb.questionNumber)
+                }
             }
 
             content
         }
         .padding(16)
-        .background(.white.opacity(0.56), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            tone
+                ? AnyShapeStyle(LinearGradient(colors: [Color(red: 0.985, green: 0.926, blue: 1.0).opacity(0.88), Color(red: 0.958, green: 0.944, blue: 1.0).opacity(0.84)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                : AnyShapeStyle(LinearGradient(colors: [.white.opacity(0.88), OnboardingWeb.whitePink.opacity(0.70)], startPoint: .top, endPoint: .bottom)),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.56), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(.white.opacity(0.70), lineWidth: 1)
         }
+        .shadow(color: OnboardingWeb.soulViolet.opacity(0.10), radius: 15, x: 0, y: 8)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
     }
 }
 
@@ -1244,27 +1831,35 @@ private struct TraitRing: View {
         VStack(spacing: 8) {
             ZStack {
                 Circle()
-                    .stroke(.white.opacity(0.74), lineWidth: 7)
+                    .stroke(Color(red: 0.933, green: 0.902, blue: 0.973), lineWidth: 8)
                 Circle()
                     .trim(from: 0, to: CGFloat(trait.value) / 100)
-                    .stroke(
-                        NekoTheme.primaryGradient,
-                        style: StrokeStyle(lineWidth: 7, lineCap: .round)
-                    )
+                    .stroke(OnboardingWeb.selectedGradient, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                Text("\(trait.value)")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(NekoTheme.ink)
+                VStack(spacing: 1) {
+                    Text("\(trait.value)%")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(OnboardingWeb.questionNumber)
+                    Text(traitIcon(for: trait.label))
+                        .font(.system(size: 11))
+                }
             }
-            .frame(width: 70, height: 70)
+            .frame(width: 72, height: 72)
 
             Text(trait.label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NekoTheme.muted)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(OnboardingWeb.ink.opacity(0.80))
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.76)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func traitIcon(for label: String) -> String {
+        if label.contains("粘") { return "🐾" }
+        if label.contains("独") { return "🏠" }
+        if label.contains("奇") { return "🔍" }
+        return "✦"
     }
 }
 
@@ -1272,46 +1867,185 @@ private struct FlowWrap: View {
     let items: [String]
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], alignment: .leading, spacing: 8) {
-            ForEach(items, id: \.self) { item in
+        FlowLayout(spacing: 7, rowSpacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 Text(item)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(NekoTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .padding(.horizontal, 10)
+                    .font(.system(size: 11, weight: .regular))
+                    .tracking(0.5)
+                    .foregroundStyle(index % 2 == 0 ? OnboardingWeb.questionNumber : .white)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity)
-                    .background(.white.opacity(0.64), in: Capsule())
+                    .background(index % 2 == 0 ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(OnboardingWeb.selectedGradient), in: Capsule())
+                    .overlay {
+                        if index % 2 == 0 {
+                            Capsule().stroke(OnboardingWeb.border.opacity(0.65), lineWidth: 1)
+                        }
+                    }
             }
         }
+    }
+}
+
+private struct FlowLayout<Content: View>: View {
+    let spacing: CGFloat
+    let rowSpacing: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            AnyLayout(FlowLayoutLayout(spacing: spacing, rowSpacing: rowSpacing)) {
+                content
+            }
+        }
+    }
+}
+
+private struct FlowLayoutLayout: Layout {
+    let spacing: CGFloat
+    let rowSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += rowHeight + rowSpacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + rowSpacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+private struct ResultShareSheet: View {
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onClose)
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(OnboardingWeb.border)
+                    .frame(width: 40, height: 4)
+
+                Text("分享我的猫人格")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(OnboardingWeb.ink)
+                    .padding(.top, 16)
+
+                HStack(spacing: 16) {
+                    ShareItem(label: "微信好友", emoji: "💬", colors: [Color(red: 0.42, green: 0.83, blue: 0.42), Color(red: 0.17, green: 0.72, blue: 0.36)])
+                    ShareItem(label: "朋友圈", emoji: "🌈", colors: [Color(red: 1.0, green: 0.70, blue: 0.42), Color(red: 1.0, green: 0.42, blue: 0.71)])
+                    ShareItem(label: "保存图片", emoji: "⬇️", colors: [Color(red: 0.714, green: 0.604, blue: 0.937), Color(red: 0.902, green: 0.722, blue: 0.812)])
+                }
+                .padding(.top, 20)
+
+                Button("取消", action: onClose)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(OnboardingWeb.questionNumber)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Color(red: 0.96, green: 0.94, blue: 0.98), in: Capsule())
+                    .padding(.top, 20)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 28)
+            .background(.white.opacity(0.95), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
+            .shadow(color: OnboardingWeb.ink.opacity(0.20), radius: 25, x: 0, y: -10)
+        }
+        .zIndex(50)
+    }
+}
+
+private struct ShareItem: View {
+    let label: String
+    let emoji: String
+    let colors: [Color]
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(emoji)
+                .font(.system(size: 22))
+                .frame(width: 48, height: 48)
+                .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                .shadow(color: OnboardingWeb.ink.opacity(0.16), radius: 10, x: 0, y: 6)
+            Text(label)
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(OnboardingWeb.ink.opacity(0.80))
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct OnboardingFooterFade: View {
+    var body: some View {
+        LinearGradient(
+            colors: [OnboardingWeb.creamBottom.opacity(0.0), OnboardingWeb.creamBottom.opacity(0.92)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
     }
 }
 
 private struct OnboardingPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: 14, weight: .medium))
             .foregroundStyle(.white)
-            .padding(.vertical, 15)
+            .padding(.vertical, 16)
             .padding(.horizontal, 18)
-            .background(NekoTheme.primaryGradient, in: Capsule())
-            .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 20, x: 0, y: 10)
-            .opacity(configuration.isPressed ? 0.86 : 1)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .background(OnboardingWeb.ctaGradient, in: Capsule())
+            .shadow(color: OnboardingWeb.soulViolet.opacity(0.26), radius: 18, x: 0, y: 10)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }
 
 private struct OnboardingSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(NekoTheme.soulViolet)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(OnboardingWeb.questionNumber)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
             .frame(maxWidth: .infinity)
-            .background(.white.opacity(configuration.isPressed ? 0.66 : 0.84), in: Capsule())
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .background(.white.opacity(configuration.isPressed ? 0.78 : 1), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color(red: 0.780, green: 0.702, blue: 0.949), lineWidth: 1.5)
+            }
+            .shadow(color: OnboardingWeb.soulViolet.opacity(0.12), radius: 12, x: 0, y: 6)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }
 

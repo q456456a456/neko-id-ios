@@ -30,6 +30,7 @@ struct ContentView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
         }
+        .id(appModel.phase)
         .task {
             await appModel.bootstrap()
         }
@@ -329,6 +330,33 @@ private struct HomeView: View {
     @State private var isMePresented = false
     @State private var isPersonaPresented = false
     @State private var latestPublishedVoice: CatVoiceResult?
+    @State private var selectedVoice: CatVoiceResult?
+    @State private var isVoiceDetailPresented = false
+    @State private var actionVoice: CatVoiceResult?
+    @State private var confirmDeleteVoice: CatVoiceResult?
+
+    private var homeVoices: [CatVoiceResult] {
+        var voices: [CatVoiceResult] = []
+        var seen = Set<String>()
+        for voice in ([latestPublishedVoice].compactMap { $0 } + appModel.voices) {
+            let key = voiceKey(voice)
+            if seen.insert(key).inserted {
+                voices.append(voice)
+            }
+        }
+        return voices
+    }
+
+    private var voiceGroups: [HomeVoiceGroup] {
+        homeVoices.reduce(into: [HomeVoiceGroup]()) { groups, voice in
+            let label = dayLabel(for: voice)
+            if let last = groups.indices.last, groups[last].label == label {
+                groups[last].voices.append(voice)
+            } else {
+                groups.append(HomeVoiceGroup(label: label, voices: [voice]))
+            }
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -353,10 +381,26 @@ private struct HomeView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 26)
 
-                        if let latestPublishedVoice {
-                            VStack(spacing: 10) {
-                                DayDivider(label: "今天")
-                                TimelineLatestVoiceRow(voice: latestPublishedVoice, profile: profile)
+                        if !homeVoices.isEmpty {
+                            VStack(spacing: 18) {
+                                ForEach(voiceGroups) { group in
+                                    VStack(spacing: 10) {
+                                        DayDivider(label: group.label)
+                                        ForEach(group.voices, id: \.id) { voice in
+                                            TimelineVoiceRow(
+                                                voice: voice,
+                                                profile: profile,
+                                                onSelect: {
+                                                    selectedVoice = voice
+                                                    isVoiceDetailPresented = true
+                                                },
+                                                onMore: {
+                                                    actionVoice = voice
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                             .padding(.horizontal, 20)
                             .padding(.top, 12)
@@ -384,12 +428,40 @@ private struct HomeView: View {
                 onPublish: { isPublishSheetPresented = true },
                 onAccount: { isMePresented = true }
             )
+
+            if let actionVoice {
+                VoiceActionSheet(
+                    title: "猫咪心声",
+                    saveText: "保存长图",
+                    showDelete: true,
+                    onClose: { self.actionVoice = nil },
+                    onSave: {
+                        self.actionVoice = nil
+                        appModel.noticeMessage = "保存长图稍后继续接相册。"
+                    },
+                    onDelete: {
+                        self.actionVoice = nil
+                        confirmDeleteVoice = actionVoice
+                    }
+                )
+                .zIndex(30)
+            }
+
+            if let confirmDeleteVoice {
+                ConfirmSheetOverlay(
+                    title: "确定删除这条心声吗？",
+                    hint: "删除后无法恢复，\(appModel.catProfile?.name ?? "猫咪")的这一刻就会消失喵～",
+                    confirmText: "删除",
+                    danger: true,
+                    onConfirm: { deleteVoice(confirmDeleteVoice) },
+                    onCancel: { self.confirmDeleteVoice = nil }
+                )
+                .zIndex(40)
+            }
         }
-        .sheet(isPresented: $isPublishSheetPresented) {
+        .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
                 .environmentObject(appModel)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: $isMePresented) {
             MeView()
@@ -406,7 +478,84 @@ private struct HomeView: View {
                 .background { NekoBackground() }
             }
         }
+        .navigationDestination(isPresented: $isVoiceDetailPresented) {
+            if let selectedVoice {
+                VoiceDetailView(
+                    voice: selectedVoice,
+                    profile: appModel.catProfile,
+                    persona: appModel.persona
+                )
+                .environmentObject(appModel)
+            } else {
+                MissingProfileCard {
+                    appModel.startOnboarding()
+                }
+                .padding(24)
+                .background { NekoBackground() }
+            }
+        }
+        .task(id: appModel.catProfile?.id) {
+            guard appModel.catProfile != nil else { return }
+            do {
+                _ = try await appModel.reloadVoices()
+            } catch {
+                appModel.errorMessage = "猫咪心声加载失败"
+            }
+        }
     }
+
+    private func voiceKey(_ voice: CatVoiceResult) -> String {
+        if let cloudId = voice.cloudId, !cloudId.isEmpty {
+            return cloudId
+        }
+        return "\(voice.createdAt ?? 0)-\(voice.text)-\(voice.mediaObjectKey ?? "")"
+    }
+
+    private func dayLabel(for voice: CatVoiceResult) -> String {
+        guard let createdAt = voice.createdAt else { return "今天" }
+        let date = Date(timeIntervalSince1970: Double(createdAt) / 1000)
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "今天"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "昨天"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "MM 月 dd 日"
+        return formatter.string(from: date)
+    }
+
+    private func deleteVoice(_ voice: CatVoiceResult) {
+        guard let cloudId = voice.cloudId, !cloudId.isEmpty else {
+            confirmDeleteVoice = nil
+            latestPublishedVoice = nil
+            appModel.noticeMessage = "已移除本地心声"
+            return
+        }
+
+        Task {
+            do {
+                try await appModel.deleteVoices(ids: [cloudId])
+                if latestPublishedVoice?.cloudId == cloudId {
+                    latestPublishedVoice = nil
+                }
+                confirmDeleteVoice = nil
+                appModel.noticeMessage = "心声已删除"
+            } catch {
+                confirmDeleteVoice = nil
+                appModel.errorMessage = error.localizedDescription.isEmpty ? "删除失败，请稍后再试。" : error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct HomeVoiceGroup: Identifiable {
+    let label: String
+    var voices: [CatVoiceResult]
+
+    var id: String { label }
 }
 
 private struct HomeProfileCard: View {
@@ -607,9 +756,11 @@ private struct ThoughtBubbleLabel: View {
     }
 }
 
-private struct TimelineLatestVoiceRow: View {
+private struct TimelineVoiceRow: View {
     let voice: CatVoiceResult
     let profile: CatProfile
+    let onSelect: () -> Void
+    let onMore: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -631,7 +782,7 @@ private struct TimelineLatestVoiceRow: View {
             }
             .frame(width: 42)
 
-            VoiceFeedCard(voice: voice, profile: profile)
+            VoiceFeedCard(voice: voice, profile: profile, onSelect: onSelect, onMore: onMore)
         }
     }
 }
@@ -639,69 +790,652 @@ private struct TimelineLatestVoiceRow: View {
 private struct VoiceFeedCard: View {
     let voice: CatVoiceResult
     let profile: CatProfile
+    let onSelect: () -> Void
+    let onMore: () -> Void
 
     var body: some View {
         NekoGlassCard(cornerRadius: 24) {
             VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    NekoTheme.photoPlaceholderGradient
-                        .frame(height: 220)
+                Button(action: onSelect) {
+                    ZStack(alignment: .topLeading) {
+                        VoiceMediaImageView(
+                            url: voice.mediaURL,
+                            mediaType: voice.mediaType,
+                            aspect: voice.aspect,
+                            contentMode: .fit,
+                            fallbackAvatarURL: profile.avatarURL,
+                            preferNaturalAspect: true
+                        )
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(profile.name)
-                            .font(.system(size: 8, weight: .semibold))
-                            .tracking(3)
-                            .foregroundStyle(NekoTheme.muted)
-                        Text("💭 \(voice.text)")
-                            .font(.system(size: 12.5, weight: .regular))
-                            .lineSpacing(4)
-                            .foregroundStyle(NekoTheme.ink)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .padding(14)
-                    .shadow(color: NekoTheme.ink.opacity(0.10), radius: 20, x: 0, y: 10)
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.18), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(maxHeight: 160)
 
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, size: 96)
-                                .padding(20)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(profile.name)
+                                .font(.system(size: 8, weight: .semibold))
+                                .tracking(3)
+                                .foregroundStyle(NekoTheme.muted)
+                            Text("💭 \(voice.text)")
+                                .font(.system(size: 12.5, weight: .regular))
+                                .lineSpacing(4)
+                                .foregroundStyle(NekoTheme.ink)
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .padding(14)
+                        .shadow(color: NekoTheme.ink.opacity(0.10), radius: 20, x: 0, y: 10)
                     }
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .buttonStyle(.plain)
 
                 HStack(spacing: 8) {
-                    ForEach(voice.tags.prefix(2), id: \.self) { tag in
-                        Text(tag)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(NekoTheme.soulViolet)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                LinearGradient(colors: [NekoTheme.softPink.opacity(0.86), NekoTheme.softLilac.opacity(0.76)], startPoint: .leading, endPoint: .trailing),
-                                in: Capsule()
-                            )
-                    }
+                    Button(action: onSelect) {
+                        HStack(spacing: 8) {
+                            ForEach(voice.tags.prefix(2), id: \.self) { tag in
+                                Text(tag)
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(NekoTheme.soulViolet)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        LinearGradient(colors: [NekoTheme.softPink.opacity(0.86), NekoTheme.softLilac.opacity(0.76)], startPoint: .leading, endPoint: .trailing),
+                                        in: Capsule()
+                                    )
+                            }
 
-                    if let location = voice.location, !location.isEmpty {
-                        Text("· \(location)")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(NekoTheme.muted)
-                            .lineLimit(1)
+                            if let location = voice.location, !location.isEmpty {
+                                Text("· \(location)")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(NekoTheme.muted)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
 
                     Spacer()
 
-                    Text("⋯")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(NekoTheme.muted)
+                    Button(action: onMore) {
+                        Text("⋯")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(NekoTheme.muted)
+                            .frame(width: 28, height: 28)
+                            .background(Color.clear, in: Circle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+            }
+        }
+    }
+}
+
+private enum VoiceMediaMetrics {
+    static func aspectRatio(for value: String?) -> CGFloat {
+        switch value {
+        case "9:16":
+            return 9.0 / 16.0
+        case "3:4":
+            return 3.0 / 4.0
+        case "1:1":
+            return 1.0
+        default:
+            return 4.0 / 5.0
+        }
+    }
+}
+
+private struct VoiceMediaImageView: View {
+    let url: URL?
+    let mediaType: String?
+    let aspect: String?
+    let contentMode: ContentMode
+    let fallbackAvatarURL: URL?
+    var maxHeight: CGFloat = 420
+    var preferNaturalAspect: Bool = true
+    @State private var loadedImage: UIImage?
+
+    private var aspectRatio: CGFloat {
+        if preferNaturalAspect, let loadedImage {
+            return max(loadedImage.size.width, 1) / max(loadedImage.size.height, 1)
+        }
+        return VoiceMediaMetrics.aspectRatio(for: aspect)
+    }
+
+    var body: some View {
+        ZStack {
+            NekoTheme.photoPlaceholderGradient
+
+            if let loadedImage, mediaType != "video" {
+                Image(uiImage: loadedImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                fallbackContent
+                    .opacity(url == nil || mediaType == "video" ? 1 : 0.72)
+            }
+        }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .frame(maxHeight: maxHeight)
+        .frame(maxWidth: .infinity)
+        .task(id: url) {
+            await loadImage()
+        }
+    }
+
+    @MainActor
+    private func loadImage() async {
+        loadedImage = nil
+        guard let url, mediaType != "video" else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            loadedImage = UIImage(data: data)
+        } catch {
+            loadedImage = nil
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackContent: some View {
+        if mediaType == "video" {
+            Image(systemName: "play.circle.fill")
+                .font(.system(size: 42, weight: .regular))
+                .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
+        } else {
+            CatAvatarView(
+                localImage: nil,
+                remoteURL: fallbackAvatarURL,
+                size: 104
+            )
+        }
+    }
+}
+
+private struct VoiceDetailMediaFillView: View {
+    let url: URL?
+    let mediaType: String?
+    let fallbackAvatarURL: URL?
+    @State private var loadedImage: UIImage?
+
+    var body: some View {
+        ZStack {
+            NekoTheme.photoPlaceholderGradient
+
+            if let loadedImage, mediaType != "video" {
+                Image(uiImage: loadedImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else if mediaType == "video" {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 42, weight: .regular))
+                    .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
+            } else {
+                CatAvatarView(
+                    localImage: nil,
+                    remoteURL: fallbackAvatarURL,
+                    size: 112
+                )
+                .opacity(url == nil ? 1 : 0.72)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: url) {
+            await loadImage()
+        }
+    }
+
+    @MainActor
+    private func loadImage() async {
+        loadedImage = nil
+        guard let url, mediaType != "video" else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            loadedImage = UIImage(data: data)
+        } catch {
+            loadedImage = nil
+        }
+    }
+}
+
+private struct VoiceActionSheet: View {
+    let title: String
+    let saveText: String
+    let showDelete: Bool
+    let onClose: () -> Void
+    let onSave: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.10)
+                .ignoresSafeArea()
+                .background(.ultraThinMaterial.opacity(0.45))
+                .onTapGesture(perform: onClose)
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(Color(red: 0.847, green: 0.824, blue: 0.886))
+                    .frame(width: 72, height: 3)
+                    .padding(.top, 14)
+                    .padding(.bottom, 20)
+
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+                    .padding(.bottom, 18)
+
+                HStack(alignment: .top, spacing: 48) {
+                    Button(action: onSave) {
+                        VStack(spacing: 10) {
+                            ZStack {
+                                Circle()
+                                    .fill(NekoTheme.primaryGradient)
+                                    .frame(width: 56, height: 56)
+                                    .shadow(color: NekoTheme.soulViolet.opacity(0.28), radius: 22, x: 0, y: 10)
+                                SavePosterIcon()
+                                    .frame(width: 25, height: 25)
+                            }
+                            Text(saveText)
+                                .font(.system(size: 12.5, weight: .regular))
+                                .foregroundStyle(NekoTheme.ink)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if showDelete {
+                        Button(action: onDelete) {
+                            VStack(spacing: 10) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(red: 0.988, green: 0.910, blue: 0.929))
+                                        .frame(width: 56, height: 56)
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 22, weight: .regular))
+                                        .foregroundStyle(Color(red: 0.941, green: 0.541, blue: 0.639))
+                                }
+                                Text("删除")
+                                    .font(.system(size: 12.5, weight: .regular))
+                                    .foregroundStyle(NekoTheme.muted)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 28)
+            .background(
+                Color(red: 0.992, green: 0.984, blue: 1.0).opacity(0.96),
+                in: UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32, style: .continuous)
+            )
+            .shadow(color: NekoTheme.ink.opacity(0.20), radius: 34, x: 0, y: -14)
+        }
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+}
+
+private struct SavePosterIcon: View {
+    var body: some View {
+        Canvas { context, size in
+            let stroke = StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+            let w = size.width
+            let h = size.height
+            var path = Path()
+
+            path.addRoundedRect(
+                in: CGRect(x: w * 0.10, y: h * 0.10, width: w * 0.58, height: h * 0.58),
+                cornerSize: CGSize(width: 4, height: 4)
+            )
+            path.move(to: CGPoint(x: w * 0.10, y: h * 0.52))
+            path.addLine(to: CGPoint(x: w * 0.24, y: h * 0.38))
+            path.addCurve(
+                to: CGPoint(x: w * 0.50, y: h * 0.40),
+                control1: CGPoint(x: w * 0.32, y: h * 0.30),
+                control2: CGPoint(x: w * 0.42, y: h * 0.31)
+            )
+            path.addLine(to: CGPoint(x: w * 0.68, y: h * 0.66))
+            path.addEllipse(in: CGRect(x: w * 0.48, y: h * 0.25, width: w * 0.10, height: h * 0.10))
+            path.move(to: CGPoint(x: w * 0.78, y: h * 0.56))
+            path.addLine(to: CGPoint(x: w * 0.78, y: h * 0.88))
+            path.move(to: CGPoint(x: w * 0.64, y: h * 0.74))
+            path.addLine(to: CGPoint(x: w * 0.78, y: h * 0.88))
+            path.addLine(to: CGPoint(x: w * 0.92, y: h * 0.74))
+
+            context.stroke(path, with: .color(.white), style: stroke)
+        }
+    }
+}
+
+private struct VoiceBottomActionBar: View {
+    let onShare: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onShare) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("分享")
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(NekoTheme.primaryGradient, in: Capsule())
+                .shadow(color: NekoTheme.soulViolet.opacity(0.28), radius: 20, x: 0, y: 10)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onDelete) {
+                HStack(spacing: 8) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("删除")
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.862, green: 0.474, blue: 0.356), Color(red: 0.842, green: 0.306, blue: 0.304)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    in: Capsule()
+                )
+                .shadow(color: Color(red: 0.862, green: 0.474, blue: 0.356).opacity(0.24), radius: 20, x: 0, y: 10)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 10)
+        .background(
+            LinearGradient(
+                colors: [Color.white.opacity(0.0), Color(red: 0.992, green: 0.969, blue: 1.0).opacity(0.96)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        )
+    }
+}
+
+private struct VoiceDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: NekoAppModel
+
+    let voice: CatVoiceResult
+    let profile: CatProfile?
+    let persona: CatPersonaResult?
+    @State private var isShareOpen = false
+    @State private var confirmDelete = false
+
+    private var catName: String {
+        profile?.name ?? "猫咪"
+    }
+
+    private var analysisText: String {
+        voice.analysis ?? "它似乎在表达：这个瞬间里，它正在用自己的方式向你靠近。"
+    }
+
+    private var detailAspect: String {
+        voice.aspect ?? "4:5"
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            detailBackground
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 20) {
+                    photoDetailCard
+                        .padding(.horizontal, 20)
+
+                    aiAnalysisCard
+                        .padding(.horizontal, 20)
+                }
+                .padding(.top, 92)
+                .padding(.bottom, 110)
+                .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            VStack {
+                header
+                    .padding(.horizontal, 20)
+                    .padding(.top, 48)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(true)
+
+            VoiceBottomActionBar(
+                onShare: { isShareOpen = true },
+                onDelete: { confirmDelete = true }
+            )
+            .frame(maxWidth: .infinity)
+            .zIndex(20)
+
+            if isShareOpen {
+                VoiceActionSheet(
+                    title: "分享猫咪心声",
+                    saveText: "保存长图",
+                    showDelete: false,
+                    onClose: { isShareOpen = false },
+                    onSave: {
+                        isShareOpen = false
+                        appModel.noticeMessage = "保存长图稍后继续接相册。"
+                    },
+                    onDelete: {}
+                )
+                .zIndex(30)
+            }
+
+            if confirmDelete {
+                ConfirmSheetOverlay(
+                    title: "确定删除这条心声吗？",
+                    hint: "删除后无法恢复，\(catName)的这一刻就会消失喵～",
+                    confirmText: "删除",
+                    danger: true,
+                    onConfirm: deleteCurrentVoice,
+                    onCancel: { confirmDelete = false }
+                )
+                .zIndex(40)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationBarBackButtonHidden(true)
+    }
+
+    private var detailBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.996, green: 0.982, blue: 0.946),
+                    Color(red: 0.993, green: 0.954, blue: 0.982),
+                    Color(red: 0.967, green: 0.942, blue: 0.998)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            Circle()
+                .fill(Color(red: 0.96, green: 0.72, blue: 0.88).opacity(0.28))
+                .frame(width: 220, height: 220)
+                .blur(radius: 46)
+                .offset(x: -150, y: -240)
+
+            Circle()
+                .fill(Color(red: 0.98, green: 0.88, blue: 0.58).opacity(0.22))
+                .frame(width: 190, height: 190)
+                .blur(radius: 48)
+                .offset(x: 150, y: -70)
+
+            NekoSparkles(count: 18)
+                .opacity(0.56)
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            AppBackCircleButton {
+                dismiss()
+            }
+
+            Spacer()
+
+            Text("心声 · \(voice.time)")
+                .font(.system(size: 11, weight: .medium))
+                .tracking(3.6)
+                .foregroundStyle(Color(red: 0.43, green: 0.38, blue: 0.52))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.80), in: Capsule())
+                .shadow(color: NekoTheme.soulViolet.opacity(0.10), radius: 16, x: 0, y: 8)
+
+            Spacer()
+
+            Color.clear.frame(width: 36, height: 36)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var photoDetailCard: some View {
+        let ratio = VoiceMediaMetrics.aspectRatio(for: detailAspect)
+
+        return GeometryReader { proxy in
+            let cardWidth = max(proxy.size.width, 1)
+            let cardHeight = cardWidth / ratio
+
+            ZStack(alignment: .topLeading) {
+                VoiceDetailMediaFillView(
+                    url: voice.mediaURL,
+                    mediaType: voice.mediaType,
+                    fallbackAvatarURL: profile?.avatarURL
+                )
+                .frame(width: cardWidth, height: cardHeight)
+                .clipped()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(catName)
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(3.2)
+                        .foregroundStyle(Color(red: 0.482, green: 0.447, blue: 0.565))
+
+                    Text(voice.text)
+                        .font(.system(size: 12.5, weight: .regular))
+                        .foregroundStyle(NekoTheme.ink.opacity(0.90))
+                        .lineSpacing(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .frame(maxWidth: cardWidth - 56, alignment: .leading)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(alignment: .bottomLeading) {
+                    Rectangle()
+                        .fill(Color.white)
+                        .frame(width: 12, height: 12)
+                        .rotationEffect(.degrees(45))
+                        .offset(x: 38, y: 6)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.90), lineWidth: 1)
+                }
+                .shadow(color: NekoTheme.ink.opacity(0.11), radius: 24, x: 0, y: 12)
+                .padding(.leading, 16)
+                .padding(.top, 16)
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.85), lineWidth: 1)
+            }
+            .shadow(color: NekoTheme.ink.opacity(0.16), radius: 28, x: 0, y: 16)
+        }
+        .aspectRatio(ratio, contentMode: .fit)
+    }
+
+    private var aiAnalysisCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("✨")
+                    .font(.system(size: 11))
+                Text("AI 心 声 解 析")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(3.6)
+                    .foregroundStyle(Color(red: 0.482, green: 0.447, blue: 0.565))
+            }
+
+            Text(analysisText)
+                .font(.system(size: 12.5, weight: .regular))
+                .foregroundStyle(NekoTheme.ink.opacity(0.85))
+                .lineSpacing(6)
+                .padding(.top, 10)
+
+            if !voice.tags.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(voice.tags, id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 10.5, weight: .regular))
+                            .foregroundStyle(NekoTheme.soulViolet)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(red: 0.966, green: 0.930, blue: 0.982), in: Capsule())
+                    }
+                }
+                .padding(.top, 12)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.90), lineWidth: 1)
+        }
+        .shadow(color: NekoTheme.ink.opacity(0.12), radius: 24, x: 0, y: 12)
+    }
+
+    private func deleteCurrentVoice() {
+        guard let cloudId = voice.cloudId, !cloudId.isEmpty else {
+            confirmDelete = false
+            dismiss()
+            return
+        }
+
+        Task {
+            do {
+                try await appModel.deleteVoices(ids: [cloudId])
+                confirmDelete = false
+                appModel.noticeMessage = "心声已删除"
+                dismiss()
+            } catch {
+                confirmDelete = false
+                appModel.errorMessage = error.localizedDescription.isEmpty ? "删除失败，请稍后再试。" : error.localizedDescription
             }
         }
     }
@@ -775,23 +1509,23 @@ private struct HomeTabBar: View {
                 ZStack {
                     Circle()
                         .fill(NekoTheme.primaryGradient)
-                        .frame(width: 66, height: 66)
+                        .frame(width: 60, height: 60)
                         .blur(radius: 7)
-                        .opacity(0.70)
+                        .opacity(0.66)
 
                     Circle()
                         .fill(NekoTheme.primaryGradient)
-                        .frame(width: 58, height: 58)
+                        .frame(width: 56, height: 56)
                         .shadow(color: NekoTheme.soulViolet.opacity(0.36), radius: 22, x: 0, y: 12)
                         .overlay {
                             Circle().stroke(Color.white.opacity(0.65), lineWidth: 2)
                         }
                     Text("＋")
-                        .font(.system(size: 26, weight: .medium))
+                        .font(.system(size: 25, weight: .medium))
                         .foregroundStyle(.white)
                         .offset(y: -1)
                 }
-                .offset(y: -26)
+                .offset(y: -22)
                 .zIndex(1)
             }
             .buttonStyle(.plain)
@@ -804,8 +1538,8 @@ private struct HomeTabBar: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 36)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
         .background {
             RoundedRectangle(cornerRadius: 32, style: .continuous)
                 .fill(Color.white.opacity(0.86))
@@ -814,7 +1548,8 @@ private struct HomeTabBar: View {
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 22, x: 0, y: 10)
         .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        .padding(.bottom, 4)
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
 
@@ -826,12 +1561,12 @@ private struct HomeTabIcon: View {
     var body: some View {
         VStack(spacing: 3) {
             NekoTabSymbol(kind: kind, active: active)
-                .frame(width: 23, height: 23)
+                .frame(width: 22, height: 22)
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 9.5, weight: .medium))
                 .tracking(1.6)
         }
-        .foregroundStyle(active ? NekoTheme.soulViolet : NekoTheme.muted)
+        .foregroundStyle(active ? NekoTheme.tabActive : NekoTheme.tabInactive)
         .frame(width: 46)
     }
 }
@@ -841,6 +1576,8 @@ private struct MeView: View {
     @EnvironmentObject private var appModel: NekoAppModel
     @State private var isPublishSheetPresented = false
     @State private var isAccountPresented = false
+    @State private var isEditProfilePresented = false
+    @State private var isManageVoicesPresented = false
     @State private var latestPublishedVoice: CatVoiceResult?
 
     var body: some View {
@@ -884,14 +1621,14 @@ private struct MeView: View {
                         .padding(.top, 16)
 
                     VStack(spacing: 10) {
-                        MeRowButton(icon: "☁", title: "账号与云端数据", sub: "邮箱登录、昵称和同步管理") {
+                        MeRowButton(icon: "☁︎", title: "账号与云端数据", sub: "邮箱登录、昵称和同步管理") {
                             isAccountPresented = true
                         }
                         MeRowButton(icon: "✎", title: "修改人格档案", sub: "编辑猫咪基本信息") {
-                            appModel.startOnboarding()
+                            isEditProfilePresented = true
                         }
                         MeRowButton(icon: "♡", title: "管理猫咪心声", sub: "查看和管理所有心声") {
-                            appModel.noticeMessage = "管理猫咪心声即将支持。"
+                            isManageVoicesPresented = true
                         }
                     }
                     .padding(.horizontal, 20)
@@ -908,14 +1645,20 @@ private struct MeView: View {
             )
         }
         .navigationBarBackButtonHidden(true)
-        .sheet(isPresented: $isPublishSheetPresented) {
+        .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
                 .environmentObject(appModel)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: $isAccountPresented) {
             AccountCenterView()
+                .environmentObject(appModel)
+        }
+        .navigationDestination(isPresented: $isEditProfilePresented) {
+            EditProfileView()
+                .environmentObject(appModel)
+        }
+        .navigationDestination(isPresented: $isManageVoicesPresented) {
+            ManageVoicesView(isPublishSheetPresented: $isPublishSheetPresented)
                 .environmentObject(appModel)
         }
     }
@@ -976,6 +1719,7 @@ private struct MeSummaryCard: View {
 
 private struct CloudMemoryPanel: View {
     @EnvironmentObject private var appModel: NekoAppModel
+    @State private var busyAction: String?
     let onAccountCenter: () -> Void
 
     var body: some View {
@@ -1016,27 +1760,35 @@ private struct CloudMemoryPanel: View {
 
                     HStack(spacing: 8) {
                         Button {
-                            appModel.noticeMessage = "云端同步已自动开启。"
+                            runCloudAction("save") {
+                                let summary = try await appModel.saveCurrentStateToCloud()
+                                appModel.noticeMessage = "已保存到云端 · \(summary.voiceCount) 条心声"
+                            }
                         } label: {
-                            Text("保存到云端")
+                            Text(busyAction == "save" ? "保存中" : "保存到云端")
                                 .frame(maxWidth: .infinity)
                         }
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white)
                         .padding(.vertical, 10)
                         .background(NekoTheme.primaryGradient, in: Capsule())
+                        .disabled(busyAction != nil)
                         .buttonStyle(.plain)
 
                         Button {
-                            appModel.noticeMessage = "已检查云端记忆。"
+                            runCloudAction("restore") {
+                                let summary = try await appModel.restoreFromCloud()
+                                appModel.noticeMessage = "已恢复云端记忆 · \(summary.voiceCount) 条心声"
+                            }
                         } label: {
-                            Text("从云端恢复")
+                            Text(busyAction == "restore" ? "恢复中" : "从云端恢复")
                                 .frame(maxWidth: .infinity)
                         }
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(NekoTheme.ink)
                         .padding(.vertical, 10)
                         .background(Color.white.opacity(0.90), in: Capsule())
+                        .disabled(busyAction != nil)
                         .buttonStyle(.plain)
                     }
                     .padding(.top, 8)
@@ -1068,6 +1820,19 @@ private struct CloudMemoryPanel: View {
         }
         .frame(maxWidth: .infinity)
     }
+
+    private func runCloudAction(_ action: String, task: @escaping () async throws -> Void) {
+        guard busyAction == nil else { return }
+        busyAction = action
+        Task {
+            do {
+                try await task()
+            } catch {
+                appModel.errorMessage = error.localizedDescription.isEmpty ? "云端操作失败，请稍后再试。" : error.localizedDescription
+            }
+            busyAction = nil
+        }
+    }
 }
 
 private struct CloudMemoryTitle: View {
@@ -1094,10 +1859,10 @@ private struct MeRowButton: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Text(icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(NekoTheme.soulViolet)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(NekoTheme.menuIcon)
                     .frame(width: 40, height: 40)
-                    .background(NekoTheme.tintGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(NekoTheme.menuIconGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
@@ -1127,107 +1892,1106 @@ private struct MeRowButton: View {
     }
 }
 
+private struct AppBackCircleButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(NekoTheme.soulViolet)
+                .frame(width: 36, height: 36)
+                .background(Color.white.opacity(0.82), in: Circle())
+                .shadow(color: NekoTheme.soulViolet.opacity(0.14), radius: 14, x: 0, y: 6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct AccountCenterView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appModel: NekoAppModel
+    @State private var summary: NekoAccountSummary?
+    @State private var displayName = ""
+    @State private var busyAction: String? = "load"
+
+    var body: some View {
+        ZStack {
+            NekoBackground()
+
+            if busyAction == "load" && summary == nil {
+                Text("正在读取账号信息…")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(NekoTheme.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if appModel.session == nil {
+                AccountNeedLoginView()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        AccountTopBar(title: "账号中心") {
+                            dismiss()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 52)
+
+                        accountHero
+                            .padding(.horizontal, 20)
+                            .padding(.top, 20)
+
+                        nicknameCard
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+
+                        cloudDataCard
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+
+                        Button {
+                            runAccountAction("signout") {
+                                appModel.signOut()
+                                dismiss()
+                            }
+                        } label: {
+                            Text(busyAction == "signout" ? "退出中…" : "退出登录")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(NekoTheme.muted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.white.opacity(0.85), in: Capsule())
+                                .shadow(color: NekoTheme.soulViolet.opacity(0.12), radius: 18, x: 0, y: 8)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+
+                        Spacer(minLength: 40)
+                    }
+                    .padding(.bottom, 34)
+                }
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .task {
+            await reload()
+        }
+    }
+
+    private var accountHero: some View {
+        NekoGlassCard(cornerRadius: 26, tint: true) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 16) {
+                    CatAvatarView(localImage: nil, remoteURL: appModel.catProfile?.avatarURL, size: 68)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(summary?.profile.displayName?.nonEmpty ?? "NEKO 用户")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(NekoTheme.ink)
+                            .lineLimit(1)
+                        Text(appModel.session?.user.email ?? summary?.profile.email ?? "未登录")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(NekoTheme.muted)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 8) {
+                    AccountStatCard(label: "猫咪档案", value: summary?.catCount ?? 0)
+                    AccountStatCard(label: "云端心声", value: summary?.voiceCount ?? appModel.voices.count)
+                }
+            }
+            .padding(20)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var nicknameCard: some View {
+        AccountSectionCard {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("昵称")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(3.2)
+                    .foregroundStyle(NekoTheme.muted)
+
+                TextField("NEKO 用户", text: clippedDisplayName)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(NekoTheme.ink)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 13)
+                    .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.top, 9)
+
+                Button {
+                    runAccountAction("saveName") {
+                        let profile = try await appModel.updateDisplayName(displayName)
+                        summary = NekoAccountSummary(
+                            profile: profile,
+                            catCount: summary?.catCount ?? 0,
+                            voiceCount: summary?.voiceCount ?? appModel.voices.count
+                        )
+                        displayName = profile.displayName ?? ""
+                        appModel.noticeMessage = "昵称已更新"
+                    }
+                } label: {
+                    Text(busyAction == "saveName" ? "保存中…" : "保存昵称")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(NekoTheme.primaryGradient, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(busyAction != nil)
+                .padding(.top, 12)
+            }
+        }
+    }
+
+    private var cloudDataCard: some View {
+        AccountSectionCard {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("云端数据")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(3.2)
+                    .foregroundStyle(NekoTheme.muted)
+                Text("把当前设备上的猫咪档案和心声保存到 Supabase，或从云端恢复到本机。")
+                    .font(.system(size: 11.5, weight: .regular))
+                    .foregroundStyle(NekoTheme.ink.opacity(0.75))
+                    .lineSpacing(4)
+                    .padding(.top, 9)
+
+                HStack(spacing: 8) {
+                    Button {
+                        runAccountAction("saveCloud") {
+                            let next = try await appModel.saveCurrentStateToCloud()
+                            summary = next
+                            appModel.noticeMessage = "已保存到云端 · \(next.voiceCount) 条心声"
+                        }
+                    } label: {
+                        Text(busyAction == "saveCloud" ? "保存中" : "保存云端")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(NekoTheme.primaryGradient, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busyAction != nil)
+
+                    Button {
+                        runAccountAction("restoreCloud") {
+                            let next = try await appModel.restoreFromCloud()
+                            summary = next
+                            appModel.noticeMessage = "已恢复 · \(next.voiceCount) 条心声"
+                        }
+                    } label: {
+                        Text(busyAction == "restoreCloud" ? "恢复中" : "恢复本机")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(NekoTheme.ink)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(Color.white.opacity(0.90), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busyAction != nil)
+                }
+                .padding(.top, 13)
+            }
+        }
+    }
+
+    private var clippedDisplayName: Binding<String> {
+        Binding(
+            get: { displayName },
+            set: { displayName = String($0.prefix(40)) }
+        )
+    }
+
+    @MainActor
+    private func reload() async {
+        busyAction = "load"
+        do {
+            let next = try await appModel.loadAccountSummary()
+            summary = next
+            displayName = next.profile.displayName ?? ""
+        } catch {
+            appModel.errorMessage = "账号信息加载失败"
+        }
+        busyAction = nil
+    }
+
+    private func runAccountAction(_ action: String, task: @escaping () async throws -> Void) {
+        guard busyAction == nil else { return }
+        busyAction = action
+        Task {
+            do {
+                try await task()
+            } catch {
+                appModel.errorMessage = error.localizedDescription.isEmpty ? "账号操作失败，请稍后再试。" : error.localizedDescription
+            }
+            busyAction = nil
+        }
+    }
+}
+
+private struct AccountTopBar: View {
+    let title: String
+    let back: () -> Void
+
+    var body: some View {
+        HStack {
+            AppBackCircleButton(action: back)
+            Spacer()
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(NekoTheme.ink)
+            Spacer()
+            Color.clear.frame(width: 36, height: 36)
+        }
+    }
+}
+
+private struct AccountNeedLoginView: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("需要先登录")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(NekoTheme.ink)
+            Text("登录后才能管理账号和云端数据。")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(NekoTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(22)
+        .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: NekoTheme.soulViolet.opacity(0.15), radius: 24, x: 0, y: 10)
+        .padding(28)
+    }
+}
+
+private struct AccountStatCard: View {
+    let label: String
+    let value: Int
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("\(value)")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(NekoTheme.ink)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .tracking(2)
+                .foregroundStyle(NekoTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.70), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+private struct AccountSectionCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.80), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.70), lineWidth: 1)
+            }
+            .shadow(color: NekoTheme.soulViolet.opacity(0.13), radius: 22, x: 0, y: 10)
+    }
+}
+
+private struct EditProfileView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: NekoAppModel
+    @State private var name = ""
+    @State private var gender: CatGender = .male
+    @State private var ageStage: CatAgeStage = .young
+    @State private var avatarImageData: Data?
     @State private var selectedAvatarItem: PhotosPickerItem?
+    @State private var didHydrate = false
+    @State private var busyAction: String?
+
+    private var avatarPreview: UIImage? {
+        avatarImageData.flatMap(UIImage.init(data:))
+    }
 
     var body: some View {
         ZStack {
             NekoBackground()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(NekoTheme.soulViolet)
-                                .frame(width: 36, height: 36)
-                                .background(Color.white.opacity(0.82), in: Circle())
-                                .shadow(color: NekoTheme.soulViolet.opacity(0.14), radius: 14, x: 0, y: 6)
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        Text("账号与云端数据")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(NekoTheme.ink)
-
-                        Spacer()
-
-                        Color.clear.frame(width: 36, height: 36)
+                VStack(spacing: 0) {
+                    AccountTopBar(title: "修改人格档案") {
+                        dismiss()
                     }
+                    .padding(.horizontal, 24)
                     .padding(.top, 52)
 
-                    NekoGlassCard(cornerRadius: 24) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("NEKO ACCOUNT")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(4)
-                                .foregroundStyle(NekoTheme.soulViolet)
+                    avatarEditor
+                        .padding(.top, 22)
 
-                            Text(appModel.session?.user.email ?? "未登录")
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(NekoTheme.ink)
-
-                            PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
-                                Label("更新猫咪头像", systemImage: "photo")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(NekoSecondaryButtonStyle())
-
-                            Button {
-                                appModel.startOnboarding()
-                            } label: {
-                                Label("重新创建档案", systemImage: "sparkles")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(NekoSecondaryButtonStyle())
-
-                            Button("退出登录") {
-                                appModel.signOut()
-                            }
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(NekoTheme.muted)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 6)
+                    VStack(spacing: 10) {
+                        EditFieldRow(label: "猫咪昵称", text: clippedName)
+                        EditChoiceRow(label: "性别", options: CatGender.allCases.map(\.rawValue), value: gender.rawValue) { value in
+                            if let next = CatGender(rawValue: value) { gender = next }
                         }
-                        .padding(16)
+                        EditChoiceRow(label: "年龄阶段", options: CatAgeStage.allCases.map(\.rawValue), value: ageStage.rawValue, compact: true) { value in
+                            if let next = CatAgeStage(rawValue: value) { ageStage = next }
+                        }
+                        personaLockCard
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
 
-                    Text("邮箱会作为账号唯一标识。登录后，猫咪档案、人格和心声会只绑定到当前用户。")
-                        .font(.system(size: 11.5))
-                        .lineSpacing(4)
-                        .foregroundStyle(NekoTheme.muted)
-                        .padding(.horizontal, 6)
+                    HStack(spacing: 10) {
+                        Button {
+                            saveProfile(restart: false)
+                        } label: {
+                            Text(busyAction == "save" ? "保存中" : "保存修改")
+                                .font(.system(size: 12.5, weight: .regular))
+                                .foregroundStyle(NekoTheme.ink)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.white.opacity(0.85), in: Capsule())
+                                .shadow(color: NekoTheme.soulViolet.opacity(0.12), radius: 18, x: 0, y: 8)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(busyAction != nil)
 
-                    Spacer(minLength: 32)
+                        Button {
+                            saveProfile(restart: true)
+                        } label: {
+                            Text(busyAction == "restart" ? "保存中" : "保存并重新测试")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(NekoTheme.primaryGradient, in: Capsule())
+                                .shadow(color: NekoTheme.soulViolet.opacity(0.20), radius: 18, x: 0, y: 9)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(busyAction != nil)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+                    .padding(.bottom, 34)
                 }
-                .padding(.horizontal, 24)
             }
         }
         .navigationBarBackButtonHidden(true)
+        .onAppear {
+            hydrateFromProfile()
+        }
+        .onChange(of: appModel.catProfile) { _, _ in hydrateFromProfile(force: true) }
         .onChange(of: selectedAvatarItem) { _, item in
-            Task { await uploadAvatar(from: item) }
+            Task { await loadAvatar(from: item) }
         }
     }
 
     @MainActor
-    private func uploadAvatar(from item: PhotosPickerItem?) async {
-        guard let item else { return }
+    private var avatarEditor: some View {
+        VStack(spacing: 12) {
+            PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
+                ZStack(alignment: .bottomTrailing) {
+                    CatAvatarView(localImage: avatarPreview, remoteURL: appModel.catProfile?.avatarURL, size: 92)
 
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NekoTheme.menuIcon)
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.94), in: Circle())
+                        .shadow(color: NekoTheme.soulViolet.opacity(0.16), radius: 12, x: 0, y: 5)
+                        .offset(x: 1, y: 1)
+                }
+            }
+            .buttonStyle(.plain)
+
+            PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
+                Text("更换照片 · ≤ 10MB")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .tracking(2.3)
+                    .foregroundStyle(NekoTheme.menuIcon)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var personaLockCard: some View {
+        EditCard {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("人格类型")
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(2)
+                        .foregroundStyle(NekoTheme.muted)
+                    Spacer()
+                    Text("不可编辑")
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(1.5)
+                        .foregroundStyle(NekoTheme.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color(red: 0.978, green: 0.946, blue: 0.986), in: Capsule())
+                }
+
+                HStack(spacing: 10) {
+                    Text(appModel.persona?.type ?? "高冷观察者")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(NekoTheme.ink)
+                    Text(appModel.persona?.mbti ?? "INTJ-A")
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(1.5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(NekoTheme.primaryGradient, in: Capsule())
+                }
+                .padding(.top, 9)
+
+                Text("基于上传的资料生成 · 重新测试可更新")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(NekoTheme.muted)
+                    .lineSpacing(3)
+                    .padding(.top, 7)
+            }
+        }
+    }
+
+    private var clippedName: Binding<String> {
+        Binding(
+            get: { name },
+            set: { name = String($0.prefix(12)) }
+        )
+    }
+
+    private func hydrateFromProfile(force: Bool = false) {
+        guard force || !didHydrate else { return }
+        guard let profile = appModel.catProfile else { return }
+        name = profile.name
+        gender = profile.gender
+        ageStage = profile.ageStage
+        didHydrate = true
+    }
+
+    @MainActor
+    private func loadAvatar(from item: PhotosPickerItem?) async {
+        guard let item else { return }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw NekoMediaError.unsupportedImage
             }
-            await appModel.uploadAvatarImageData(data)
+            guard data.count <= AppConfig.maxAvatarImageBytes else {
+                throw NekoMediaError.imageTooLarge
+            }
+            avatarImageData = data
+            appModel.noticeMessage = "照片已更新"
         } catch {
-            appModel.errorMessage = "读取照片失败，请重新选择一张图片。"
+            appModel.errorMessage = error.localizedDescription.isEmpty ? "照片读取失败" : error.localizedDescription
         }
+    }
+
+    private func saveProfile(restart: Bool) {
+        guard busyAction == nil else { return }
+        busyAction = restart ? "restart" : "save"
+        Task {
+            do {
+                if restart {
+                    try await appModel.saveProfileAndRestartOnboarding(
+                        name: name,
+                        gender: gender,
+                        ageStage: ageStage,
+                        avatarImageData: avatarImageData
+                    )
+                } else {
+                    try await appModel.updateCatProfileDetails(
+                        name: name,
+                        gender: gender,
+                        ageStage: ageStage,
+                        avatarImageData: avatarImageData
+                    )
+                    appModel.noticeMessage = "已保存修改"
+                    dismiss()
+                }
+            } catch {
+                appModel.errorMessage = error.localizedDescription.isEmpty ? "保存失败，请稍后再试。" : error.localizedDescription
+            }
+            busyAction = nil
+        }
+    }
+}
+
+private struct EditCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(0.70), lineWidth: 1)
+            }
+            .shadow(color: NekoTheme.soulViolet.opacity(0.13), radius: 22, x: 0, y: 10)
+    }
+}
+
+private struct EditFieldRow: View {
+    let label: String
+    @Binding var text: String
+
+    var body: some View {
+        EditCard {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(2)
+                    .foregroundStyle(NekoTheme.muted)
+                HStack {
+                    TextField("", text: $text)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(NekoTheme.ink)
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(NekoTheme.muted)
+                }
+            }
+        }
+    }
+}
+
+private struct EditChoiceRow: View {
+    let label: String
+    let options: [String]
+    let value: String
+    var compact = false
+    let onChange: (String) -> Void
+
+    var body: some View {
+        EditCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(2)
+                    .foregroundStyle(NekoTheme.muted)
+
+                HStack(spacing: 6) {
+                    ForEach(options, id: \.self) { option in
+                        Button {
+                            onChange(option)
+                        } label: {
+                            Text(option)
+                                .font(.system(size: compact ? 11.2 : 12, weight: .regular))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.80)
+                                .foregroundStyle(option == value ? Color.white : NekoTheme.menuIcon)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(
+                                    option == value
+                                        ? AnyShapeStyle(NekoTheme.primaryGradient)
+                                        : AnyShapeStyle(Color(red: 0.978, green: 0.946, blue: 0.986)),
+                                    in: Capsule()
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ManageVoicesView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appModel: NekoAppModel
+    @Binding var isPublishSheetPresented: Bool
+    @State private var isLoading = false
+    @State private var editMode = false
+    @State private var selectedIDs: Set<String> = []
+    @State private var confirmDelete = false
+    @State private var selectedVoice: CatVoiceResult?
+    @State private var isVoiceDetailPresented = false
+
+    private var voices: [CatVoiceResult] {
+        appModel.voices
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            NekoBackground()
+
+            VStack(spacing: 0) {
+                manageHeader
+                    .padding(.horizontal, 24)
+                    .padding(.top, 52)
+
+                if isLoading && voices.isEmpty {
+                    Spacer()
+                    ProgressView()
+                        .tint(NekoTheme.soulViolet)
+                    Text("正在读取猫咪心声…")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(NekoTheme.muted)
+                        .padding(.top, 10)
+                    Spacer()
+                } else if voices.isEmpty {
+                    ManageVoicesEmptyState {
+                        isPublishSheetPresented = true
+                    }
+                    .padding(.horizontal, 32)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(0..<2, id: \.self) { column in
+                                VStack(spacing: 12) {
+                                    ForEach(columnVoices(column), id: \.id) { voice in
+                                        ManageVoiceCard(
+                                            voice: voice,
+                                            profile: appModel.catProfile,
+                                            editMode: editMode,
+                                            selected: selectedIDs.contains(selectionID(for: voice))
+                                        ) {
+                                            if editMode {
+                                                toggle(voice)
+                                            } else {
+                                                selectedVoice = voice
+                                                isVoiceDetailPresented = true
+                                            }
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, editMode ? 110 : 28)
+                    }
+                }
+            }
+            .padding(.bottom, editMode ? 0 : 16)
+
+            if editMode {
+                deleteActionBar
+            }
+
+            if confirmDelete {
+                ConfirmSheetOverlay(
+                    title: "确定删除 \(selectedIDs.count) 条心声吗？",
+                    hint: "删除后无法恢复",
+                    confirmText: "删除",
+                    danger: true,
+                    onConfirm: deleteSelected,
+                    onCancel: { confirmDelete = false }
+                )
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .task {
+            await refreshVoices()
+        }
+        .navigationDestination(isPresented: $isVoiceDetailPresented) {
+            if let selectedVoice {
+                VoiceDetailView(
+                    voice: selectedVoice,
+                    profile: appModel.catProfile,
+                    persona: appModel.persona
+                )
+                .environmentObject(appModel)
+            } else {
+                ManageVoicesEmptyState {
+                    isPublishSheetPresented = true
+                }
+                .padding(24)
+                .background { NekoBackground() }
+            }
+        }
+    }
+
+    private var manageHeader: some View {
+        HStack {
+            if editMode {
+                Button("取消") {
+                    exitEditMode()
+                }
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(NekoTheme.menuIcon)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.80), in: Capsule())
+                .shadow(color: NekoTheme.soulViolet.opacity(0.13), radius: 14, x: 0, y: 6)
+                .buttonStyle(.plain)
+            } else {
+                AppBackCircleButton {
+                    dismiss()
+                }
+            }
+
+            Spacer()
+
+            Text(editMode ? "已选 \(selectedIDs.count) 条" : "猫咪心声")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(NekoTheme.ink)
+
+            Spacer()
+
+            if !voices.isEmpty && !editMode {
+                Button("编辑") {
+                    editMode = true
+                }
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(NekoTheme.menuIcon)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.80), in: Capsule())
+                .shadow(color: NekoTheme.soulViolet.opacity(0.13), radius: 14, x: 0, y: 6)
+                .buttonStyle(.plain)
+            } else {
+                Color.clear.frame(width: 52, height: 36)
+            }
+        }
+    }
+
+    private var deleteActionBar: some View {
+        VStack {
+            Spacer()
+            Button {
+                if selectedIDs.isEmpty {
+                    appModel.noticeMessage = "先选择要删除的心声哦"
+                } else {
+                    confirmDelete = true
+                }
+            } label: {
+                Text("删除所选 (\(selectedIDs.count))")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(red: 0.92, green: 0.43, blue: 0.36), Color(red: 0.91, green: 0.50, blue: 0.62)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule()
+                    )
+            }
+            .opacity(selectedIDs.isEmpty ? 0.50 : 1)
+            .buttonStyle(.plain)
+            .padding(8)
+            .background(Color.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            }
+            .shadow(color: NekoTheme.soulViolet.opacity(0.16), radius: 24, x: 0, y: 10)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 20)
+        }
+        .allowsHitTesting(true)
+    }
+
+    private func columnVoices(_ column: Int) -> [CatVoiceResult] {
+        voices.enumerated()
+            .filter { $0.offset % 2 == column }
+            .map(\.element)
+    }
+
+    private func selectionID(for voice: CatVoiceResult) -> String {
+        voice.cloudId ?? voice.id
+    }
+
+    private func toggle(_ voice: CatVoiceResult) {
+        let id = selectionID(for: voice)
+        if selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+        } else {
+            selectedIDs.insert(id)
+        }
+    }
+
+    private func exitEditMode() {
+        editMode = false
+        selectedIDs.removeAll()
+    }
+
+    @MainActor
+    private func refreshVoices() async {
+        guard !isLoading else { return }
+        isLoading = true
+        do {
+            _ = try await appModel.reloadVoices()
+        } catch {
+            appModel.errorMessage = "猫咪心声加载失败"
+        }
+        isLoading = false
+    }
+
+    private func deleteSelected() {
+        let ids = Array(selectedIDs)
+        confirmDelete = false
+        Task {
+            do {
+                try await appModel.deleteVoices(ids: ids)
+                appModel.noticeMessage = "已删除 \(ids.count) 条心声"
+                exitEditMode()
+            } catch {
+                appModel.errorMessage = error.localizedDescription.isEmpty ? "删除失败，请稍后再试。" : error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct ManageVoicesEmptyState: View {
+    let publish: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(NekoTheme.tintGradient)
+                    .frame(width: 120, height: 120)
+                    .shadow(color: NekoTheme.soulViolet.opacity(0.14), radius: 22, x: 0, y: 10)
+
+                CatAvatarView(localImage: nil, remoteURL: nil, size: 72)
+                    .frame(width: 120, height: 120)
+
+                Text("zzz")
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(NekoTheme.muted)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.90), in: Capsule())
+                    .offset(x: 0, y: -3)
+            }
+
+            Text("还没有猫咪心声哦")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(NekoTheme.ink)
+                .padding(.top, 24)
+
+            Text("记录一个瞬间，\n让 AI 听懂它的小心思 ✦")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(NekoTheme.muted)
+                .lineSpacing(5)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+
+            Button {
+                publish()
+            } label: {
+                Text("发布第一条心声")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 26)
+                    .padding(.vertical, 12)
+                    .background(NekoTheme.primaryGradient, in: Capsule())
+                    .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 18, x: 0, y: 9)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 24)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct ManageVoiceCard: View {
+    let voice: CatVoiceResult
+    let profile: CatProfile?
+    let editMode: Bool
+    let selected: Bool
+    let action: () -> Void
+
+    private var aspectRatio: CGFloat {
+        switch voice.aspect {
+        case "9:16":
+            return 9.0 / 16.0
+        case "3:4":
+            return 3.0 / 4.0
+        case "1:1":
+            return 1.0
+        default:
+            return 4.0 / 5.0
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                GeometryReader { proxy in
+                    ZStack(alignment: .bottomLeading) {
+                        NekoTheme.photoPlaceholderGradient
+
+                        if let url = voice.mediaURL {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: proxy.size.width, height: proxy.size.height)
+                                        .clipped()
+                                default:
+                                    avatarFallback
+                                        .frame(width: proxy.size.width, height: proxy.size.height)
+                                }
+                            }
+                        } else {
+                            avatarFallback
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        }
+
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.15), .black.opacity(0.42)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+
+                        Text("💭 \(voice.text)")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .lineSpacing(3)
+                            .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 1)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if editMode {
+                            selectionBadge
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .padding(10)
+                        }
+                    }
+                }
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .clipped()
+
+                Text(voice.time)
+                    .font(.system(size: 10.5, weight: .regular))
+                    .foregroundStyle(Color(red: 0.604, green: 0.569, blue: 0.682))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+            .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(selected ? NekoTheme.soulViolet.opacity(0.78) : Color.white.opacity(0.70), lineWidth: selected ? 1.5 : 1)
+            }
+            .shadow(color: NekoTheme.soulViolet.opacity(selected ? 0.20 : 0.11), radius: 18, x: 0, y: 8)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var avatarFallback: some View {
+        ZStack {
+            NekoTheme.photoPlaceholderGradient
+            CatAvatarView(localImage: nil, remoteURL: profile?.avatarURL, size: 64)
+        }
+    }
+
+    private var selectionBadge: some View {
+        ZStack {
+            Circle()
+                .fill(selected ? AnyShapeStyle(NekoTheme.primaryGradient) : AnyShapeStyle(Color.black.opacity(0.15)))
+                .overlay {
+                    Circle()
+                        .stroke(Color.white.opacity(0.70), lineWidth: selected ? 0 : 1)
+                }
+            Text("✓")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(selected ? Color.white : Color.clear)
+        }
+        .frame(width: 24, height: 24)
+        .shadow(color: NekoTheme.soulViolet.opacity(selected ? 0.20 : 0), radius: 8, x: 0, y: 4)
+    }
+}
+
+private struct ConfirmSheetOverlay: View {
+    let title: String
+    let hint: String
+    let confirmText: String
+    let danger: Bool
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(NekoTheme.muted.opacity(0.35))
+                    .frame(width: 40, height: 4)
+                    .padding(.top, 10)
+
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+                    .padding(.top, 18)
+
+                if !hint.isEmpty {
+                    Text(hint)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(NekoTheme.muted)
+                        .padding(.top, 6)
+                }
+
+                HStack(spacing: 10) {
+                    Button("取消", action: onCancel)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(NekoTheme.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(red: 0.968, green: 0.944, blue: 0.982), in: Capsule())
+
+                    Button(confirmText, action: onConfirm)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            danger
+                                ? AnyShapeStyle(LinearGradient(colors: [Color(red: 0.92, green: 0.43, blue: 0.36), Color(red: 0.91, green: 0.50, blue: 0.62)], startPoint: .leading, endPoint: .trailing))
+                                : AnyShapeStyle(NekoTheme.primaryGradient),
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color.white.opacity(0.95), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous))
+            .shadow(color: NekoTheme.ink.opacity(0.12), radius: 24, x: 0, y: -6)
+        }
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -2110,112 +3874,69 @@ private struct VoicePublishSheet: View {
     @State private var photoData: Data?
     @State private var photoPreviewImage: UIImage?
     @State private var scene = ""
-    @State private var generatedVoice: CatVoiceResult?
+    @State private var draftVoice: CatVoiceResult?
+    @State private var publishedVoice: CatVoiceResult?
+    @State private var step: PublishStep = .upload
+    @State private var isAnalyzing = false
     @State private var isPublishing = false
+    @State private var errorMessage: String?
+
+    private var catName: String {
+        appModel.catProfile?.name.nonEmpty ?? "猫咪"
+    }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                NekoBackground()
+        ZStack {
+            NekoBackground()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("PUBLISH VOICE")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(4.3)
-                                .foregroundStyle(NekoTheme.soulViolet)
-
-                            Text("发一条猫咪动态")
-                                .font(.system(size: 28, weight: .light))
-                                .foregroundStyle(NekoTheme.ink)
-
-                            Text("选一张当下照片，NEKO 会生成猫咪第一人称心声，并保存到云端动态。")
-                                .font(.system(size: 12.5))
-                                .foregroundStyle(NekoTheme.muted)
-                                .lineSpacing(4)
-                        }
-
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .fill(NekoTheme.tintGradient)
-
-                                if let photoPreviewImage {
-                                    Image(uiImage: photoPreviewImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                } else {
-                                    VStack(spacing: 10) {
-                                        Image(systemName: "photo.badge.plus")
-                                            .font(.system(size: 38, weight: .semibold))
-                                            .foregroundStyle(NekoTheme.soulViolet)
-                                        Text("选择动态照片")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(NekoTheme.ink)
-                                        Text("图片不超过 10MB，会用于生成猫咪心声")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(NekoTheme.muted)
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 260)
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .stroke(.white.opacity(0.72), lineWidth: 1)
-                            }
-                            .shadow(color: NekoTheme.soulViolet.opacity(0.16), radius: 28, x: 0, y: 14)
-                        }
-                        .disabled(isPublishing)
-
-                        NekoGlassCard(cornerRadius: 24) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                FieldTitle("补充场景")
-                                TextField("例如：它趴在窗边看风", text: $scene, axis: .vertical)
-                                    .lineLimit(3, reservesSpace: true)
-                                    .textInputAutocapitalization(.never)
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(NekoTheme.ink)
-                                    .padding(16)
-                                    .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            }
-                            .padding(16)
-                        }
-
-                        Button {
-                            Task { await publishVoice() }
-                        } label: {
-                            HStack(spacing: 8) {
-                                if isPublishing {
-                                    ProgressView()
-                                        .tint(.white)
-                                }
-                                Label(isPublishing ? "生成并发布中…" : "生成并发布", systemImage: "sparkles")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(NekoPrimaryButtonStyle())
-                        .disabled(isPublishing || photoData == nil)
-
-                        if let generatedVoice {
-                            VoicePreviewCard(voice: generatedVoice)
-                        }
-                    }
-                    .padding(24)
-                    .padding(.bottom, 32)
-                }
+            switch step {
+            case .upload:
+                PublishUploadScreen(
+                    selectedPhotoItem: $selectedPhotoItem,
+                    photoPreviewImage: photoPreviewImage,
+                    profileAvatarURL: appModel.catProfile?.avatarURL,
+                    canContinue: photoData != nil,
+                    isDisabled: isAnalyzing || isPublishing,
+                    onBack: { dismiss() },
+                    onNext: { step = .background }
+                )
+            case .background:
+                PublishBackgroundScreen(
+                    scene: sceneBinding,
+                    isAnalyzing: isAnalyzing,
+                    onBack: { step = .upload },
+                    onAnalyze: { Task { await generatePreview() } }
+                )
+            case .preview:
+                PublishPreviewScreen(
+                    catName: catName,
+                    photoPreviewImage: photoPreviewImage,
+                    draftVoice: draftVoice,
+                    isReanalyzing: isAnalyzing,
+                    isPublishing: isPublishing,
+                    onBack: { step = .background },
+                    onReanalyze: { Task { await generatePreview(stayOnPreview: true) } },
+                    onPublish: { Task { await publishDraft() } }
+                )
+            case .success:
+                PublishSuccessScreen(
+                    catName: catName,
+                    photoPreviewImage: photoPreviewImage,
+                    voice: publishedVoice ?? draftVoice,
+                    onReturnHome: { dismiss() }
+                )
             }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(generatedVoice == nil ? "关闭" : "完成") {
-                        dismiss()
-                    }
-                    .foregroundStyle(NekoTheme.soulViolet)
-                }
+
+            if let loadingText {
+                PublishLoadingOverlay(title: loadingText.title, hint: loadingText.hint)
+            }
+
+            if let errorMessage {
+                PublishErrorOverlay(
+                    title: "发布失败了喵",
+                    hint: errorMessage,
+                    onCancel: { self.errorMessage = nil }
+                )
             }
         }
         .preferredColorScheme(.light)
@@ -2232,19 +3953,52 @@ private struct VoicePublishSheet: View {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw NekoMediaError.unsupportedImage
             }
-            let prepared = try MediaUploadProcessor.prepareAvatarImage(from: data)
+            guard data.count <= AppConfig.maxVoiceImageBytes else {
+                throw NekoMediaError.imageTooLarge
+            }
+            let prepared = try MediaUploadProcessor.prepareVoiceImage(from: data)
             photoData = prepared.data
             photoPreviewImage = UIImage(data: prepared.data)
-            generatedVoice = nil
+            draftVoice = nil
+            publishedVoice = nil
+            step = .upload
         } catch {
-            appModel.errorMessage = userFacingMessage(error)
+            errorMessage = userFacingMessage(error)
         }
     }
 
     @MainActor
-    private func publishVoice() async {
+    private func generatePreview(stayOnPreview: Bool = false) async {
         guard let photoData else {
-            appModel.errorMessage = "先选择一张猫咪动态照片吧。"
+            errorMessage = "先上传一张猫咪照片吧。"
+            return
+        }
+        guard !isAnalyzing else { return }
+
+        isAnalyzing = true
+        defer { isAnalyzing = false }
+
+        do {
+            let voice = try await appModel.generateCatVoicePreview(imageData: photoData, scene: scene)
+            draftVoice = voice
+            if !stayOnPreview {
+                step = .preview
+            }
+        } catch {
+            errorMessage = userFacingMessage(error)
+        }
+    }
+
+    @MainActor
+    private func publishDraft() async {
+        guard let photoData else {
+            errorMessage = "先上传一张猫咪照片吧。"
+            step = .upload
+            return
+        }
+        guard let draftVoice else {
+            errorMessage = "先让 AI 识别出一条猫咪心声吧。"
+            step = .background
             return
         }
         guard !isPublishing else { return }
@@ -2253,12 +4007,30 @@ private struct VoicePublishSheet: View {
         defer { isPublishing = false }
 
         do {
-            let voice = try await appModel.publishCatVoice(imageData: photoData, scene: scene)
-            generatedVoice = voice
-            latestPublishedVoice = voice
+            let saved = try await appModel.saveGeneratedCatVoice(draftVoice, imageData: photoData)
+            publishedVoice = saved
+            latestPublishedVoice = saved
+            step = .success
         } catch {
-            appModel.errorMessage = userFacingMessage(error)
+            errorMessage = userFacingMessage(error)
         }
+    }
+
+    private var sceneBinding: Binding<String> {
+        Binding(
+            get: { scene },
+            set: { scene = String($0.prefix(120)) }
+        )
+    }
+
+    private var loadingText: (title: String, hint: String)? {
+        if isPublishing {
+            return ("正在发布猫咪心声…", "PUBLISHING")
+        }
+        if isAnalyzing {
+            return (step == .preview ? "AI 正在重新识别…" : "AI 正在识别它的小心思…", step == .preview ? "RE · ANALYZING" : "ANALYZING")
+        }
+        return nil
     }
 
     private func userFacingMessage(_ error: Error) -> String {
@@ -2266,6 +4038,939 @@ private struct VoicePublishSheet: View {
             return description
         }
         return "动态发布失败，请稍后再试。"
+    }
+}
+
+private enum PublishStep {
+    case upload
+    case background
+    case preview
+    case success
+}
+
+private enum PublishWebStyle {
+    static let step = Color(red: 0.535, green: 0.374, blue: 0.635)
+    static let uploadPink = Color(red: 0.980, green: 0.910, blue: 0.962)
+    static let uploadCream = Color(red: 0.985, green: 0.902, blue: 0.925)
+    static let textarea = Color(red: 0.987, green: 0.965, blue: 0.992)
+    static let shadow = NekoTheme.soulViolet.opacity(0.18)
+    static let photoStroke = Color(red: 0.545, green: 0.345, blue: 0.615)
+
+    static let uploadGradient = LinearGradient(
+        colors: [uploadPink, uploadCream],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    static let warmPhotoGradient = LinearGradient(
+        colors: [
+            Color(red: 0.988, green: 0.964, blue: 0.878),
+            Color(red: 0.958, green: 0.893, blue: 0.722),
+            Color(red: 0.914, green: 0.818, blue: 0.620),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let insightGradient = LinearGradient(
+        colors: [
+            Color(red: 0.988, green: 0.942, blue: 0.978).opacity(0.90),
+            Color(red: 0.958, green: 0.918, blue: 0.996).opacity(0.86),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+private struct PublishUploadScreen: View {
+    @Binding var selectedPhotoItem: PhotosPickerItem?
+    let photoPreviewImage: UIImage?
+    let profileAvatarURL: URL?
+    let canContinue: Bool
+    let isDisabled: Bool
+    let onBack: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PublishTopBar(stepText: "STEP 01 / 03", onBack: onBack) {
+                            Color.clear.frame(width: 36, height: 36)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("记录一个瞬间")
+                                .font(.system(size: 24, weight: .light))
+                                .foregroundStyle(NekoTheme.ink)
+                            Text("上传一张照片，AI 帮你读懂它的小心思 · 不超过 10MB")
+                                .font(.system(size: 12.5, weight: .regular))
+                                .foregroundStyle(NekoTheme.muted)
+                                .lineSpacing(4)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 24)
+
+                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                            PublishUploadPhotoCard(photoPreviewImage: photoPreviewImage, profileAvatarURL: profileAvatarURL)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isDisabled)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 28)
+
+                        PublishInfoCard(title: "推荐照片") {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
+                                PublishTipItem(icon: "😺", text: "猫咪正脸")
+                                PublishTipItem(icon: "🐾", text: "有趣行为")
+                                PublishTipItem(icon: "👀", text: "明显表情")
+                                PublishTipItem(icon: "💗", text: "与主人互动")
+                            }
+                            Text("自然的瞬间，往往最能体现它当时的小心思")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(PublishWebStyle.step)
+                                .lineSpacing(4)
+                                .padding(.top, 4)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+
+                        PublishInfoCard(title: "AI 会做什么？") {
+                            Text("AI 将结合这张照片与猫咪人格档案，来生成一条专属于它的猫咪心声。")
+                                .font(.system(size: 11.5, weight: .regular))
+                                .foregroundStyle(NekoTheme.ink.opacity(0.85))
+                                .lineSpacing(5)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                    }
+                    .frame(width: proxy.size.width, alignment: .leading)
+                    .padding(.top, 52)
+                    .padding(.bottom, 124)
+                }
+
+                PublishBottomCTA(title: "下一步", isEnabled: canContinue, isBusy: false, action: onNext)
+                    .frame(width: proxy.size.width)
+            }
+        }
+    }
+}
+
+private struct PublishBackgroundScreen: View {
+    @Binding var scene: String
+    let isAnalyzing: Bool
+    let onBack: () -> Void
+    let onAnalyze: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PublishTopBar(stepText: "STEP 02 / 03", onBack: onBack) {
+                            Button(action: onAnalyze) {
+                                Text("跳过")
+                                    .font(.system(size: 11, weight: .regular))
+                                    .tracking(2.2)
+                                    .foregroundStyle(PublishWebStyle.step)
+                                    .padding(.horizontal, 14)
+                                    .frame(height: 36)
+                                    .background(.white.opacity(0.70), in: Capsule())
+                                    .shadow(color: PublishWebStyle.shadow, radius: 14, x: 0, y: 7)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isAnalyzing)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("发生了什么呢？")
+                                .font(.system(size: 22, weight: .light))
+                                .foregroundStyle(NekoTheme.ink)
+                            Text("补充背景信息，可以让 AI 更懂它哦 （可选）")
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(NekoTheme.muted)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 24)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            PublishSectionTitle("文字描述")
+                            ZStack(alignment: .topLeading) {
+                                if scene.isEmpty {
+                                    Text("例如：我刚打开猫条，它就跑过来了")
+                                        .font(.system(size: 12.5, weight: .regular))
+                                        .foregroundStyle(NekoTheme.mutedLight)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 13)
+                                }
+                                TextEditor(text: $scene)
+                                    .font(.system(size: 12.5, weight: .regular))
+                                    .foregroundStyle(NekoTheme.ink)
+                                    .lineSpacing(4)
+                                    .scrollContentBackground(.hidden)
+                                    .padding(8)
+                                    .frame(minHeight: 110)
+                                    .background(PublishWebStyle.textarea, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                            Text("\(scene.count) / 120")
+                                .font(.system(size: 9.5, weight: .regular))
+                                .foregroundStyle(PublishWebStyle.step.opacity(0.82))
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .padding(16)
+                        .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(.white.opacity(0.70), lineWidth: 1)
+                        }
+                        .shadow(color: PublishWebStyle.shadow, radius: 22, x: 0, y: 12)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                    }
+                    .frame(width: proxy.size.width, alignment: .leading)
+                    .padding(.top, 52)
+                    .padding(.bottom, 124)
+                }
+
+                PublishBottomCTA(title: "下一步", isEnabled: !isAnalyzing, isBusy: isAnalyzing, action: onAnalyze)
+                    .frame(width: proxy.size.width)
+            }
+        }
+    }
+}
+
+private struct PublishPreviewScreen: View {
+    let catName: String
+    let photoPreviewImage: UIImage?
+    let draftVoice: CatVoiceResult?
+    let isReanalyzing: Bool
+    let isPublishing: Bool
+    let onBack: () -> Void
+    let onReanalyze: () -> Void
+    let onPublish: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    PublishTopBar(stepText: "STEP 03 / 03", onBack: onBack) {
+                        Color.clear.frame(width: 36, height: 36)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Text("✦")
+                                .foregroundStyle(NekoTheme.soulViolet)
+                            Text("AI 已 读 懂 它 的 心 声")
+                        }
+                        .font(.system(size: 9.5, weight: .regular))
+                        .tracking(3.0)
+                        .foregroundStyle(PublishWebStyle.step)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(.white.opacity(0.75), in: Capsule())
+
+                        Text("这是它想对你说的话")
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(NekoTheme.ink)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 20)
+
+                    PublishPreviewStageCard(catName: catName, photoPreviewImage: photoPreviewImage, voice: draftVoice)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+
+                    HStack(spacing: 10) {
+                        Button("重新识别", action: onReanalyze)
+                            .buttonStyle(PublishSecondaryPillStyle())
+                            .disabled(isReanalyzing || isPublishing)
+
+                        Button(action: onPublish) {
+                            HStack(spacing: 8) {
+                                if isPublishing {
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                                Text(isPublishing ? "发布中…" : "发布心声")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PublishPrimaryPillStyle())
+                        .disabled(isReanalyzing || isPublishing || draftVoice == nil)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                }
+                .frame(width: proxy.size.width, alignment: .leading)
+                .padding(.top, 52)
+                .padding(.bottom, 38)
+            }
+        }
+    }
+}
+
+private struct PublishSuccessScreen: View {
+    let catName: String
+    let photoPreviewImage: UIImage?
+    let voice: CatVoiceResult?
+    let onReturnHome: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                Circle()
+                    .fill(NekoTheme.soulPink.opacity(0.32))
+                    .frame(width: 224, height: 224)
+                    .blur(radius: 44)
+                    .offset(x: -130, y: -265)
+                Circle()
+                    .fill(NekoTheme.soulViolet.opacity(0.24))
+                    .frame(width: 260, height: 260)
+                    .blur(radius: 54)
+                    .offset(x: 160, y: -30)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        VStack(spacing: 9) {
+                            Text("A VOICE IS BORN")
+                                .font(.system(size: 10, weight: .regular))
+                                .tracking(4.5)
+                                .foregroundStyle(Color(red: 0.665, green: 0.420, blue: 0.635))
+                            Text("它，第一次开口了")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(NekoTheme.ink)
+                            Text("\(catName)的声音，\n刚刚从猫咪世界传了过来")
+                                .font(.system(size: 12.5, weight: .regular))
+                                .foregroundStyle(PublishWebStyle.step)
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(5)
+                        }
+                        .padding(.horizontal, 22)
+
+                        PublishSuccessVoiceCard(catName: catName, photoPreviewImage: photoPreviewImage, voice: voice)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 28)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                Text("✦")
+                                    .foregroundStyle(NekoTheme.soulViolet)
+                                Text("AI 发 现")
+                                    .font(.system(size: 10, weight: .regular))
+                                    .tracking(4.0)
+                                    .foregroundStyle(PublishWebStyle.step)
+                            }
+
+                            Text(voice?.analysis?.nonEmpty ?? "暂未获得\(catName)的 AI 心声解析。")
+                                .font(.system(size: 12.5, weight: .regular))
+                                .foregroundStyle(NekoTheme.ink.opacity(0.86))
+                                .lineSpacing(6)
+                        }
+                        .padding(16)
+                        .background(PublishWebStyle.insightGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(.white.opacity(0.70), lineWidth: 1)
+                        }
+                        .shadow(color: PublishWebStyle.shadow, radius: 22, x: 0, y: 12)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+
+                        Text("把这个来自猫咪世界的故事\n分享给你在乎的人")
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundStyle(PublishWebStyle.step)
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(5)
+                            .padding(.top, 20)
+                    }
+                    .frame(width: proxy.size.width)
+                    .padding(.top, 64)
+                    .padding(.bottom, 114)
+                }
+
+                PublishBottomCTA(title: "返回首页", isEnabled: true, isBusy: false, action: onReturnHome)
+                    .frame(width: proxy.size.width)
+            }
+        }
+    }
+}
+
+private struct PublishTopBar<Trailing: View>: View {
+    let stepText: String
+    let onBack: () -> Void
+    private let trailing: Trailing
+
+    init(stepText: String, onBack: @escaping () -> Void, @ViewBuilder trailing: () -> Trailing) {
+        self.stepText = stepText
+        self.onBack = onBack
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack {
+            PublishBackButton(onBack: onBack)
+            Spacer()
+            Text(stepText)
+                .font(.system(size: 10, weight: .regular))
+                .tracking(4.0)
+                .foregroundStyle(PublishWebStyle.step)
+            Spacer()
+            trailing
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+    }
+}
+
+private struct PublishBackButton: View {
+    let onBack: () -> Void
+
+    var body: some View {
+        Button(action: onBack) {
+            PublishChevronLeftIcon()
+                .stroke(NekoTheme.soulViolet, style: StrokeStyle(lineWidth: 2.25, lineCap: .round, lineJoin: .round))
+                .frame(width: 16, height: 16)
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.80), in: Circle())
+                .shadow(color: PublishWebStyle.shadow, radius: 14, x: 0, y: 7)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PublishUploadPhotoCard: View {
+    let photoPreviewImage: UIImage?
+    let profileAvatarURL: URL?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(PublishWebStyle.uploadGradient)
+
+            if let photoPreviewImage {
+                VStack(spacing: 12) {
+                    Image(uiImage: photoPreviewImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 188)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                    HStack(spacing: 6) {
+                        Text("✓ 已上传")
+                            .foregroundStyle(Color(red: 0.735, green: 0.408, blue: 0.685))
+                        Text("· 点击可重新选择")
+                            .foregroundStyle(NekoTheme.muted)
+                    }
+                    .font(.system(size: 12, weight: .regular))
+                }
+                .padding(20)
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.40))
+                        .frame(width: 128, height: 128)
+                        .blur(radius: 32)
+                        .offset(x: 120, y: -90)
+                    Circle()
+                        .fill(NekoTheme.soulPink.opacity(0.32))
+                        .frame(width: 116, height: 116)
+                        .blur(radius: 32)
+                        .offset(x: -118, y: 94)
+
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(NekoTheme.soulPink.opacity(0.42))
+                                .frame(width: 106, height: 106)
+                                .blur(radius: 24)
+                            CatAvatarView(localImage: nil, remoteURL: profileAvatarURL, size: 80)
+                        }
+
+                        VStack(spacing: 8) {
+                            ZStack {
+                                Circle()
+                                    .fill(.white.opacity(0.86))
+                                    .frame(width: 40, height: 40)
+                                    .shadow(color: PublishWebStyle.shadow, radius: 14, x: 0, y: 7)
+                                PublishPhotoIcon()
+                                    .stroke(PublishWebStyle.photoStroke, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 20, height: 20)
+                            }
+                            Text("点击上传照片")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(NekoTheme.ink)
+                            Text("支持 JPG / PNG")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(NekoTheme.muted)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.70), lineWidth: 1)
+        }
+        .shadow(color: PublishWebStyle.shadow, radius: 28, x: 0, y: 14)
+    }
+}
+
+private struct PublishInfoCard<Content: View>: View {
+    let title: String
+    private let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            PublishSectionTitle(title)
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.70), lineWidth: 1)
+        }
+    }
+}
+
+private struct PublishSectionTitle: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .regular))
+            .tracking(3.5)
+            .foregroundStyle(PublishWebStyle.step)
+    }
+}
+
+private struct PublishTipItem: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(icon)
+                .font(.system(size: 13))
+            Text(text)
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(NekoTheme.ink)
+        }
+    }
+}
+
+private struct PublishBottomCTA: View {
+    let title: String
+    let isEnabled: Bool
+    let isBusy: Bool
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [.clear, NekoTheme.lilacBottom.opacity(0.78)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 18)
+
+            Button(action: action) {
+                HStack(spacing: 8) {
+                    if isBusy {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(isBusy ? "识别中…" : title)
+                }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(NekoTheme.primaryGradient, in: Capsule())
+                .shadow(color: isEnabled ? NekoTheme.soulViolet.opacity(0.30) : .clear, radius: 22, x: 0, y: 10)
+                .opacity(isEnabled ? 1 : 0.40)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 10)
+            .background(NekoTheme.lilacBottom.opacity(0.78))
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+private struct PublishPreviewStageCard: View {
+    let catName: String
+    let photoPreviewImage: UIImage?
+    let voice: CatVoiceResult?
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                PublishWebStyle.warmPhotoGradient
+
+                if let photoPreviewImage {
+                    Image(uiImage: photoPreviewImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: 560)
+                        .clipped()
+                } else {
+                    Text("等待照片")
+                        .font(.system(size: 12, weight: .regular))
+                        .tracking(2.0)
+                        .foregroundStyle(PublishWebStyle.step)
+                        .frame(width: proxy.size.width, height: 560)
+                }
+
+                LinearGradient(
+                    colors: [Color.black.opacity(0.16), .clear],
+                    startPoint: .top,
+                    endPoint: .center
+                )
+
+                VStack(spacing: 0) {
+                    PublishSpeechBubble(
+                        catName: catName,
+                        text: voice?.text.nonEmpty ?? "识别结果还没有回来，请重新识别。",
+                        centered: true
+                    )
+                    .padding(.top, 12)
+
+                    Spacer()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        PublishSectionTitle("AI 心 声 解 析")
+                        Text(voice?.analysis?.nonEmpty ?? "暂未获得 AI 心声解析，请点击重新识别。")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(NekoTheme.ink.opacity(0.86))
+                            .lineSpacing(5)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(.white.opacity(0.70), lineWidth: 1)
+                    }
+                    .shadow(color: NekoTheme.ink.opacity(0.14), radius: 20, x: 0, y: 10)
+                    .padding(16)
+                }
+            }
+            .frame(width: proxy.size.width, height: 560)
+        }
+        .frame(height: 560)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(.white.opacity(0.70), lineWidth: 1)
+        }
+        .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 30, x: 0, y: 16)
+    }
+}
+
+private struct PublishSuccessVoiceCard: View {
+    let catName: String
+    let photoPreviewImage: UIImage?
+    let voice: CatVoiceResult?
+
+    private var tags: [String] {
+        let next = voice?.tags ?? []
+        return next.isEmpty ? ["💗 想念", "😼 傲娇"] : next
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.988, green: 0.936, blue: 0.982), Color(red: 0.954, green: 0.918, blue: 0.996)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    if let photoPreviewImage {
+                        Image(uiImage: photoPreviewImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: proxy.size.width, height: 300)
+                    } else {
+                        Text("等待照片")
+                            .font(.system(size: 12, weight: .regular))
+                            .tracking(2.0)
+                            .foregroundStyle(PublishWebStyle.step)
+                            .frame(width: proxy.size.width, height: 300)
+                    }
+
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.18), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 150)
+
+                    PublishSpeechBubble(
+                        catName: catName,
+                        text: "💭 \(voice?.text.nonEmpty ?? "这条心声没有生成成功，请返回重新识别。")",
+                        centered: false
+                    )
+                    .padding(.leading, 14)
+                    .padding(.top, 14)
+
+                    Text("✦")
+                        .font(.system(size: 12))
+                        .foregroundStyle(NekoTheme.soulPink)
+                        .shadow(color: .white.opacity(0.8), radius: 10)
+                        .frame(width: proxy.size.width, alignment: .trailing)
+                        .padding(.trailing, 16)
+                        .padding(.top, 8)
+                }
+                .frame(width: proxy.size.width, height: 300)
+
+                HStack(spacing: 8) {
+                    ForEach(Array(tags.prefix(2)), id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color(red: 0.455, green: 0.285, blue: 0.545))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.982, green: 0.925, blue: 0.976), Color(red: 0.958, green: 0.918, blue: 0.996)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                in: Capsule()
+                            )
+                    }
+                    Spacer()
+                    Text("刚刚发布")
+                        .font(.system(size: 10, weight: .regular))
+                        .tracking(2.5)
+                        .foregroundStyle(PublishWebStyle.step.opacity(0.86))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
+                .background(.white.opacity(0.85))
+            }
+        }
+        .frame(height: 344)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(.white.opacity(0.75), lineWidth: 1)
+        }
+        .shadow(color: NekoTheme.soulViolet.opacity(0.26), radius: 32, x: 0, y: 16)
+    }
+}
+
+private struct PublishSpeechBubble: View {
+    let catName: String
+    let text: String
+    let centered: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(catName)
+                    .font(.system(size: 8, weight: .regular))
+                    .tracking(3.5)
+                    .foregroundStyle(PublishWebStyle.step)
+                Text(text)
+                    .font(.system(size: 12.5, weight: .regular))
+                    .foregroundStyle(NekoTheme.ink)
+                    .lineSpacing(4)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: NekoTheme.ink.opacity(0.16), radius: 18, x: 0, y: 8)
+
+            if centered {
+                Triangle()
+                    .fill(.white.opacity(0.95))
+                    .frame(width: 16, height: 12)
+                    .shadow(color: NekoTheme.ink.opacity(0.08), radius: 8, x: 0, y: 5)
+            }
+        }
+        .frame(maxWidth: centered ? 280 : nil, alignment: centered ? .center : .leading)
+        .frame(maxWidth: centered ? .infinity : nil, alignment: centered ? .center : .leading)
+    }
+}
+
+private struct PublishLoadingOverlay: View {
+    let title: String
+    let hint: String
+
+    var body: some View {
+        ZStack {
+            Color.white.opacity(0.60)
+                .ignoresSafeArea()
+                .background(.ultraThinMaterial)
+
+            VStack(spacing: 18) {
+                ZStack {
+                    Circle()
+                        .fill(NekoTheme.soulPink.opacity(0.60))
+                        .frame(width: 64, height: 64)
+                        .blur(radius: 16)
+                    ProgressView()
+                        .tint(NekoTheme.soulViolet)
+                        .scaleEffect(1.25)
+                }
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+                Text(hint)
+                    .font(.system(size: 11, weight: .regular))
+                    .tracking(2.0)
+                    .foregroundStyle(PublishWebStyle.step)
+            }
+        }
+        .zIndex(50)
+    }
+}
+
+private struct PublishErrorOverlay: View {
+    let title: String
+    let hint: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.white.opacity(0.62)
+                .ignoresSafeArea()
+                .background(.ultraThinMaterial)
+
+            VStack(spacing: 14) {
+                Text("!")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+                    .frame(width: 64, height: 64)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(red: 0.996, green: 0.905, blue: 0.800), Color(red: 0.975, green: 0.810, blue: 0.800)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: Circle()
+                    )
+                    .shadow(color: PublishWebStyle.shadow, radius: 18, x: 0, y: 8)
+
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+                Text(hint)
+                    .font(.system(size: 11.5, weight: .regular))
+                    .foregroundStyle(PublishWebStyle.step)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+
+                Button("知道了", action: onCancel)
+                    .buttonStyle(PublishPrimaryPillStyle())
+                    .padding(.top, 4)
+            }
+            .padding(26)
+            .frame(maxWidth: 280)
+            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(.white.opacity(0.75), lineWidth: 1)
+            }
+            .shadow(color: NekoTheme.ink.opacity(0.16), radius: 28, x: 0, y: 14)
+        }
+        .zIndex(60)
+    }
+}
+
+private struct PublishPrimaryPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 18)
+            .background(NekoTheme.primaryGradient, in: Capsule())
+            .shadow(color: NekoTheme.soulViolet.opacity(0.26), radius: 18, x: 0, y: 9)
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+    }
+}
+
+private struct PublishSecondaryPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .regular))
+            .foregroundStyle(NekoTheme.ink)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(.white.opacity(configuration.isPressed ? 0.95 : 0.85), in: Capsule())
+            .shadow(color: PublishWebStyle.shadow, radius: 18, x: 0, y: 9)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+}
+
+private struct PublishChevronLeftIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.maxX * 0.68, y: rect.minY + rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.32, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX * 0.68, y: rect.minY + rect.height * 0.82))
+        return path
+    }
+}
+
+private struct PublishPhotoIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+
+        path.addRoundedRect(
+            in: CGRect(x: rect.minX + w * 0.10, y: rect.minY + h * 0.20, width: w * 0.80, height: h * 0.60),
+            cornerSize: CGSize(width: w * 0.15, height: h * 0.15)
+        )
+
+        path.addEllipse(in: CGRect(x: rect.minX + w * 0.35, y: rect.minY + h * 0.35, width: w * 0.30, height: h * 0.30))
+
+        path.move(to: CGPoint(x: rect.minX + w * 0.20, y: rect.minY + h * 0.70))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.35, y: rect.minY + h * 0.50))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.50, y: rect.minY + h * 0.60))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.70, y: rect.minY + h * 0.40))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.80, y: rect.minY + h * 0.50))
+
+        return path
+    }
+}
+
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

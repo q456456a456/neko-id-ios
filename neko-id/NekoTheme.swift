@@ -22,6 +22,9 @@ enum NekoTheme {
     static let softPink = Color(red: 0.964, green: 0.862, blue: 0.910)
     static let softLilac = Color(red: 0.914, green: 0.843, blue: 0.984)
     static let accent = Color(red: 0.749, green: 0.639, blue: 0.949)
+    static let tabActive = Color(red: 0.714, green: 0.604, blue: 0.937)
+    static let tabInactive = Color(red: 0.482, green: 0.447, blue: 0.565)
+    static let menuIcon = Color(red: 0.545, green: 0.345, blue: 0.615)
 
     static let cardWhite = Color.white.opacity(0.84)
     static let cardTint = Color(red: 0.988, green: 0.940, blue: 0.976).opacity(0.82)
@@ -52,6 +55,15 @@ enum NekoTheme {
         colors: [
             Color(red: 0.976, green: 0.910, blue: 0.965).opacity(0.94),
             Color(red: 0.952, green: 0.914, blue: 0.996).opacity(0.86),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    static let menuIconGradient = LinearGradient(
+        colors: [
+            Color(red: 0.982, green: 0.902, blue: 0.980),
+            Color(red: 0.946, green: 0.906, blue: 1.000),
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing

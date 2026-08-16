@@ -12,6 +12,7 @@ enum AppConfig {
     static let supabaseURL = URL(string: "https://jbjgrkivscrombvnlcrl.supabase.co")!
     static let supabaseMediaBucket = "neko-media"
     static let maxAvatarImageBytes = 10 * 1024 * 1024
+    static let maxVoiceImageBytes = 10 * 1024 * 1024
     static let maxOnboardingVideoBytes = 100 * 1024 * 1024
 
     /// Supabase publishable keys are safe to ship in client apps.

@@ -39,6 +39,18 @@ struct NekoSession: Codable, Equatable {
     }
 }
 
+struct NekoAccountProfile: Codable, Equatable {
+    let id: String
+    let email: String?
+    var displayName: String?
+}
+
+struct NekoAccountSummary: Codable, Equatable {
+    var profile: NekoAccountProfile
+    var catCount: Int
+    var voiceCount: Int
+}
+
 struct CatProfile: Identifiable, Codable, Equatable {
     let id: String
     var name: String
@@ -183,6 +195,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
     var aspect: String?
     var videoDuration: String?
     var analysis: String?
+    var mediaURL: URL?
 
     enum CodingKeys: String, CodingKey {
         case cloudId
@@ -197,6 +210,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         case aspect
         case videoDuration
         case analysis
+        case mediaURL
     }
 
     init(
@@ -211,7 +225,8 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         mediaType: String? = "photo",
         aspect: String? = "3:4",
         videoDuration: String? = nil,
-        analysis: String? = nil
+        analysis: String? = nil,
+        mediaURL: URL? = nil
     ) {
         self.cloudId = cloudId
         self.time = time
@@ -225,6 +240,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         self.aspect = aspect
         self.videoDuration = videoDuration
         self.analysis = analysis
+        self.mediaURL = mediaURL
     }
 
     init(from decoder: Decoder) throws {
@@ -242,6 +258,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         aspect = try container.decodeIfPresent(String.self, forKey: .aspect) ?? "3:4"
         videoDuration = try container.decodeIfPresent(String.self, forKey: .videoDuration)
         analysis = try container.decodeIfPresent(String.self, forKey: .analysis)
+        mediaURL = try container.decodeIfPresent(URL.self, forKey: .mediaURL)
     }
 }
 
@@ -272,6 +289,18 @@ struct CatProfileDraft: Equatable {
     var gender: CatGender = .female
     var ageStage: CatAgeStage = .young
 
+    init(name: String = "", gender: CatGender = .female, ageStage: CatAgeStage = .young) {
+        self.name = name
+        self.gender = gender
+        self.ageStage = ageStage
+    }
+
+    init(profile: CatProfile) {
+        self.name = profile.name
+        self.gender = profile.gender
+        self.ageStage = profile.ageStage
+    }
+
     var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -281,7 +310,7 @@ struct CatProfileDraft: Equatable {
     }
 }
 
-enum AppPhase: Equatable {
+enum AppPhase: Equatable, Hashable {
     case launching
     case signedOut
     case onboarding

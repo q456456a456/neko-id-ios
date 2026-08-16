@@ -14,6 +14,7 @@ final class NekoAppModel: ObservableObject {
     @Published private(set) var session: NekoSession?
     @Published private(set) var catProfile: CatProfile?
     @Published private(set) var persona: CatPersonaResult?
+    @Published private(set) var voices: [CatVoiceResult] = []
     @Published var isBusy = false
     @Published var errorMessage: String?
     @Published var noticeMessage: String?
@@ -39,16 +40,13 @@ final class NekoAppModel: ObservableObject {
             }
 
             session = storedSession
-            catProfile = try await api.fetchActiveCat(session: storedSession)
-            if let catProfile {
-                persona = try? await api.fetchPersona(for: catProfile, session: storedSession)
-            }
-            phase = catProfile == nil ? .onboarding : .home
+            try await reloadCloudState(session: storedSession)
         } catch {
             KeychainStore.delete(account: sessionAccount)
             session = nil
             catProfile = nil
             persona = nil
+            voices = []
             phase = .signedOut
             errorMessage = "登录状态已过期，请重新登录。"
         }
@@ -69,11 +67,7 @@ final class NekoAppModel: ObservableObject {
             )
             try KeychainStore.save(nextSession, account: sessionAccount)
             session = nextSession
-            catProfile = try await api.fetchActiveCat(session: nextSession)
-            if let catProfile {
-                persona = try? await api.fetchPersona(for: catProfile, session: nextSession)
-            }
-            phase = catProfile == nil ? .onboarding : .home
+            try await reloadCloudState(session: nextSession)
         }
     }
 
@@ -98,18 +92,35 @@ final class NekoAppModel: ObservableObject {
                 hasAvatar: avatarImageData != nil
             )
 
-            var profile = try await api.createCatProfile(
-                draft,
-                quizAnswers: quizAnswers,
-                persona: finalPersona,
-                session: activeSession
-            )
+            var isRetestingExistingProfile = false
+            var profile: CatProfile
+            if let currentProfile = catProfile {
+                isRetestingExistingProfile = true
+                profile = try await api.updateCatProfile(
+                    currentProfile,
+                    name: draft.trimmedName,
+                    gender: draft.gender,
+                    ageStage: draft.ageStage,
+                    session: activeSession
+                )
+                try await api.upsertPersona(finalPersona, for: profile, session: activeSession)
+            } else {
+                profile = try await api.createCatProfile(
+                    draft,
+                    quizAnswers: quizAnswers,
+                    persona: finalPersona,
+                    session: activeSession
+                )
+            }
             if let avatarImageData {
                 let upload = try MediaUploadProcessor.prepareAvatarImage(from: avatarImageData)
                 profile = try await api.uploadAvatarImage(upload, for: profile, session: activeSession)
             }
             catProfile = profile
             persona = finalPersona
+            if isRetestingExistingProfile {
+                voices = []
+            }
             phase = .home
             noticeMessage = "猫咪档案已保存。"
         }
@@ -170,28 +181,140 @@ final class NekoAppModel: ObservableObject {
         }
     }
 
+    func loadAccountSummary() async throws -> NekoAccountSummary {
+        let activeSession = try await authenticatedSession()
+        return try await api.fetchAccountSummary(session: activeSession)
+    }
+
+    func updateDisplayName(_ displayName: String) async throws -> NekoAccountProfile {
+        let activeSession = try await authenticatedSession()
+        return try await api.updateUserProfile(displayName: displayName, session: activeSession)
+    }
+
+    func saveCurrentStateToCloud() async throws -> NekoAccountSummary {
+        let activeSession = try await authenticatedSession()
+        return try await api.fetchAccountSummary(session: activeSession)
+    }
+
+    func restoreFromCloud() async throws -> NekoAccountSummary {
+        let activeSession = try await authenticatedSession()
+        try await reloadCloudState(session: activeSession)
+        return try await api.fetchAccountSummary(session: activeSession)
+    }
+
+    func updateCatProfileDetails(
+        name: String,
+        gender: CatGender,
+        ageStage: CatAgeStage,
+        avatarImageData: Data?
+    ) async throws {
+        guard var profile = catProfile else {
+            phase = .onboarding
+            throw NekoAppError.missingCatProfile
+        }
+
+        let activeSession = try await authenticatedSession()
+        profile = try await api.updateCatProfile(
+            profile,
+            name: name,
+            gender: gender,
+            ageStage: ageStage,
+            session: activeSession
+        )
+
+        if let avatarImageData {
+            let upload = try MediaUploadProcessor.prepareAvatarImage(from: avatarImageData)
+            profile = try await api.uploadAvatarImage(upload, for: profile, session: activeSession)
+        }
+
+        catProfile = profile
+        persona = try? await api.fetchPersona(for: profile, session: activeSession)
+    }
+
+    func saveProfileAndRestartOnboarding(
+        name: String,
+        gender: CatGender,
+        ageStage: CatAgeStage,
+        avatarImageData: Data?
+    ) async throws {
+        try await updateCatProfileDetails(
+            name: name,
+            gender: gender,
+            ageStage: ageStage,
+            avatarImageData: avatarImageData
+        )
+        persona = nil
+        phase = .onboarding
+    }
+
+    @discardableResult
+    func reloadVoices() async throws -> [CatVoiceResult] {
+        guard let profile = catProfile else {
+            voices = []
+            return []
+        }
+
+        let activeSession = try await authenticatedSession()
+        let nextVoices = try await api.fetchVoices(for: profile, session: activeSession)
+        voices = nextVoices
+        return nextVoices
+    }
+
+    func deleteVoices(ids: [String]) async throws {
+        guard let profile = catProfile else {
+            throw NekoAppError.missingCatProfile
+        }
+
+        let activeSession = try await authenticatedSession()
+        try await api.deleteVoices(ids: ids, for: profile, session: activeSession)
+        voices.removeAll { voice in
+            voice.cloudId.map { ids.contains($0) } ?? false
+        }
+    }
+
     func publishCatVoice(imageData: Data, scene: String) async throws -> CatVoiceResult {
+        let generated = try await generateCatVoicePreview(imageData: imageData, scene: scene)
+        return try await saveGeneratedCatVoice(generated, imageData: imageData, showNotice: true)
+    }
+
+    func generateCatVoicePreview(imageData: Data, scene: String) async throws -> CatVoiceResult {
         guard let profile = catProfile else {
             phase = .onboarding
             throw NekoAppError.missingCatProfile
         }
 
         let activeSession = try await authenticatedSession()
-        let generated = try await serverAPI.generateCatVoice(
+        return try await serverAPI.generateCatVoice(
             profile: profile,
             persona: persona,
             imageData: imageData,
             scene: scene,
             accessToken: activeSession.accessToken
         )
-        let upload = try MediaUploadProcessor.prepareAvatarImage(from: imageData)
+    }
+
+    func saveGeneratedCatVoice(
+        _ generated: CatVoiceResult,
+        imageData: Data,
+        showNotice: Bool = false
+    ) async throws -> CatVoiceResult {
+        guard let profile = catProfile else {
+            phase = .onboarding
+            throw NekoAppError.missingCatProfile
+        }
+
+        let activeSession = try await authenticatedSession()
+        let upload = try MediaUploadProcessor.prepareVoiceImage(from: imageData)
         let saved = try await api.saveCatVoice(
             generated,
             imageUpload: upload,
             for: profile,
             session: activeSession
         )
-        noticeMessage = "猫咪动态已发布。"
+        voices.insert(saved, at: 0)
+        if showNotice {
+            noticeMessage = "猫咪动态已发布。"
+        }
         return saved
     }
 
@@ -200,11 +323,17 @@ final class NekoAppModel: ObservableObject {
         session = nil
         catProfile = nil
         persona = nil
+        voices = []
         phase = .signedOut
     }
 
     func startOnboarding() {
         phase = .onboarding
+    }
+
+    func cancelOnboardingIfPossible() {
+        guard catProfile != nil else { return }
+        phase = .home
     }
 
     private func authenticatedSession() async throws -> NekoSession {
@@ -220,6 +349,18 @@ final class NekoAppModel: ObservableObject {
         }
 
         return activeSession
+    }
+
+    private func reloadCloudState(session activeSession: NekoSession) async throws {
+        catProfile = try await api.fetchActiveCat(session: activeSession)
+        if let catProfile {
+            persona = try? await api.fetchPersona(for: catProfile, session: activeSession)
+            voices = (try? await api.fetchVoices(for: catProfile, session: activeSession)) ?? []
+        } else {
+            persona = nil
+            voices = []
+        }
+        phase = catProfile == nil ? .onboarding : .home
     }
 
     private func runBusy(_ operation: () async throws -> Void) async {

@@ -210,14 +210,192 @@ struct SupabaseRESTClient {
             accessToken: session.accessToken
         )
 
-        guard let saved = try decoder.decode([VoiceRow].self, from: data).first?.voice else {
+        guard var saved = try decoder.decode([VoiceRow].self, from: data).first?.voice else {
             throw SupabaseError.invalidResponse
         }
 
+        saved.mediaURL = try? await signedMediaURL(for: saved.mediaObjectKey, session: session)
         return saved
     }
 
-    private func upsertPersona(_ persona: CatPersonaResult, for profile: CatProfile, session: NekoSession) async throws {
+    func fetchAccountSummary(session: NekoSession) async throws -> NekoAccountSummary {
+        let profileData = try await perform(
+            path: "rest/v1/profiles",
+            queryItems: [
+                URLQueryItem(name: "select", value: "id,email,display_name"),
+                URLQueryItem(name: "id", value: "eq.\(session.user.id)"),
+                URLQueryItem(name: "limit", value: "1")
+            ],
+            method: "GET",
+            body: nil,
+            prefer: nil,
+            accessToken: session.accessToken
+        )
+        let profile = try decoder.decode([ProfileRow].self, from: profileData).first?.profile
+            ?? NekoAccountProfile(id: session.user.id, email: session.user.email, displayName: session.user.email?.split(separator: "@").first.map(String.init))
+
+        async let catCountTask = countRows(table: "cats", userId: session.user.id, session: session)
+        async let voiceCountTask = countRows(table: "cat_voices", userId: session.user.id, session: session)
+        let catCount = try await catCountTask
+        let voiceCount = try await voiceCountTask
+
+        return NekoAccountSummary(
+            profile: profile,
+            catCount: catCount,
+            voiceCount: voiceCount
+        )
+    }
+
+    func updateUserProfile(displayName: String, session: NekoSession) async throws -> NekoAccountProfile {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = UpsertProfileRequest(
+            id: session.user.id,
+            email: session.user.email,
+            displayName: trimmed.isEmpty ? nil : String(trimmed.prefix(40))
+        )
+
+        let data = try await perform(
+            path: "rest/v1/profiles",
+            queryItems: [
+                URLQueryItem(name: "on_conflict", value: "id"),
+                URLQueryItem(name: "select", value: "id,email,display_name")
+            ],
+            method: "POST",
+            body: encode(request),
+            prefer: "resolution=merge-duplicates,return=representation",
+            accessToken: session.accessToken
+        )
+
+        guard let profile = try decoder.decode([ProfileRow].self, from: data).first?.profile else {
+            throw SupabaseError.invalidResponse
+        }
+
+        return profile
+    }
+
+    func updateCatProfile(
+        _ profile: CatProfile,
+        name: String,
+        gender: CatGender,
+        ageStage: CatAgeStage,
+        session: NekoSession
+    ) async throws -> CatProfile {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = try encode(UpdateCatRequest(
+            name: String((trimmed.isEmpty ? profile.name : trimmed).prefix(12)),
+            gender: gender.rawValue,
+            ageStage: ageStage.rawValue
+        ))
+
+        let data = try await perform(
+            path: "rest/v1/cats",
+            queryItems: [
+                URLQueryItem(name: "id", value: "eq.\(profile.id)"),
+                URLQueryItem(name: "user_id", value: "eq.\(session.user.id)"),
+                URLQueryItem(name: "select", value: "id,name,gender,age_stage,avatar_object_key,updated_at")
+            ],
+            method: "PATCH",
+            body: body,
+            prefer: "return=representation",
+            accessToken: session.accessToken
+        )
+
+        guard var updated = try decoder.decode([CatRow].self, from: data).first?.profile else {
+            throw SupabaseError.invalidResponse
+        }
+
+        updated.avatarURL = try? await signedMediaURL(for: updated.avatarObjectKey, session: session)
+        return updated
+    }
+
+    func fetchVoices(for profile: CatProfile, session: NekoSession) async throws -> [CatVoiceResult] {
+        let data = try await perform(
+            path: "rest/v1/cat_voices",
+            queryItems: [
+                URLQueryItem(name: "select", value: "id,text,analysis,location,tags,media_object_key,media_type,aspect,video_duration,grad,local_time_label,created_at"),
+                URLQueryItem(name: "cat_id", value: "eq.\(profile.id)"),
+                URLQueryItem(name: "user_id", value: "eq.\(session.user.id)"),
+                URLQueryItem(name: "order", value: "created_at.desc")
+            ],
+            method: "GET",
+            body: nil,
+            prefer: nil,
+            accessToken: session.accessToken
+        )
+
+        var voices = try decoder.decode([VoiceRow].self, from: data).map(\.voice)
+        for index in voices.indices {
+            voices[index].mediaURL = try? await signedMediaURL(for: voices[index].mediaObjectKey, session: session)
+        }
+        return voices
+    }
+
+    func deleteVoices(ids: [String], for profile: CatProfile, session: NekoSession) async throws {
+        let uniqueIds = Array(Set(ids.filter { !$0.isEmpty }))
+        guard !uniqueIds.isEmpty else { return }
+        let inFilter = "in.(\(uniqueIds.joined(separator: ",")))"
+
+        let rowsData = try await perform(
+            path: "rest/v1/cat_voices",
+            queryItems: [
+                URLQueryItem(name: "select", value: "id,media_object_key"),
+                URLQueryItem(name: "id", value: inFilter),
+                URLQueryItem(name: "cat_id", value: "eq.\(profile.id)"),
+                URLQueryItem(name: "user_id", value: "eq.\(session.user.id)")
+            ],
+            method: "GET",
+            body: nil,
+            prefer: nil,
+            accessToken: session.accessToken
+        )
+        let mediaKeys = try decoder.decode([VoiceMediaRow].self, from: rowsData)
+            .compactMap(\.mediaObjectKey)
+            .filter { !$0.isEmpty }
+
+        _ = try await perform(
+            path: "rest/v1/cat_voices",
+            queryItems: [
+                URLQueryItem(name: "id", value: inFilter),
+                URLQueryItem(name: "cat_id", value: "eq.\(profile.id)"),
+                URLQueryItem(name: "user_id", value: "eq.\(session.user.id)")
+            ],
+            method: "DELETE",
+            body: nil,
+            prefer: "return=minimal",
+            accessToken: session.accessToken
+        )
+
+        for key in mediaKeys {
+            try? await deleteMediaObject(key, session: session)
+        }
+    }
+
+    private func countRows(table: String, userId: String, session: NekoSession) async throws -> Int {
+        let data = try await perform(
+            path: "rest/v1/\(table)",
+            queryItems: [
+                URLQueryItem(name: "select", value: "id"),
+                URLQueryItem(name: "user_id", value: "eq.\(userId)")
+            ],
+            method: "GET",
+            body: nil,
+            prefer: nil,
+            accessToken: session.accessToken
+        )
+        return try decoder.decode([IDRow].self, from: data).count
+    }
+
+    private func deleteMediaObject(_ objectKey: String, session: NekoSession) async throws {
+        _ = try await perform(
+            path: "storage/v1/object/\(AppConfig.supabaseMediaBucket)/\(objectKey)",
+            method: "DELETE",
+            body: nil,
+            prefer: nil,
+            accessToken: session.accessToken
+        )
+    }
+
+    func upsertPersona(_ persona: CatPersonaResult, for profile: CatProfile, session: NekoSession) async throws {
         let request = UpsertPersonaRequest(
             catId: profile.id,
             userId: session.user.id,
@@ -517,6 +695,26 @@ private struct UserRow: Decodable {
     let email: String?
 }
 
+private struct IDRow: Decodable {
+    let id: String
+}
+
+private struct ProfileRow: Decodable {
+    let id: String
+    let email: String?
+    let displayName: String?
+
+    var profile: NekoAccountProfile {
+        NekoAccountProfile(id: id, email: email, displayName: displayName)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case displayName = "display_name"
+    }
+}
+
 private struct CatRow: Decodable {
     let id: String
     let name: String
@@ -645,6 +843,16 @@ private struct VoiceRow: Decodable {
     }
 }
 
+private struct VoiceMediaRow: Decodable {
+    let id: String
+    let mediaObjectKey: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case mediaObjectKey = "media_object_key"
+    }
+}
+
 private struct CreateCatRequest: Encodable {
     let userId: String
     let name: String
@@ -660,6 +868,18 @@ private struct CreateCatRequest: Encodable {
         case ageStage = "age_stage"
         case quiz
         case isActive = "is_active"
+    }
+}
+
+private struct UpdateCatRequest: Encodable {
+    let name: String
+    let gender: String
+    let ageStage: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case gender
+        case ageStage = "age_stage"
     }
 }
 
@@ -720,6 +940,18 @@ private struct CreateVoiceRequest: Encodable {
         case grad
         case localTimeLabel = "local_time_label"
         case createdAt = "created_at"
+    }
+}
+
+private struct UpsertProfileRequest: Encodable {
+    let id: String
+    let email: String?
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case displayName = "display_name"
     }
 }
 
