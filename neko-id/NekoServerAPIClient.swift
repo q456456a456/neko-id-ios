@@ -22,7 +22,7 @@ struct NekoServerAPIClient {
     func detectCatFace(
         imageData: Data,
         mode: CatDetectionMode,
-        accessToken: String
+        accessToken: String? = nil
     ) async throws -> CatDetectionResult {
         let body = DetectCatFaceRequest(
             imageDataUrl: try MediaUploadProcessor.makeAIImageDataURL(from: imageData),
@@ -41,7 +41,7 @@ struct NekoServerAPIClient {
         quizAnswers: [Int: QuizChoice],
         avatarImageData: Data?,
         videoCount: Int,
-        accessToken: String
+        accessToken: String? = nil
     ) async throws -> CatPersonaResult {
         let body = PersonaRequest(
             profile: ServerCatProfile(
@@ -218,7 +218,7 @@ struct NekoServerAPIClient {
     private func perform<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody,
-        accessToken: String
+        accessToken: String? = nil
     ) async throws -> ResponseBody {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
             throw NekoServerAPIError.invalidURL
@@ -229,7 +229,9 @@ struct NekoServerAPIClient {
         request.httpBody = try encoder.encode(body)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {

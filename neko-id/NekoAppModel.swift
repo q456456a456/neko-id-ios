@@ -8,6 +8,11 @@
 import Combine
 import Foundation
 
+struct NekoLoginPrompt: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+}
+
 @MainActor
 final class NekoAppModel: ObservableObject {
     @Published private(set) var phase: AppPhase = .launching
@@ -15,6 +20,7 @@ final class NekoAppModel: ObservableObject {
     @Published private(set) var catProfile: CatProfile?
     @Published private(set) var persona: CatPersonaResult?
     @Published private(set) var voices: [CatVoiceResult] = []
+    @Published var loginPrompt: NekoLoginPrompt?
     @Published var isBusy = false
     @Published var errorMessage: String?
     @Published var noticeMessage: String?
@@ -23,6 +29,7 @@ final class NekoAppModel: ObservableObject {
     private let serverAPI = NekoServerAPIClient()
     private let sessionAccount = "supabase-session"
     private var bootstrapped = false
+    private var signedMediaCache: [String: CachedSignedMediaURL] = [:]
 
     func bootstrap() async {
         guard !bootstrapped else { return }
@@ -30,7 +37,7 @@ final class NekoAppModel: ObservableObject {
 
         do {
             guard var storedSession = try KeychainStore.load(NekoSession.self, account: sessionAccount) else {
-                phase = .signedOut
+                phase = .onboarding
                 return
             }
 
@@ -47,28 +54,66 @@ final class NekoAppModel: ObservableObject {
             catProfile = nil
             persona = nil
             voices = []
-            phase = .signedOut
-            errorMessage = "登录状态已过期，请重新登录。"
+            phase = .onboarding
+            errorMessage = "登录状态已过期，保存时请重新登录。"
         }
     }
 
-    func requestLoginCode(phone: String) async {
-        await runBusy {
+    @discardableResult
+    func requestLoginCode(phone: String) async -> Bool {
+        guard !isBusy else { return false }
+        isBusy = true
+        errorMessage = nil
+        noticeMessage = nil
+
+        do {
             try await api.requestPhoneOTP(phone: try phone.normalizedMainlandPhone())
-            noticeMessage = "验证码已发送，请查收短信。"
+            isBusy = false
+            return true
+        } catch {
+            errorMessage = userFacingMessage(for: error)
+            isBusy = false
+            return false
         }
     }
 
-    func verifyLoginCode(phone: String, code: String) async {
-        await runBusy {
+    @discardableResult
+    func verifyLoginCode(
+        phone: String,
+        code: String,
+        reloadCloudStateAfterLogin: Bool = true
+    ) async -> Bool {
+        guard !isBusy else { return false }
+        isBusy = true
+        errorMessage = nil
+        noticeMessage = nil
+
+        do {
             let nextSession = try await api.verifyPhoneOTP(
                 phone: try phone.normalizedMainlandPhone(),
                 token: code.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             try KeychainStore.save(nextSession, account: sessionAccount)
             session = nextSession
-            try await reloadCloudState(session: nextSession)
+            if reloadCloudStateAfterLogin {
+                try await reloadCloudState(session: nextSession)
+            }
+            loginPrompt = nil
+            isBusy = false
+            return true
+        } catch {
+            errorMessage = userFacingMessage(for: error)
+            isBusy = false
+            return false
         }
+    }
+
+    func requestLogin(message: String) {
+        loginPrompt = NekoLoginPrompt(message: message)
+    }
+
+    func dismissLoginPrompt() {
+        loginPrompt = nil
     }
 
     func createCatProfile(
@@ -104,6 +149,7 @@ final class NekoAppModel: ObservableObject {
                 completeOnboarding: true,
                 accessToken: activeSession.accessToken
             )
+            invalidateSignedMediaURL(for: saved.profile.avatarObjectKey)
             catProfile = saved.profile
             persona = saved.persona ?? finalPersona
             if isRetestingExistingProfile {
@@ -131,11 +177,9 @@ final class NekoAppModel: ObservableObject {
     }
 
     func detectCatFace(imageData: Data, mode: CatDetectionMode) async throws -> CatDetectionResult {
-        let activeSession = try await authenticatedSession()
         return try await serverAPI.detectCatFace(
             imageData: imageData,
-            mode: mode,
-            accessToken: activeSession.accessToken
+            mode: mode
         )
     }
 
@@ -145,19 +189,17 @@ final class NekoAppModel: ObservableObject {
         avatarImageData: Data?,
         videoCount: Int
     ) async throws -> CatPersonaResult {
-        let activeSession = try await authenticatedSession()
         return try await serverAPI.generateOnboardingPersona(
             draft: draft,
             quizAnswers: quizAnswers,
             avatarImageData: avatarImageData,
-            videoCount: videoCount,
-            accessToken: activeSession.accessToken
+            videoCount: videoCount
         )
     }
 
     func uploadAvatarImageData(_ data: Data) async {
         guard let profile = catProfile else {
-            phase = .signedOut
+            phase = .onboarding
             return
         }
 
@@ -196,17 +238,37 @@ final class NekoAppModel: ObservableObject {
         return try await serverAPI.fetchAccountSummary(accessToken: activeSession.accessToken)
     }
 
-    func signedMediaURL(for objectKey: String?) async -> URL? {
+    func signedMediaURL(for objectKey: String?, forceRefresh: Bool = false) async -> URL? {
         guard let objectKey, !objectKey.isEmpty else { return nil }
+
+        if !forceRefresh,
+           let cached = signedMediaCache[objectKey],
+           cached.isUsable {
+            return cached.url
+        }
+
         do {
             let activeSession = try await authenticatedSession()
-            return try await serverAPI.signedMediaURL(
+            guard let url = try await serverAPI.signedMediaURL(
                 for: objectKey,
                 accessToken: activeSession.accessToken
-            )
+            ) else {
+                signedMediaCache.removeValue(forKey: objectKey)
+                return nil
+            }
+            signedMediaCache[objectKey] = CachedSignedMediaURL(url: url)
+            return url
         } catch {
+            if forceRefresh {
+                signedMediaCache.removeValue(forKey: objectKey)
+            }
             return nil
         }
+    }
+
+    func invalidateSignedMediaURL(for objectKey: String?) {
+        guard let objectKey, !objectKey.isEmpty else { return }
+        signedMediaCache.removeValue(forKey: objectKey)
     }
 
     func refreshSignedMediaURLs() async {
@@ -264,6 +326,7 @@ final class NekoAppModel: ObservableObject {
             accessToken: activeSession.accessToken
         )
 
+        invalidateSignedMediaURL(for: saved.profile.avatarObjectKey)
         catProfile = saved.profile
         if let savedPersona = saved.persona {
             persona = savedPersona
@@ -356,6 +419,7 @@ final class NekoAppModel: ObservableObject {
             for: profile,
             accessToken: activeSession.accessToken
         )
+        invalidateSignedMediaURL(for: saved.mediaObjectKey)
         voices.insert(saved, at: 0)
         if showNotice {
             noticeMessage = "猫咪动态已发布。"
@@ -369,7 +433,8 @@ final class NekoAppModel: ObservableObject {
         catProfile = nil
         persona = nil
         voices = []
-        phase = .signedOut
+        signedMediaCache = [:]
+        phase = .onboarding
     }
 
     func startOnboarding() {
@@ -383,7 +448,7 @@ final class NekoAppModel: ObservableObject {
 
     private func authenticatedSession() async throws -> NekoSession {
         guard var activeSession = session else {
-            phase = .signedOut
+            requestLogin(message: "继续前需要先登录，猫咪档案和心声会安全保存到你的云端账号。")
             throw NekoAppError.signedOut
         }
 
@@ -431,6 +496,20 @@ final class NekoAppModel: ObservableObject {
         }
 
         return "操作失败，请稍后再试。"
+    }
+}
+
+private struct CachedSignedMediaURL {
+    let url: URL
+    let expiresAt: Date
+
+    init(url: URL, ttl: TimeInterval = 50 * 60) {
+        self.url = url
+        self.expiresAt = Date().addingTimeInterval(ttl)
+    }
+
+    var isUsable: Bool {
+        expiresAt > Date().addingTimeInterval(30)
     }
 }
 

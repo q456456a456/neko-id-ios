@@ -34,6 +34,7 @@ struct NativeOnboardingFlowView: View {
     @State private var isValidatingProfile = false
     @State private var isValidatingVideo = false
     @State private var didHydrateExistingProfile = false
+    @State private var pendingSaveAfterLogin = false
 
     var body: some View {
         ZStack {
@@ -56,6 +57,7 @@ struct NativeOnboardingFlowView: View {
                         selectedAvatarItem: $selectedAvatarItem,
                         avatarPreviewImage: avatarPreviewImage,
                         avatarRemoteURL: appModel.catProfile?.avatarURL,
+                        avatarRemoteObjectKey: appModel.catProfile?.avatarObjectKey,
                         isValidating: isValidatingProfile,
                         onNext: validateProfileAndContinue,
                         onBack: goBack
@@ -116,6 +118,11 @@ struct NativeOnboardingFlowView: View {
         .onChange(of: step) { _, newStep in
             guard newStep == .analyzing else { return }
             Task { await runAnalysis() }
+        }
+        .onChange(of: appModel.session?.accessToken) { _, accessToken in
+            guard accessToken != nil, pendingSaveAfterLogin else { return }
+            pendingSaveAfterLogin = false
+            saveResult()
         }
     }
 
@@ -186,6 +193,12 @@ struct NativeOnboardingFlowView: View {
     private func saveResult() {
         guard let personaPreview else {
             appModel.errorMessage = "人格结果还没生成完成，请稍等一下。"
+            return
+        }
+
+        guard appModel.session != nil else {
+            pendingSaveAfterLogin = true
+            appModel.requestLogin(message: "保存猫咪人格档案前需要先登录。登录后，这份测试结果会绑定到你的账号。")
             return
         }
 
@@ -562,6 +575,7 @@ private struct OnboardingProfileScreen: View {
     @Binding var selectedAvatarItem: PhotosPickerItem?
     let avatarPreviewImage: UIImage?
     let avatarRemoteURL: URL?
+    let avatarRemoteObjectKey: String?
     let isValidating: Bool
     let onNext: () -> Void
     let onBack: () -> Void
@@ -596,6 +610,7 @@ private struct OnboardingProfileScreen: View {
                             image: avatarPreviewImage,
                             size: 144,
                             remoteURL: avatarRemoteURL,
+                            remoteObjectKey: avatarRemoteObjectKey,
                             placeholderTitle: "上传正脸",
                             placeholderSubtitle: "JPG / PNG",
                             placeholderIcon: "photo.badge.plus"
@@ -1418,6 +1433,7 @@ private struct FlowAvatarView: View {
     let image: UIImage?
     let size: CGFloat
     var remoteURL: URL?
+    var remoteObjectKey: String? = nil
     var placeholderTitle: String = "上传正脸"
     var placeholderSubtitle: String? = nil
     var placeholderIcon: String = "photo"
@@ -1432,19 +1448,14 @@ private struct FlowAvatarView: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-            } else if let remoteURL {
-                AsyncImage(url: remoteURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        fallback
-                    }
-                }
             } else {
-                fallback
+                NekoRemoteImageView(
+                    remoteURL: remoteURL,
+                    objectKey: remoteObjectKey,
+                    contentMode: .fill
+                ) {
+                    fallback
+                }
             }
         }
         .frame(width: size, height: size)

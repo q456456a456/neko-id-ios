@@ -35,6 +35,21 @@ struct ContentView: View {
         .task {
             await appModel.bootstrap()
         }
+        .sheet(item: $appModel.loginPrompt) { prompt in
+            LoginView(
+                title: "继续前先登录",
+                subtitle: prompt.message,
+                allowDismiss: true,
+                reloadCloudStateAfterLogin: false,
+                onAuthenticated: {
+                    appModel.dismissLoginPrompt()
+                },
+                onCancel: {
+                    appModel.dismissLoginPrompt()
+                }
+            )
+            .presentationDetents([.large])
+        }
         .onChange(of: scenePhase) { _, nextPhase in
             guard nextPhase == .active else { return }
             Task {
@@ -94,14 +109,51 @@ private struct LaunchingView: View {
 
 private struct LoginView: View {
     @EnvironmentObject private var appModel: NekoAppModel
+    let title: String
+    let subtitle: String
+    let allowDismiss: Bool
+    let reloadCloudStateAfterLogin: Bool
+    let onAuthenticated: () -> Void
+    let onCancel: () -> Void
+
     @State private var phone = ""
     @State private var code = ""
     @State private var codeSent = false
+    @State private var codeNotice = ""
+
+    init(
+        title: String = "手机号验证码登录",
+        subtitle: String = "输入手机号，我们会通过短信给你发送 6 位验证码。",
+        allowDismiss: Bool = false,
+        reloadCloudStateAfterLogin: Bool = true,
+        onAuthenticated: @escaping () -> Void = {},
+        onCancel: @escaping () -> Void = {}
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.allowDismiss = allowDismiss
+        self.reloadCloudStateAfterLogin = reloadCloudStateAfterLogin
+        self.onAuthenticated = onAuthenticated
+        self.onCancel = onCancel
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 72)
+
+                if allowDismiss {
+                    HStack {
+                        Spacer()
+                        Button("暂不登录", action: onCancel)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(NekoTheme.soulViolet)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background(Color.white.opacity(0.72), in: Capsule())
+                    }
+                    .padding(.bottom, 18)
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("NEKO ACCOUNT")
@@ -109,11 +161,11 @@ private struct LoginView: View {
                         .tracking(4.6)
                         .foregroundStyle(NekoTheme.soulViolet)
 
-                    Text("手机号验证码登录")
+                    Text(title)
                         .font(.system(size: 28, weight: .light))
                         .foregroundStyle(NekoTheme.ink)
 
-                    Text("输入手机号，我们会通过短信给你发送 6 位验证码。")
+                    Text(subtitle)
                         .font(.system(size: 12.5))
                         .foregroundStyle(NekoTheme.muted)
                         .lineSpacing(4)
@@ -135,8 +187,13 @@ private struct LoginView: View {
                             .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                         Button {
-                            codeSent = true
-                            Task { await appModel.requestLoginCode(phone: phone) }
+                            Task {
+                                let didSend = await appModel.requestLoginCode(phone: phone)
+                                if didSend {
+                                    codeSent = true
+                                    codeNotice = "验证码已发送，请查收短信。"
+                                }
+                            }
                         } label: {
                             Label(codeSent ? "重新发送验证码" : "发送验证码", systemImage: "message")
                                 .frame(maxWidth: .infinity)
@@ -146,6 +203,13 @@ private struct LoginView: View {
 
                         if codeSent {
                             VStack(alignment: .leading, spacing: 12) {
+                                if !codeNotice.isEmpty {
+                                    Text(codeNotice)
+                                        .font(.system(size: 11.5, weight: .medium))
+                                        .foregroundStyle(NekoTheme.soulViolet)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                }
+
                                 FieldTitle("6 位验证码")
                                 TextField("123456", text: $code)
                                     .keyboardType(.numberPad)
@@ -162,7 +226,16 @@ private struct LoginView: View {
                                     }
 
                                 Button {
-                                    Task { await appModel.verifyLoginCode(phone: phone, code: code) }
+                                    Task {
+                                        let didLogin = await appModel.verifyLoginCode(
+                                            phone: phone,
+                                            code: code,
+                                            reloadCloudStateAfterLogin: reloadCloudStateAfterLogin
+                                        )
+                                        if didLogin {
+                                            onAuthenticated()
+                                        }
+                                    }
                                 } label: {
                                     Label("完成登录", systemImage: "checkmark.circle")
                                         .frame(maxWidth: .infinity)
@@ -970,6 +1043,97 @@ private enum VoiceMediaMetrics {
     }
 }
 
+struct NekoRemoteImageView<Placeholder: View>: View {
+    @EnvironmentObject private var appModel: NekoAppModel
+
+    let remoteURL: URL?
+    let objectKey: String?
+    let contentMode: ContentMode
+    let onImageLoaded: (UIImage?) -> Void
+    private let placeholder: () -> Placeholder
+    @State private var loadedImage: UIImage?
+    @State private var currentURL: URL?
+
+    init(
+        remoteURL: URL?,
+        objectKey: String? = nil,
+        contentMode: ContentMode = .fill,
+        onImageLoaded: @escaping (UIImage?) -> Void = { _ in },
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.remoteURL = remoteURL
+        self.objectKey = objectKey
+        self.contentMode = contentMode
+        self.onImageLoaded = onImageLoaded
+        self.placeholder = placeholder
+    }
+
+    private var imageSourceID: String {
+        "\(remoteURL?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(contentMode)"
+    }
+
+    var body: some View {
+        ZStack {
+            if let loadedImage {
+                Image(uiImage: loadedImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                placeholder()
+                    .opacity(currentURL == nil ? 1 : 0.72)
+            }
+        }
+        .task(id: imageSourceID) {
+            await loadImage()
+        }
+    }
+
+    @MainActor
+    private func loadImage() async {
+        loadedImage = nil
+        currentURL = remoteURL
+        onImageLoaded(nil)
+
+        if let remoteURL, await load(from: remoteURL) {
+            return
+        }
+
+        guard let refreshedURL = await appModel.signedMediaURL(
+            for: objectKey,
+            forceRefresh: remoteURL != nil
+        ) else {
+            loadedImage = nil
+            onImageLoaded(nil)
+            return
+        }
+
+        _ = await load(from: refreshedURL)
+    }
+
+    @MainActor
+    private func load(from url: URL) async -> Bool {
+        currentURL = url
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            guard let image = UIImage(data: data) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            loadedImage = image
+            onImageLoaded(image)
+            return true
+        } catch {
+            loadedImage = nil
+            onImageLoaded(nil)
+            return false
+        }
+    }
+}
+
 private struct VoiceMediaImageView: View {
     @EnvironmentObject private var appModel: NekoAppModel
 
@@ -983,83 +1147,34 @@ private struct VoiceMediaImageView: View {
     var maxHeight: CGFloat = 420
     var preferNaturalAspect: Bool = true
     @State private var loadedImage: UIImage?
-    @State private var currentURL: URL?
-    @State private var attemptedRefresh = false
+
+    var body: some View {
+        ZStack {
+            NekoTheme.photoPlaceholderGradient
+
+            if mediaType == "video" {
+                fallbackContent
+            } else {
+                NekoRemoteImageView(
+                    remoteURL: url,
+                    objectKey: objectKey,
+                    contentMode: contentMode,
+                    onImageLoaded: { loadedImage = $0 }
+                ) {
+                    fallbackContent
+                }
+            }
+        }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .frame(maxHeight: maxHeight)
+        .frame(maxWidth: .infinity)
+    }
 
     private var aspectRatio: CGFloat {
         if preferNaturalAspect, let loadedImage {
             return max(loadedImage.size.width, 1) / max(loadedImage.size.height, 1)
         }
         return VoiceMediaMetrics.aspectRatio(for: aspect)
-    }
-
-    private var imageSourceID: String {
-        "\(url?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(mediaType ?? "nil")"
-    }
-
-    var body: some View {
-        ZStack {
-            NekoTheme.photoPlaceholderGradient
-
-            if let loadedImage, mediaType != "video" {
-                Image(uiImage: loadedImage)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            } else {
-                fallbackContent
-                    .opacity(currentURL == nil || mediaType == "video" ? 1 : 0.72)
-            }
-        }
-        .aspectRatio(aspectRatio, contentMode: .fit)
-        .frame(maxHeight: maxHeight)
-        .frame(maxWidth: .infinity)
-        .task(id: imageSourceID) {
-            currentURL = url
-            attemptedRefresh = false
-            await loadImage(allowRefresh: true)
-        }
-    }
-
-    @MainActor
-    private func loadImage(allowRefresh: Bool) async {
-        loadedImage = nil
-        guard mediaType != "video" else { return }
-        guard let sourceURL = currentURL else {
-            if allowRefresh {
-                await refreshSignedURLAndRetry()
-            }
-            return
-        }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: sourceURL)
-            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            guard let image = UIImage(data: data) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            loadedImage = image
-        } catch {
-            if allowRefresh {
-                await refreshSignedURLAndRetry()
-            } else {
-                loadedImage = nil
-            }
-        }
-    }
-
-    @MainActor
-    private func refreshSignedURLAndRetry() async {
-        guard !attemptedRefresh else { return }
-        attemptedRefresh = true
-        guard let refreshedURL = await appModel.signedMediaURL(for: objectKey) else {
-            loadedImage = nil
-            return
-        }
-        currentURL = refreshedURL
-        await loadImage(allowRefresh: false)
     }
 
     @ViewBuilder
@@ -1080,91 +1195,36 @@ private struct VoiceMediaImageView: View {
 }
 
 private struct VoiceDetailMediaFillView: View {
-    @EnvironmentObject private var appModel: NekoAppModel
-
     let url: URL?
     let objectKey: String?
     let mediaType: String?
     let fallbackAvatarURL: URL?
     let fallbackAvatarObjectKey: String?
-    @State private var loadedImage: UIImage?
-    @State private var currentURL: URL?
-    @State private var attemptedRefresh = false
-
-    private var imageSourceID: String {
-        "\(url?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(mediaType ?? "nil")"
-    }
 
     var body: some View {
         ZStack {
             NekoTheme.photoPlaceholderGradient
 
-            if let loadedImage, mediaType != "video" {
-                Image(uiImage: loadedImage)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            } else if mediaType == "video" {
+            if mediaType == "video" {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 42, weight: .regular))
                     .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
             } else {
-                CatAvatarView(
-                    localImage: nil,
-                    remoteURL: fallbackAvatarURL,
-                    objectKey: fallbackAvatarObjectKey,
-                    size: 112
-                )
-                .opacity(currentURL == nil ? 1 : 0.72)
+                NekoRemoteImageView(
+                    remoteURL: url,
+                    objectKey: objectKey,
+                    contentMode: .fill
+                ) {
+                    CatAvatarView(
+                        localImage: nil,
+                        remoteURL: fallbackAvatarURL,
+                        objectKey: fallbackAvatarObjectKey,
+                        size: 112
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: imageSourceID) {
-            currentURL = url
-            attemptedRefresh = false
-            await loadImage(allowRefresh: true)
-        }
-    }
-
-    @MainActor
-    private func loadImage(allowRefresh: Bool) async {
-        loadedImage = nil
-        guard mediaType != "video" else { return }
-        guard let sourceURL = currentURL else {
-            if allowRefresh {
-                await refreshSignedURLAndRetry()
-            }
-            return
-        }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: sourceURL)
-            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            guard let image = UIImage(data: data) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            loadedImage = image
-        } catch {
-            if allowRefresh {
-                await refreshSignedURLAndRetry()
-            } else {
-                loadedImage = nil
-            }
-        }
-    }
-
-    @MainActor
-    private func refreshSignedURLAndRetry() async {
-        guard !attemptedRefresh else { return }
-        attemptedRefresh = true
-        guard let refreshedURL = await appModel.signedMediaURL(for: objectKey) else {
-            loadedImage = nil
-            return
-        }
-        currentURL = refreshedURL
-        await loadImage(allowRefresh: false)
     }
 }
 
@@ -2268,6 +2328,10 @@ private struct AccountCenterView: View {
 
     @MainActor
     private func reload() async {
+        guard appModel.session != nil else {
+            busyAction = nil
+            return
+        }
         busyAction = "load"
         do {
             let next = try await appModel.loadAccountSummary()
@@ -2992,23 +3056,25 @@ private struct ManageVoiceCard: View {
                     ZStack(alignment: .bottomLeading) {
                         NekoTheme.photoPlaceholderGradient
 
-                        if let url = voice.mediaURL {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: proxy.size.width, height: proxy.size.height)
-                                        .clipped()
-                                default:
-                                    avatarFallback
-                                        .frame(width: proxy.size.width, height: proxy.size.height)
-                                }
-                            }
-                        } else {
+                        if voice.mediaType == "video" {
                             avatarFallback
                                 .frame(width: proxy.size.width, height: proxy.size.height)
+                                .overlay {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 30, weight: .regular))
+                                        .foregroundStyle(.white.opacity(0.94), NekoTheme.soulViolet.opacity(0.68))
+                                }
+                        } else {
+                            NekoRemoteImageView(
+                                remoteURL: voice.mediaURL,
+                                objectKey: voice.mediaObjectKey,
+                                contentMode: .fill
+                            ) {
+                                avatarFallback
+                                    .frame(width: proxy.size.width, height: proxy.size.height)
+                            }
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
                         }
 
                         LinearGradient(
@@ -4037,6 +4103,7 @@ private struct VoicePublishSheet: View {
     @State private var isAnalyzing = false
     @State private var isPublishing = false
     @State private var errorMessage: String?
+    @State private var pendingAnalysisAfterLogin: Bool?
 
     private var catName: String {
         appModel.catProfile?.name.nonEmpty ?? "猫咪"
@@ -4052,6 +4119,7 @@ private struct VoicePublishSheet: View {
                     selectedPhotoItem: $selectedPhotoItem,
                     photoPreviewImage: photoPreviewImage,
                     profileAvatarURL: appModel.catProfile?.avatarURL,
+                    profileAvatarObjectKey: appModel.catProfile?.avatarObjectKey,
                     canContinue: photoData != nil,
                     isDisabled: isAnalyzing || isPublishing,
                     onBack: { dismiss() },
@@ -4069,6 +4137,7 @@ private struct VoicePublishSheet: View {
                     catName: catName,
                     photoPreviewImage: photoPreviewImage,
                     draftVoice: draftVoice,
+                    isLoading: isAnalyzing,
                     isReanalyzing: isAnalyzing,
                     isPublishing: isPublishing,
                     onBack: { step = .background },
@@ -4100,6 +4169,11 @@ private struct VoicePublishSheet: View {
         .onChange(of: selectedPhotoItem) { _, item in
             Task { await loadPhoto(from: item) }
         }
+        .onChange(of: appModel.session?.accessToken) { _, accessToken in
+            guard accessToken != nil, let stayOnPreview = pendingAnalysisAfterLogin else { return }
+            pendingAnalysisAfterLogin = nil
+            Task { await generatePreview(stayOnPreview: stayOnPreview) }
+        }
     }
 
     @MainActor
@@ -4130,7 +4204,17 @@ private struct VoicePublishSheet: View {
             errorMessage = "先上传一张猫咪照片吧。"
             return
         }
+        guard appModel.session != nil else {
+            pendingAnalysisAfterLogin = stayOnPreview
+            appModel.requestLogin(message: "识别猫咪心声前需要先登录。登录后，AI 心声会绑定到你的猫咪档案。")
+            return
+        }
         guard !isAnalyzing else { return }
+
+        if !stayOnPreview {
+            draftVoice = nil
+            step = .preview
+        }
 
         isAnalyzing = true
         defer { isAnalyzing = false }
@@ -4138,11 +4222,11 @@ private struct VoicePublishSheet: View {
         do {
             let voice = try await appModel.generateCatVoicePreview(imageData: photoData, scene: scene)
             draftVoice = voice
-            if !stayOnPreview {
-                step = .preview
-            }
         } catch {
             errorMessage = userFacingMessage(error)
+            if !stayOnPreview {
+                step = .background
+            }
         }
     }
 
@@ -4185,6 +4269,9 @@ private struct VoicePublishSheet: View {
             return ("正在发布猫咪心声…", "PUBLISHING")
         }
         if isAnalyzing {
+            if step == .preview {
+                return nil
+            }
             return (step == .preview ? "AI 正在重新识别…" : "AI 正在识别它的小心思…", step == .preview ? "RE · ANALYZING" : "ANALYZING")
         }
         return nil
@@ -4243,6 +4330,7 @@ private struct PublishUploadScreen: View {
     @Binding var selectedPhotoItem: PhotosPickerItem?
     let photoPreviewImage: UIImage?
     let profileAvatarURL: URL?
+    let profileAvatarObjectKey: String?
     let canContinue: Bool
     let isDisabled: Bool
     let onBack: () -> Void
@@ -4270,7 +4358,11 @@ private struct PublishUploadScreen: View {
                         .padding(.top, 24)
 
                         PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                            PublishUploadPhotoCard(photoPreviewImage: photoPreviewImage, profileAvatarURL: profileAvatarURL)
+                            PublishUploadPhotoCard(
+                                photoPreviewImage: photoPreviewImage,
+                                profileAvatarURL: profileAvatarURL,
+                                profileAvatarObjectKey: profileAvatarObjectKey
+                            )
                         }
                         .buttonStyle(.plain)
                         .disabled(isDisabled)
@@ -4401,6 +4493,7 @@ private struct PublishPreviewScreen: View {
     let catName: String
     let photoPreviewImage: UIImage?
     let draftVoice: CatVoiceResult?
+    let isLoading: Bool
     let isReanalyzing: Bool
     let isPublishing: Bool
     let onBack: () -> Void
@@ -4435,7 +4528,12 @@ private struct PublishPreviewScreen: View {
                     .padding(.horizontal, 28)
                     .padding(.top, 20)
 
-                    PublishPreviewStageCard(catName: catName, photoPreviewImage: photoPreviewImage, voice: draftVoice)
+                    PublishPreviewStageCard(
+                        catName: catName,
+                        photoPreviewImage: photoPreviewImage,
+                        voice: draftVoice,
+                        isLoading: isLoading
+                    )
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
 
@@ -4600,6 +4698,7 @@ private struct PublishBackButton: View {
 private struct PublishUploadPhotoCard: View {
     let photoPreviewImage: UIImage?
     let profileAvatarURL: URL?
+    let profileAvatarObjectKey: String?
 
     var body: some View {
         ZStack {
@@ -4642,7 +4741,12 @@ private struct PublishUploadPhotoCard: View {
                                 .fill(NekoTheme.soulPink.opacity(0.42))
                                 .frame(width: 106, height: 106)
                                 .blur(radius: 24)
-                            CatAvatarView(localImage: nil, remoteURL: profileAvatarURL, size: 80)
+                            CatAvatarView(
+                                localImage: nil,
+                                remoteURL: profileAvatarURL,
+                                objectKey: profileAvatarObjectKey,
+                                size: 80
+                            )
                         }
 
                         VStack(spacing: 8) {
@@ -4776,6 +4880,7 @@ private struct PublishPreviewStageCard: View {
     let catName: String
     let photoPreviewImage: UIImage?
     let voice: CatVoiceResult?
+    let isLoading: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -4805,16 +4910,32 @@ private struct PublishPreviewStageCard: View {
                 VStack(spacing: 0) {
                     PublishSpeechBubble(
                         catName: catName,
-                        text: voice?.text.nonEmpty ?? "识别结果还没有回来，请重新识别。",
+                        text: bubbleText,
                         centered: true
                     )
                     .padding(.top, 12)
+
+                    if isLoading {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.82)
+                            Text("AI 正在听它怎么说")
+                                .font(.system(size: 10.5, weight: .medium))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
+                        .background(Color.black.opacity(0.22), in: Capsule())
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    }
 
                     Spacer()
 
                     VStack(alignment: .leading, spacing: 8) {
                         PublishSectionTitle("AI 心 声 解 析")
-                        Text(voice?.analysis?.nonEmpty ?? "暂未获得 AI 心声解析，请点击重新识别。")
+                        Text(analysisText)
                             .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(NekoTheme.ink.opacity(0.86))
                             .lineSpacing(5)
@@ -4839,6 +4960,22 @@ private struct PublishPreviewStageCard: View {
                 .stroke(.white.opacity(0.70), lineWidth: 1)
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 30, x: 0, y: 16)
+        .animation(.easeInOut(duration: 0.22), value: isLoading)
+        .animation(.easeInOut(duration: 0.22), value: voice?.text ?? "")
+    }
+
+    private var bubbleText: String {
+        if let text = voice?.text.nonEmpty {
+            return text
+        }
+        return isLoading ? "我正在听懂这一刻，马上告诉你喵～" : "识别结果还没有回来，请重新识别。"
+    }
+
+    private var analysisText: String {
+        if let analysis = voice?.analysis?.nonEmpty {
+            return analysis
+        }
+        return isLoading ? "AI 正在结合照片、场景和猫咪人格档案生成这一刻的心声…" : "暂未获得 AI 心声解析，请点击重新识别。"
     }
 }
 
@@ -5206,19 +5343,10 @@ private struct LatestVoiceCard: View {
 }
 
 private struct CatAvatarView: View {
-    @EnvironmentObject private var appModel: NekoAppModel
-
     let localImage: UIImage?
     let remoteURL: URL?
     var objectKey: String? = nil
     let size: CGFloat
-    @State private var loadedRemoteImage: UIImage?
-    @State private var currentRemoteURL: URL?
-    @State private var attemptedRefresh = false
-
-    private var imageSourceID: String {
-        "\(remoteURL?.absoluteString ?? "nil")|\(objectKey ?? "nil")"
-    }
 
     var body: some View {
         ZStack {
@@ -5229,12 +5357,14 @@ private struct CatAvatarView: View {
                 Image(uiImage: localImage)
                     .resizable()
                     .scaledToFill()
-            } else if let loadedRemoteImage {
-                Image(uiImage: loadedRemoteImage)
-                    .resizable()
-                    .scaledToFill()
             } else {
-                fallback
+                NekoRemoteImageView(
+                    remoteURL: remoteURL,
+                    objectKey: objectKey,
+                    contentMode: .fill
+                ) {
+                    fallback
+                }
             }
         }
         .frame(width: size, height: size)
@@ -5244,58 +5374,12 @@ private struct CatAvatarView: View {
                 .stroke(.white.opacity(0.88), lineWidth: 2)
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 16, x: 0, y: 8)
-        .task(id: imageSourceID) {
-            guard localImage == nil else { return }
-            currentRemoteURL = remoteURL
-            attemptedRefresh = false
-            await loadRemoteImage(allowRefresh: true)
-        }
     }
 
     private var fallback: some View {
         Image(systemName: "pawprint.fill")
             .font(.system(size: size * 0.36, weight: .semibold))
             .foregroundStyle(NekoTheme.soulViolet)
-    }
-
-    @MainActor
-    private func loadRemoteImage(allowRefresh: Bool) async {
-        loadedRemoteImage = nil
-        guard let sourceURL = currentRemoteURL else {
-            if allowRefresh {
-                await refreshSignedURLAndRetry()
-            }
-            return
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: sourceURL)
-            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            guard let image = UIImage(data: data) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            loadedRemoteImage = image
-        } catch {
-            if allowRefresh {
-                await refreshSignedURLAndRetry()
-            } else {
-                loadedRemoteImage = nil
-            }
-        }
-    }
-
-    @MainActor
-    private func refreshSignedURLAndRetry() async {
-        guard !attemptedRefresh else { return }
-        attemptedRefresh = true
-        guard let refreshedURL = await appModel.signedMediaURL(for: objectKey) else {
-            loadedRemoteImage = nil
-            return
-        }
-        currentRemoteURL = refreshedURL
-        await loadRemoteImage(allowRefresh: false)
     }
 }
 
