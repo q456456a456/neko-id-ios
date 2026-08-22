@@ -10,7 +10,6 @@ import Foundation
 enum AppConfig {
     static let productionWebURL = URL(string: "https://www.neko-id.uk")!
     static let supabaseURL = URL(string: "https://jbjgrkivscrombvnlcrl.supabase.co")!
-    static let supabaseMediaBucket = "neko-media"
     static let maxAvatarImageBytes = 10 * 1024 * 1024
     static let maxVoiceImageBytes = 10 * 1024 * 1024
     static let maxOnboardingVideoBytes = 100 * 1024 * 1024

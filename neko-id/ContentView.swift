@@ -11,6 +11,7 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var appModel: NekoAppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -33,6 +34,12 @@ struct ContentView: View {
         .id(appModel.phase)
         .task {
             await appModel.bootstrap()
+        }
+        .onChange(of: scenePhase) { _, nextPhase in
+            guard nextPhase == .active else { return }
+            Task {
+                await appModel.refreshSignedMediaURLs()
+            }
         }
         .alert("提示", isPresented: errorBinding) {
             Button("知道了", role: .cancel) {
@@ -567,7 +574,7 @@ private struct HomeProfileCard: View {
         NekoGlassCard(cornerRadius: 24, tint: true) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
-                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, size: 46)
+                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 46)
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 7) {
@@ -638,7 +645,7 @@ private struct EmptyFeedCard: View {
                         .frame(width: 76, height: 76)
                         .blur(radius: 2)
 
-                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, size: 56)
+                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 56)
                         .padding(10)
                         .background(NekoTheme.photoPlaceholderGradient, in: Circle())
                         .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 24, x: 0, y: 10)
@@ -787,6 +794,81 @@ private struct TimelineVoiceRow: View {
     }
 }
 
+private struct NekoFlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let proposedWidth = proposal.width ?? .infinity
+        let maxWidth = proposedWidth.isFinite ? proposedWidth : CGFloat.greatestFiniteMagnitude
+        var cursorX: CGFloat = 0
+        var cursorY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var measuredWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if cursorX > 0, cursorX + size.width > maxWidth {
+                cursorY += lineHeight + lineSpacing
+                cursorX = 0
+                lineHeight = 0
+            }
+
+            measuredWidth = max(measuredWidth, cursorX + size.width)
+            cursorX += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+
+        let finalWidth = proposedWidth.isFinite ? proposedWidth : measuredWidth
+        return CGSize(width: finalWidth, height: cursorY + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var cursorX = bounds.minX
+        var cursorY = bounds.minY
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if cursorX > bounds.minX, cursorX + size.width > bounds.maxX {
+                cursorY += lineHeight + lineSpacing
+                cursorX = bounds.minX
+                lineHeight = 0
+            }
+
+            subview.place(
+                at: CGPoint(x: cursorX, y: cursorY),
+                proposal: ProposedViewSize(width: size.width, height: size.height)
+            )
+            cursorX += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
+}
+
+private struct VoiceTagChip: View {
+    let tag: String
+    var compact = false
+
+    var body: some View {
+        Text(tag)
+            .font(.system(size: compact ? 10.5 : 10.5, weight: .semibold))
+            .foregroundStyle(NekoTheme.soulViolet)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, compact ? 10 : 8)
+            .padding(.vertical, compact ? 5 : 4)
+            .background(
+                LinearGradient(
+                    colors: [NekoTheme.softPink.opacity(0.86), NekoTheme.softLilac.opacity(0.76)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: Capsule()
+            )
+    }
+}
+
 private struct VoiceFeedCard: View {
     let voice: CatVoiceResult
     let profile: CatProfile
@@ -800,10 +882,12 @@ private struct VoiceFeedCard: View {
                     ZStack(alignment: .topLeading) {
                         VoiceMediaImageView(
                             url: voice.mediaURL,
+                            objectKey: voice.mediaObjectKey,
                             mediaType: voice.mediaType,
                             aspect: voice.aspect,
                             contentMode: .fit,
                             fallbackAvatarURL: profile.avatarURL,
+                            fallbackAvatarObjectKey: profile.avatarObjectKey,
                             preferNaturalAspect: true
                         )
 
@@ -834,19 +918,11 @@ private struct VoiceFeedCard: View {
                 }
                 .buttonStyle(.plain)
 
-                HStack(spacing: 8) {
+                HStack(alignment: .bottom, spacing: 8) {
                     Button(action: onSelect) {
-                        HStack(spacing: 8) {
-                            ForEach(voice.tags.prefix(2), id: \.self) { tag in
-                                Text(tag)
-                                    .font(.system(size: 10.5, weight: .semibold))
-                                    .foregroundStyle(NekoTheme.soulViolet)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        LinearGradient(colors: [NekoTheme.softPink.opacity(0.86), NekoTheme.softLilac.opacity(0.76)], startPoint: .leading, endPoint: .trailing),
-                                        in: Capsule()
-                                    )
+                        NekoFlowLayout(spacing: 8, lineSpacing: 7) {
+                            ForEach(Array(voice.tags.prefix(3)), id: \.self) { tag in
+                                VoiceTagChip(tag: tag, compact: true)
                             }
 
                             if let location = voice.location, !location.isEmpty {
@@ -854,12 +930,13 @@ private struct VoiceFeedCard: View {
                                     .font(.system(size: 10.5))
                                     .foregroundStyle(NekoTheme.muted)
                                     .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-
-                    Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     Button(action: onMore) {
                         Text("⋯")
@@ -894,20 +971,30 @@ private enum VoiceMediaMetrics {
 }
 
 private struct VoiceMediaImageView: View {
+    @EnvironmentObject private var appModel: NekoAppModel
+
     let url: URL?
+    let objectKey: String?
     let mediaType: String?
     let aspect: String?
     let contentMode: ContentMode
     let fallbackAvatarURL: URL?
+    let fallbackAvatarObjectKey: String?
     var maxHeight: CGFloat = 420
     var preferNaturalAspect: Bool = true
     @State private var loadedImage: UIImage?
+    @State private var currentURL: URL?
+    @State private var attemptedRefresh = false
 
     private var aspectRatio: CGFloat {
         if preferNaturalAspect, let loadedImage {
             return max(loadedImage.size.width, 1) / max(loadedImage.size.height, 1)
         }
         return VoiceMediaMetrics.aspectRatio(for: aspect)
+    }
+
+    private var imageSourceID: String {
+        "\(url?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(mediaType ?? "nil")"
     }
 
     var body: some View {
@@ -922,27 +1009,57 @@ private struct VoiceMediaImageView: View {
                     .clipped()
             } else {
                 fallbackContent
-                    .opacity(url == nil || mediaType == "video" ? 1 : 0.72)
+                    .opacity(currentURL == nil || mediaType == "video" ? 1 : 0.72)
             }
         }
         .aspectRatio(aspectRatio, contentMode: .fit)
         .frame(maxHeight: maxHeight)
         .frame(maxWidth: .infinity)
-        .task(id: url) {
-            await loadImage()
+        .task(id: imageSourceID) {
+            currentURL = url
+            attemptedRefresh = false
+            await loadImage(allowRefresh: true)
         }
     }
 
     @MainActor
-    private func loadImage() async {
+    private func loadImage(allowRefresh: Bool) async {
         loadedImage = nil
-        guard let url, mediaType != "video" else { return }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            loadedImage = UIImage(data: data)
-        } catch {
-            loadedImage = nil
+        guard mediaType != "video" else { return }
+        guard let sourceURL = currentURL else {
+            if allowRefresh {
+                await refreshSignedURLAndRetry()
+            }
+            return
         }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: sourceURL)
+            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            guard let image = UIImage(data: data) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            loadedImage = image
+        } catch {
+            if allowRefresh {
+                await refreshSignedURLAndRetry()
+            } else {
+                loadedImage = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshSignedURLAndRetry() async {
+        guard !attemptedRefresh else { return }
+        attemptedRefresh = true
+        guard let refreshedURL = await appModel.signedMediaURL(for: objectKey) else {
+            loadedImage = nil
+            return
+        }
+        currentURL = refreshedURL
+        await loadImage(allowRefresh: false)
     }
 
     @ViewBuilder
@@ -955,6 +1072,7 @@ private struct VoiceMediaImageView: View {
             CatAvatarView(
                 localImage: nil,
                 remoteURL: fallbackAvatarURL,
+                objectKey: fallbackAvatarObjectKey,
                 size: 104
             )
         }
@@ -962,10 +1080,20 @@ private struct VoiceMediaImageView: View {
 }
 
 private struct VoiceDetailMediaFillView: View {
+    @EnvironmentObject private var appModel: NekoAppModel
+
     let url: URL?
+    let objectKey: String?
     let mediaType: String?
     let fallbackAvatarURL: URL?
+    let fallbackAvatarObjectKey: String?
     @State private var loadedImage: UIImage?
+    @State private var currentURL: URL?
+    @State private var attemptedRefresh = false
+
+    private var imageSourceID: String {
+        "\(url?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(mediaType ?? "nil")"
+    }
 
     var body: some View {
         ZStack {
@@ -985,27 +1113,58 @@ private struct VoiceDetailMediaFillView: View {
                 CatAvatarView(
                     localImage: nil,
                     remoteURL: fallbackAvatarURL,
+                    objectKey: fallbackAvatarObjectKey,
                     size: 112
                 )
-                .opacity(url == nil ? 1 : 0.72)
+                .opacity(currentURL == nil ? 1 : 0.72)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: url) {
-            await loadImage()
+        .task(id: imageSourceID) {
+            currentURL = url
+            attemptedRefresh = false
+            await loadImage(allowRefresh: true)
         }
     }
 
     @MainActor
-    private func loadImage() async {
+    private func loadImage(allowRefresh: Bool) async {
         loadedImage = nil
-        guard let url, mediaType != "video" else { return }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            loadedImage = UIImage(data: data)
-        } catch {
-            loadedImage = nil
+        guard mediaType != "video" else { return }
+        guard let sourceURL = currentURL else {
+            if allowRefresh {
+                await refreshSignedURLAndRetry()
+            }
+            return
         }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: sourceURL)
+            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            guard let image = UIImage(data: data) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            loadedImage = image
+        } catch {
+            if allowRefresh {
+                await refreshSignedURLAndRetry()
+            } else {
+                loadedImage = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshSignedURLAndRetry() async {
+        guard !attemptedRefresh else { return }
+        attemptedRefresh = true
+        guard let refreshedURL = await appModel.signedMediaURL(for: objectKey) else {
+            loadedImage = nil
+            return
+        }
+        currentURL = refreshedURL
+        await loadImage(allowRefresh: false)
     }
 }
 
@@ -1329,8 +1488,10 @@ private struct VoiceDetailView: View {
             ZStack(alignment: .topLeading) {
                 VoiceDetailMediaFillView(
                     url: voice.mediaURL,
+                    objectKey: voice.mediaObjectKey,
                     mediaType: voice.mediaType,
-                    fallbackAvatarURL: profile?.avatarURL
+                    fallbackAvatarURL: profile?.avatarURL,
+                    fallbackAvatarObjectKey: profile?.avatarObjectKey
                 )
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
@@ -1396,16 +1557,12 @@ private struct VoiceDetailView: View {
                 .padding(.top, 10)
 
             if !voice.tags.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
+                NekoFlowLayout(spacing: 6, lineSpacing: 6) {
                     ForEach(voice.tags, id: \.self) { tag in
-                        Text(tag)
-                            .font(.system(size: 10.5, weight: .regular))
-                            .foregroundStyle(NekoTheme.soulViolet)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(red: 0.966, green: 0.930, blue: 0.982), in: Capsule())
+                        VoiceTagChip(tag: "#\(tag)")
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
             }
         }
@@ -1677,7 +1834,7 @@ private struct MeSummaryCard: View {
                             .fill(Color.white.opacity(0.60))
                             .frame(width: 80, height: 80)
                             .blur(radius: 4)
-                        CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, size: 72)
+                        CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 72)
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
@@ -1981,7 +2138,7 @@ private struct AccountCenterView: View {
         NekoGlassCard(cornerRadius: 26, tint: true) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 16) {
-                    CatAvatarView(localImage: nil, remoteURL: appModel.catProfile?.avatarURL, size: 68)
+                    CatAvatarView(localImage: nil, remoteURL: appModel.catProfile?.avatarURL, objectKey: appModel.catProfile?.avatarObjectKey, size: 68)
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(summary?.profile.displayName?.nonEmpty ?? "NEKO 用户")
@@ -2300,7 +2457,7 @@ private struct EditProfileView: View {
         VStack(spacing: 12) {
             PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
                 ZStack(alignment: .bottomTrailing) {
-                    CatAvatarView(localImage: avatarPreview, remoteURL: appModel.catProfile?.avatarURL, size: 92)
+                    CatAvatarView(localImage: avatarPreview, remoteURL: appModel.catProfile?.avatarURL, objectKey: appModel.catProfile?.avatarObjectKey, size: 92)
 
                     Image(systemName: "pencil")
                         .font(.system(size: 11, weight: .semibold))
@@ -2902,7 +3059,7 @@ private struct ManageVoiceCard: View {
     private var avatarFallback: some View {
         ZStack {
             NekoTheme.photoPlaceholderGradient
-            CatAvatarView(localImage: nil, remoteURL: profile?.avatarURL, size: 64)
+            CatAvatarView(localImage: nil, remoteURL: profile?.avatarURL, objectKey: profile?.avatarObjectKey, size: 64)
         }
     }
 
@@ -3526,7 +3683,7 @@ private struct PersonaOrbitAvatar: View {
             Circle()
                 .stroke(NekoTheme.softLilac.opacity(0.72), lineWidth: 1)
                 .padding(8)
-            CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, size: 100)
+            CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 100)
                 .padding(6)
                 .background(Color.white.opacity(0.94), in: Circle())
                 .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 18, x: 0, y: 10)
@@ -5049,9 +5206,19 @@ private struct LatestVoiceCard: View {
 }
 
 private struct CatAvatarView: View {
+    @EnvironmentObject private var appModel: NekoAppModel
+
     let localImage: UIImage?
     let remoteURL: URL?
+    var objectKey: String? = nil
     let size: CGFloat
+    @State private var loadedRemoteImage: UIImage?
+    @State private var currentRemoteURL: URL?
+    @State private var attemptedRefresh = false
+
+    private var imageSourceID: String {
+        "\(remoteURL?.absoluteString ?? "nil")|\(objectKey ?? "nil")"
+    }
 
     var body: some View {
         ZStack {
@@ -5062,17 +5229,10 @@ private struct CatAvatarView: View {
                 Image(uiImage: localImage)
                     .resizable()
                     .scaledToFill()
-            } else if let remoteURL {
-                AsyncImage(url: remoteURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        fallback
-                    }
-                }
+            } else if let loadedRemoteImage {
+                Image(uiImage: loadedRemoteImage)
+                    .resizable()
+                    .scaledToFill()
             } else {
                 fallback
             }
@@ -5084,12 +5244,58 @@ private struct CatAvatarView: View {
                 .stroke(.white.opacity(0.88), lineWidth: 2)
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 16, x: 0, y: 8)
+        .task(id: imageSourceID) {
+            guard localImage == nil else { return }
+            currentRemoteURL = remoteURL
+            attemptedRefresh = false
+            await loadRemoteImage(allowRefresh: true)
+        }
     }
 
     private var fallback: some View {
         Image(systemName: "pawprint.fill")
             .font(.system(size: size * 0.36, weight: .semibold))
             .foregroundStyle(NekoTheme.soulViolet)
+    }
+
+    @MainActor
+    private func loadRemoteImage(allowRefresh: Bool) async {
+        loadedRemoteImage = nil
+        guard let sourceURL = currentRemoteURL else {
+            if allowRefresh {
+                await refreshSignedURLAndRetry()
+            }
+            return
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: sourceURL)
+            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            guard let image = UIImage(data: data) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            loadedRemoteImage = image
+        } catch {
+            if allowRefresh {
+                await refreshSignedURLAndRetry()
+            } else {
+                loadedRemoteImage = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshSignedURLAndRetry() async {
+        guard !attemptedRefresh else { return }
+        attemptedRefresh = true
+        guard let refreshedURL = await appModel.signedMediaURL(for: objectKey) else {
+            loadedRemoteImage = nil
+            return
+        }
+        currentRemoteURL = refreshedURL
+        await loadRemoteImage(allowRefresh: false)
     }
 }
 

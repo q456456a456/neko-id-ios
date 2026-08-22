@@ -92,32 +92,20 @@ final class NekoAppModel: ObservableObject {
                 hasAvatar: avatarImageData != nil
             )
 
-            var isRetestingExistingProfile = false
-            var profile: CatProfile
-            if let currentProfile = catProfile {
-                isRetestingExistingProfile = true
-                profile = try await api.updateCatProfile(
-                    currentProfile,
-                    name: draft.trimmedName,
-                    gender: draft.gender,
-                    ageStage: draft.ageStage,
-                    session: activeSession
-                )
-                try await api.upsertPersona(finalPersona, for: profile, session: activeSession)
-            } else {
-                profile = try await api.createCatProfile(
-                    draft,
-                    quizAnswers: quizAnswers,
-                    persona: finalPersona,
-                    session: activeSession
-                )
-            }
-            if let avatarImageData {
-                let upload = try MediaUploadProcessor.prepareAvatarImage(from: avatarImageData)
-                profile = try await api.uploadAvatarImage(upload, for: profile, session: activeSession)
-            }
-            catProfile = profile
-            persona = finalPersona
+            let isRetestingExistingProfile = catProfile != nil
+            let saved = try await serverAPI.saveCatProfile(
+                currentProfile: catProfile,
+                name: draft.trimmedName,
+                gender: draft.gender,
+                ageStage: draft.ageStage,
+                quizAnswers: quizAnswers,
+                persona: finalPersona,
+                avatarImageData: avatarImageData,
+                completeOnboarding: true,
+                accessToken: activeSession.accessToken
+            )
+            catProfile = saved.profile
+            persona = saved.persona ?? finalPersona
             if isRetestingExistingProfile {
                 voices = []
             }
@@ -175,31 +163,81 @@ final class NekoAppModel: ObservableObject {
 
         await runBusy {
             let activeSession = try await authenticatedSession()
-            let upload = try MediaUploadProcessor.prepareAvatarImage(from: data)
-            catProfile = try await api.uploadAvatarImage(upload, for: profile, session: activeSession)
+            catProfile = try await serverAPI.uploadAvatarImage(
+                data,
+                for: profile,
+                accessToken: activeSession.accessToken
+            )
             noticeMessage = "头像已更新。"
         }
     }
 
     func loadAccountSummary() async throws -> NekoAccountSummary {
         let activeSession = try await authenticatedSession()
-        return try await api.fetchAccountSummary(session: activeSession)
+        return try await serverAPI.fetchAccountSummary(accessToken: activeSession.accessToken)
     }
 
     func updateDisplayName(_ displayName: String) async throws -> NekoAccountProfile {
         let activeSession = try await authenticatedSession()
-        return try await api.updateUserProfile(displayName: displayName, session: activeSession)
+        return try await serverAPI.updateUserProfile(
+            displayName: displayName,
+            accessToken: activeSession.accessToken
+        )
     }
 
     func saveCurrentStateToCloud() async throws -> NekoAccountSummary {
         let activeSession = try await authenticatedSession()
-        return try await api.fetchAccountSummary(session: activeSession)
+        return try await serverAPI.fetchAccountSummary(accessToken: activeSession.accessToken)
     }
 
     func restoreFromCloud() async throws -> NekoAccountSummary {
         let activeSession = try await authenticatedSession()
         try await reloadCloudState(session: activeSession)
-        return try await api.fetchAccountSummary(session: activeSession)
+        return try await serverAPI.fetchAccountSummary(accessToken: activeSession.accessToken)
+    }
+
+    func signedMediaURL(for objectKey: String?) async -> URL? {
+        guard let objectKey, !objectKey.isEmpty else { return nil }
+        do {
+            let activeSession = try await authenticatedSession()
+            return try await serverAPI.signedMediaURL(
+                for: objectKey,
+                accessToken: activeSession.accessToken
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    func refreshSignedMediaURLs() async {
+        guard session != nil else { return }
+        do {
+            let activeSession = try await authenticatedSession()
+
+            if var profile = catProfile,
+               let nextAvatarURL = try? await serverAPI.signedMediaURL(
+                for: profile.avatarObjectKey,
+                accessToken: activeSession.accessToken
+               ) {
+                profile.avatarURL = nextAvatarURL
+                catProfile = profile
+            }
+
+            guard !voices.isEmpty else { return }
+            var refreshedVoices = voices
+            for index in refreshedVoices.indices {
+                guard let objectKey = refreshedVoices[index].mediaObjectKey, !objectKey.isEmpty else { continue }
+                if let nextMediaURL = try? await serverAPI.signedMediaURL(
+                    for: objectKey,
+                    accessToken: activeSession.accessToken
+                ) {
+                    refreshedVoices[index].mediaURL = nextMediaURL
+                }
+            }
+            voices = refreshedVoices
+        } catch {
+            // 图片 URL 刷新失败不影响主流程；单张图片组件还会在加载失败时再重试一次。
+        }
     }
 
     func updateCatProfileDetails(
@@ -208,27 +246,28 @@ final class NekoAppModel: ObservableObject {
         ageStage: CatAgeStage,
         avatarImageData: Data?
     ) async throws {
-        guard var profile = catProfile else {
+        guard let profile = catProfile else {
             phase = .onboarding
             throw NekoAppError.missingCatProfile
         }
 
         let activeSession = try await authenticatedSession()
-        profile = try await api.updateCatProfile(
-            profile,
+        let saved = try await serverAPI.saveCatProfile(
+            currentProfile: profile,
             name: name,
             gender: gender,
             ageStage: ageStage,
-            session: activeSession
+            quizAnswers: [:],
+            persona: nil,
+            avatarImageData: avatarImageData,
+            completeOnboarding: false,
+            accessToken: activeSession.accessToken
         )
 
-        if let avatarImageData {
-            let upload = try MediaUploadProcessor.prepareAvatarImage(from: avatarImageData)
-            profile = try await api.uploadAvatarImage(upload, for: profile, session: activeSession)
+        catProfile = saved.profile
+        if let savedPersona = saved.persona {
+            persona = savedPersona
         }
-
-        catProfile = profile
-        persona = try? await api.fetchPersona(for: profile, session: activeSession)
     }
 
     func saveProfileAndRestartOnboarding(
@@ -255,7 +294,10 @@ final class NekoAppModel: ObservableObject {
         }
 
         let activeSession = try await authenticatedSession()
-        let nextVoices = try await api.fetchVoices(for: profile, session: activeSession)
+        let nextVoices = try await serverAPI.fetchVoices(
+            for: profile,
+            accessToken: activeSession.accessToken
+        )
         voices = nextVoices
         return nextVoices
     }
@@ -266,7 +308,11 @@ final class NekoAppModel: ObservableObject {
         }
 
         let activeSession = try await authenticatedSession()
-        try await api.deleteVoices(ids: ids, for: profile, session: activeSession)
+        try await serverAPI.deleteVoices(
+            ids: ids,
+            for: profile,
+            accessToken: activeSession.accessToken
+        )
         voices.removeAll { voice in
             voice.cloudId.map { ids.contains($0) } ?? false
         }
@@ -304,12 +350,11 @@ final class NekoAppModel: ObservableObject {
         }
 
         let activeSession = try await authenticatedSession()
-        let upload = try MediaUploadProcessor.prepareVoiceImage(from: imageData)
-        let saved = try await api.saveCatVoice(
+        let saved = try await serverAPI.saveCatVoice(
             generated,
-            imageUpload: upload,
+            imageData: imageData,
             for: profile,
-            session: activeSession
+            accessToken: activeSession.accessToken
         )
         voices.insert(saved, at: 0)
         if showNotice {
@@ -352,15 +397,11 @@ final class NekoAppModel: ObservableObject {
     }
 
     private func reloadCloudState(session activeSession: NekoSession) async throws {
-        catProfile = try await api.fetchActiveCat(session: activeSession)
-        if let catProfile {
-            persona = try? await api.fetchPersona(for: catProfile, session: activeSession)
-            voices = (try? await api.fetchVoices(for: catProfile, session: activeSession)) ?? []
-        } else {
-            persona = nil
-            voices = []
-        }
-        phase = catProfile == nil ? .onboarding : .home
+        let cloudState = try await serverAPI.fetchCloudState(accessToken: activeSession.accessToken)
+        catProfile = cloudState.profile
+        persona = cloudState.persona
+        voices = cloudState.voices
+        phase = cloudState.profile == nil ? .onboarding : .home
     }
 
     private func runBusy(_ operation: () async throws -> Void) async {

@@ -94,6 +94,127 @@ struct NekoServerAPIClient {
         )
     }
 
+    func fetchCloudState(accessToken: String) async throws -> NekoCloudState {
+        try await perform(
+            path: "/api/ios/cloud/state",
+            body: EmptyServerRequest(),
+            accessToken: accessToken
+        )
+    }
+
+    func saveCatProfile(
+        currentProfile: CatProfile?,
+        name: String,
+        gender: CatGender,
+        ageStage: CatAgeStage,
+        quizAnswers: [Int: QuizChoice],
+        persona: CatPersonaResult?,
+        avatarImageData: Data?,
+        completeOnboarding: Bool,
+        accessToken: String
+    ) async throws -> NekoCatProfileSaveResult {
+        let avatarUpload = try avatarImageData.map { data in
+            try MediaUploadProcessor.prepareAvatarImage(from: data)
+        }
+        let body = SaveCatProfileRequest(
+            currentCatId: currentProfile?.id,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            gender: gender.rawValue,
+            ageStage: ageStage.rawValue,
+            quiz: Dictionary(uniqueKeysWithValues: quizAnswers.map { key, value in
+                (String(key), value.rawValue)
+            }),
+            persona: persona,
+            avatarImageDataUrl: avatarUpload.map(Self.dataURL(from:)),
+            completeOnboarding: completeOnboarding
+        )
+
+        return try await perform(
+            path: "/api/ios/cloud/cat-profile",
+            body: body,
+            accessToken: accessToken
+        )
+    }
+
+    func uploadAvatarImage(
+        _ imageData: Data,
+        for profile: CatProfile,
+        accessToken: String
+    ) async throws -> CatProfile {
+        let upload = try MediaUploadProcessor.prepareAvatarImage(from: imageData)
+        let body = AvatarUploadRequest(
+            catId: profile.id,
+            avatarImageDataUrl: Self.dataURL(from: upload)
+        )
+
+        return try await perform(
+            path: "/api/ios/cloud/avatar",
+            body: body,
+            accessToken: accessToken
+        )
+    }
+
+    func fetchAccountSummary(accessToken: String) async throws -> NekoAccountSummary {
+        try await perform(
+            path: "/api/ios/cloud/account-summary",
+            body: EmptyServerRequest(),
+            accessToken: accessToken
+        )
+    }
+
+    func updateUserProfile(displayName: String, accessToken: String) async throws -> NekoAccountProfile {
+        try await perform(
+            path: "/api/ios/cloud/user-profile",
+            body: UpdateUserProfileRequest(displayName: displayName),
+            accessToken: accessToken
+        )
+    }
+
+    func fetchVoices(for profile: CatProfile, accessToken: String) async throws -> [CatVoiceResult] {
+        try await perform(
+            path: "/api/ios/cloud/voices",
+            body: FetchVoicesRequest(catId: profile.id),
+            accessToken: accessToken
+        )
+    }
+
+    func deleteVoices(ids: [String], for profile: CatProfile, accessToken: String) async throws {
+        let _: DeleteVoicesResponse = try await perform(
+            path: "/api/ios/cloud/voices/delete",
+            body: DeleteVoicesRequest(catId: profile.id, ids: ids),
+            accessToken: accessToken
+        )
+    }
+
+    func saveCatVoice(
+        _ voice: CatVoiceResult,
+        imageData: Data,
+        for profile: CatProfile,
+        accessToken: String
+    ) async throws -> CatVoiceResult {
+        let upload = try MediaUploadProcessor.prepareVoiceImage(from: imageData)
+        let body = SaveVoiceRequest(
+            catId: profile.id,
+            voice: voice,
+            imageDataUrl: Self.dataURL(from: upload)
+        )
+
+        return try await perform(
+            path: "/api/ios/cloud/voice",
+            body: body,
+            accessToken: accessToken
+        )
+    }
+
+    func signedMediaURL(for objectKey: String?, accessToken: String) async throws -> URL? {
+        let response: SignedMediaURLResponse = try await perform(
+            path: "/api/ios/cloud/media-url",
+            body: SignedMediaURLRequest(objectKey: objectKey),
+            accessToken: accessToken
+        )
+        return response.mediaURL
+    }
+
     private func perform<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody,
@@ -138,12 +259,39 @@ struct NekoServerAPIClient {
     }
 
     private var decoder: JSONDecoder {
-        JSONDecoder()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let string = try container.decode(String.self)
+
+            if let date = Self.iso8601WithFractionalSeconds.date(from: string) ?? Self.iso8601.date(from: string) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO date")
+        }
+        return decoder
     }
 
     private static func plainText(from data: Data) -> String {
         String(data: data, encoding: .utf8) ?? "服务器请求失败。"
     }
+
+    private static func dataURL(from upload: PreparedImageUpload) -> String {
+        "data:\(upload.mimeType);base64,\(upload.data.base64EncodedString())"
+    }
+
+    private static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 }
 
 enum NekoServerAPIError: LocalizedError {
@@ -178,6 +326,66 @@ private struct VoiceRequest: Encodable {
     let persona: CatPersonaResult?
     let imageDataUrl: String
     let scene: String
+}
+
+struct NekoCloudState: Decodable, Equatable {
+    let profile: CatProfile?
+    let persona: CatPersonaResult?
+    let voices: [CatVoiceResult]
+}
+
+struct NekoCatProfileSaveResult: Decodable, Equatable {
+    let profile: CatProfile
+    let persona: CatPersonaResult?
+}
+
+private struct EmptyServerRequest: Encodable {}
+
+private struct SaveCatProfileRequest: Encodable {
+    let currentCatId: String?
+    let name: String
+    let gender: String
+    let ageStage: String
+    let quiz: [String: String]
+    let persona: CatPersonaResult?
+    let avatarImageDataUrl: String?
+    let completeOnboarding: Bool
+}
+
+private struct AvatarUploadRequest: Encodable {
+    let catId: String
+    let avatarImageDataUrl: String
+}
+
+private struct UpdateUserProfileRequest: Encodable {
+    let displayName: String
+}
+
+private struct FetchVoicesRequest: Encodable {
+    let catId: String
+}
+
+private struct DeleteVoicesRequest: Encodable {
+    let catId: String
+    let ids: [String]
+}
+
+private struct DeleteVoicesResponse: Decodable {
+    let deleted: Int?
+}
+
+private struct SaveVoiceRequest: Encodable {
+    let catId: String
+    let voice: CatVoiceResult
+    let imageDataUrl: String
+}
+
+private struct SignedMediaURLRequest: Encodable {
+    let objectKey: String?
+}
+
+private struct SignedMediaURLResponse: Decodable {
+    let mediaURL: URL?
 }
 
 private struct ServerCatProfile: Encodable {
