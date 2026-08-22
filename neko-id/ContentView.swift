@@ -94,7 +94,7 @@ private struct LaunchingView: View {
 
 private struct LoginView: View {
     @EnvironmentObject private var appModel: NekoAppModel
-    @State private var email = ""
+    @State private var phone = ""
     @State private var code = ""
     @State private var codeSent = false
 
@@ -109,11 +109,11 @@ private struct LoginView: View {
                         .tracking(4.6)
                         .foregroundStyle(NekoTheme.soulViolet)
 
-                    Text("邮箱验证码登录")
+                    Text("手机号验证码登录")
                         .font(.system(size: 28, weight: .light))
                         .foregroundStyle(NekoTheme.ink)
 
-                    Text("输入邮箱，我们会通过 Supabase Auth 给你发送 6 位验证码。")
+                    Text("输入手机号，我们会通过短信给你发送 6 位验证码。")
                         .font(.system(size: 12.5))
                         .foregroundStyle(NekoTheme.muted)
                         .lineSpacing(4)
@@ -122,11 +122,11 @@ private struct LoginView: View {
 
                 NekoGlassCard(cornerRadius: 28) {
                     VStack(alignment: .leading, spacing: 12) {
-                        FieldTitle("邮箱")
-                        TextField("you@example.com", text: $email)
+                        FieldTitle("手机号")
+                        TextField("13800138000", text: $phone)
                             .textInputAutocapitalization(.never)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
+                            .keyboardType(.phonePad)
+                            .textContentType(.telephoneNumber)
                             .autocorrectionDisabled()
                             .font(.system(size: 14, weight: .regular))
                             .foregroundStyle(NekoTheme.ink)
@@ -136,13 +136,13 @@ private struct LoginView: View {
 
                         Button {
                             codeSent = true
-                            Task { await appModel.requestLoginCode(email: email) }
+                            Task { await appModel.requestLoginCode(phone: phone) }
                         } label: {
-                            Label(codeSent ? "重新发送验证码" : "发送验证码", systemImage: "envelope")
+                            Label(codeSent ? "重新发送验证码" : "发送验证码", systemImage: "message")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(NekoPrimaryButtonStyle())
-                        .disabled(appModel.isBusy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(appModel.isBusy || phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                         if codeSent {
                             VStack(alignment: .leading, spacing: 12) {
@@ -162,7 +162,7 @@ private struct LoginView: View {
                                     }
 
                                 Button {
-                                    Task { await appModel.verifyLoginCode(email: email, code: code) }
+                                    Task { await appModel.verifyLoginCode(phone: phone, code: code) }
                                 } label: {
                                     Label("完成登录", systemImage: "checkmark.circle")
                                         .frame(maxWidth: .infinity)
@@ -170,7 +170,7 @@ private struct LoginView: View {
                                 .buttonStyle(NekoPrimaryButtonStyle())
                                 .disabled(appModel.isBusy || code.count != 6)
 
-                                Text("如果看不到验证码，先检查垃圾邮件。")
+                                Text("如果收不到验证码，稍等一会儿再重新发送。")
                                     .font(.system(size: 11))
                                     .foregroundStyle(NekoTheme.muted)
                                     .frame(maxWidth: .infinity, alignment: .center)
@@ -182,7 +182,7 @@ private struct LoginView: View {
                 }
                 .padding(.top, 30)
 
-                Text("邮箱会作为账号唯一标识。登录后，猫咪档案、人格和心声会只绑定到当前用户。")
+                Text("手机号会作为账号唯一标识。登录后，猫咪档案、人格和心声会只绑定到当前用户。")
                     .font(.system(size: 11.5))
                     .foregroundStyle(NekoTheme.muted)
                     .lineSpacing(4)
@@ -1778,7 +1778,7 @@ private struct MeView: View {
                         .padding(.top, 16)
 
                     VStack(spacing: 10) {
-                        MeRowButton(icon: "☁︎", title: "账号与云端数据", sub: "邮箱登录、昵称和同步管理") {
+                        MeRowButton(icon: "☁︎", title: "账号与云端数据", sub: "手机号登录、昵称和同步管理") {
                             isAccountPresented = true
                         }
                         MeRowButton(icon: "✎", title: "修改人格档案", sub: "编辑猫咪基本信息") {
@@ -1882,12 +1882,12 @@ private struct CloudMemoryPanel: View {
     var body: some View {
         NekoGlassCard(cornerRadius: 22) {
             VStack(alignment: .leading, spacing: 0) {
-                if let email = appModel.session?.user.email, !email.isEmpty {
+                if let account = appModel.session?.user.loginIdentifier {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             CloudMemoryTitle()
 
-                            Text(email)
+                            Text(account)
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundStyle(NekoTheme.ink.opacity(0.80))
                                 .lineLimit(1)
@@ -1952,16 +1952,16 @@ private struct CloudMemoryPanel: View {
                 } else {
                     CloudMemoryTitle()
 
-                    Text("登录后，猫咪档案、人格和心声会保存到 Supabase。现在只支持邮箱验证码登录。")
+                    Text("登录后，猫咪档案、人格和心声会保存到 Supabase。现在支持手机号验证码登录。")
                         .font(.system(size: 11.5))
                         .foregroundStyle(NekoTheme.ink.opacity(0.75))
                         .lineSpacing(4)
                         .padding(.top, 10)
 
                     Button {
-                        appModel.noticeMessage = "你已经在 App 内使用邮箱验证码登录。"
+                        appModel.noticeMessage = "你已经在 App 内使用手机号验证码登录。"
                     } label: {
-                        Text("邮箱验证码登录")
+                        Text("手机号验证码登录")
                             .frame(maxWidth: .infinity)
                     }
                     .font(.system(size: 12, weight: .medium))
@@ -2145,7 +2145,7 @@ private struct AccountCenterView: View {
                             .font(.system(size: 17, weight: .medium))
                             .foregroundStyle(NekoTheme.ink)
                             .lineLimit(1)
-                        Text(appModel.session?.user.email ?? summary?.profile.email ?? "未登录")
+                        Text(appModel.session?.user.loginIdentifier ?? summary?.profile.email ?? "未登录")
                             .font(.system(size: 11, weight: .regular))
                             .foregroundStyle(NekoTheme.muted)
                             .lineLimit(1)

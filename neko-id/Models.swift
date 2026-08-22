@@ -26,6 +26,11 @@ enum CatAgeStage: String, CaseIterable, Identifiable, Codable {
 struct NekoUser: Codable, Equatable {
     let id: String
     let email: String?
+    let phone: String?
+
+    var loginIdentifier: String? {
+        phone?.nonEmpty ?? email?.nonEmpty
+    }
 }
 
 struct NekoSession: Codable, Equatable {
@@ -43,6 +48,13 @@ struct NekoAccountProfile: Codable, Equatable {
     let id: String
     let email: String?
     var displayName: String?
+}
+
+private extension String {
+    var nonEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 struct NekoAccountSummary: Codable, Equatable {

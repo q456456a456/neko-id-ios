@@ -52,17 +52,17 @@ final class NekoAppModel: ObservableObject {
         }
     }
 
-    func requestLoginCode(email: String) async {
+    func requestLoginCode(phone: String) async {
         await runBusy {
-            try await api.requestEmailOTP(email: email.normalizedEmail)
-            noticeMessage = "验证码已发送，请查收邮箱。"
+            try await api.requestPhoneOTP(phone: try phone.normalizedMainlandPhone())
+            noticeMessage = "验证码已发送，请查收短信。"
         }
     }
 
-    func verifyLoginCode(email: String, code: String) async {
+    func verifyLoginCode(phone: String, code: String) async {
         await runBusy {
-            let nextSession = try await api.verifyEmailOTP(
-                email: email.normalizedEmail,
+            let nextSession = try await api.verifyPhoneOTP(
+                phone: try phone.normalizedMainlandPhone(),
                 token: code.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             try KeychainStore.save(nextSession, account: sessionAccount)
@@ -437,6 +437,7 @@ final class NekoAppModel: ObservableObject {
 enum NekoAppError: LocalizedError {
     case signedOut
     case missingCatProfile
+    case invalidPhone
 
     var errorDescription: String? {
         switch self {
@@ -444,12 +445,37 @@ enum NekoAppError: LocalizedError {
             return "登录状态已过期，请重新登录。"
         case .missingCatProfile:
             return "还没有猫咪档案，请先创建档案。"
+        case .invalidPhone:
+            return "请输入有效的中国大陆手机号。"
         }
     }
 }
 
 private extension String {
-    var normalizedEmail: String {
-        trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    func normalizedMainlandPhone() throws -> String {
+        let compact = trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+
+        if compact.hasPrefix("+86") {
+            let phone = String(compact.dropFirst(3))
+            guard phone.range(of: #"^1\d{10}$"#, options: .regularExpression) != nil else {
+                throw NekoAppError.invalidPhone
+            }
+            return "+86\(phone)"
+        }
+
+        if compact.hasPrefix("86") {
+            let phone = String(compact.dropFirst(2))
+            guard phone.range(of: #"^1\d{10}$"#, options: .regularExpression) != nil else {
+                throw NekoAppError.invalidPhone
+            }
+            return "+86\(phone)"
+        }
+
+        guard compact.range(of: #"^1\d{10}$"#, options: .regularExpression) != nil else {
+            throw NekoAppError.invalidPhone
+        }
+        return "+86\(compact)"
     }
 }

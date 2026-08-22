@@ -33,8 +33,32 @@ struct SupabaseRESTClient {
         )
     }
 
+    func requestPhoneOTP(phone: String) async throws {
+        let body = PhoneOTPRequest(phone: phone)
+        _ = try await perform(
+            path: "auth/v1/otp",
+            method: "POST",
+            body: encode(body),
+            prefer: nil,
+            accessToken: nil
+        )
+    }
+
     func verifyEmailOTP(email: String, token: String) async throws -> NekoSession {
         let body = VerifyOTPRequest(email: email, token: token)
+        let data = try await perform(
+            path: "auth/v1/verify",
+            method: "POST",
+            body: encode(body),
+            prefer: nil,
+            accessToken: nil
+        )
+        let response = try decoder.decode(VerifyOTPResponse.self, from: data)
+        return response.session
+    }
+
+    func verifyPhoneOTP(phone: String, token: String) async throws -> NekoSession {
+        let body = VerifyPhoneOTPRequest(phone: phone, token: token)
         let data = try await perform(
             path: "auth/v1/verify",
             method: "POST",
@@ -158,10 +182,26 @@ private struct OTPRequest: Encodable {
     }
 }
 
+private struct PhoneOTPRequest: Encodable {
+    let phone: String
+    let createUser = true
+
+    enum CodingKeys: String, CodingKey {
+        case phone
+        case createUser = "create_user"
+    }
+}
+
 private struct VerifyOTPRequest: Encodable {
     let email: String
     let token: String
     let type = "email"
+}
+
+private struct VerifyPhoneOTPRequest: Encodable {
+    let phone: String
+    let token: String
+    let type = "sms"
 }
 
 private struct RefreshRequest: Encodable {
@@ -186,7 +226,7 @@ private struct VerifyOTPResponse: Decodable {
             accessToken: accessToken,
             refreshToken: refreshToken,
             expiresAt: expiry,
-            user: NekoUser(id: user.id, email: user.email)
+            user: NekoUser(id: user.id, email: user.email, phone: user.phone)
         )
     }
 
@@ -202,4 +242,5 @@ private struct VerifyOTPResponse: Decodable {
 private struct UserRow: Decodable {
     let id: String
     let email: String?
+    let phone: String?
 }
