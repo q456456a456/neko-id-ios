@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "neko-magic.jpg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

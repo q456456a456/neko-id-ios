@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "neko-bond.jpg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

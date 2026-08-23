@@ -3288,7 +3288,6 @@ private extension String {
 private struct PersonaDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appModel: NekoAppModel
-    @State private var isShareOpen = false
 
     let profile: CatProfile
     let persona: CatPersonaResult?
@@ -3337,196 +3336,21 @@ private struct PersonaDetailView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            NekoBackground()
-
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    PersonaTopBar(
-                        onBack: { dismiss() },
-                        onShare: {
-                            withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
-                                isShareOpen = true
-                            }
-                        }
-                    )
-
-                    PersonaHeroCard(profile: profile, persona: safePersona)
-
-                    PersonaSection(title: "AI 内心独白", hint: "INNER · VOICE", tone: true) {
-                        VStack(alignment: .trailing, spacing: 12) {
-                            Text(safePersona.monologue)
-                                .font(.system(size: NekoTypography.web(14), weight: .light))
-                                .italic()
-                                .foregroundStyle(NekoTheme.ink)
-                                .multilineTextAlignment(.center)
-                                .lineSpacing(7)
-                                .padding(.horizontal, 18)
-                                .padding(.top, 4)
-                                .frame(maxWidth: .infinity)
-                                .overlay(alignment: .topLeading) {
-                                    Text("“")
-                                        .font(.system(size: 34, weight: .regular, design: .serif))
-                                        .foregroundStyle(NekoTheme.soulViolet.opacity(0.26))
-                                        .offset(x: -4, y: -14)
-                                }
-                                .overlay(alignment: .bottomTrailing) {
-                                    Text("”")
-                                        .font(.system(size: 34, weight: .regular, design: .serif))
-                                        .foregroundStyle(NekoTheme.soulViolet.opacity(0.26))
-                                        .offset(x: 2, y: 14)
-                                }
-
-                            Text("—— \(profile.name) · by NEKO")
-                                .font(.system(size: NekoTypography.web(10), weight: .medium))
-                                .tracking(2.5)
-                                .foregroundStyle(NekoTheme.muted)
-                        }
-                    }
-
-                    PersonaSection(title: "AI 人格解析", hint: "PERSONALITY · ANALYSIS") {
-                        Text(safePersona.analysis)
-                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                            .foregroundStyle(NekoTheme.ink.opacity(0.85))
-                            .lineSpacing(7)
-                    }
-
-                    PersonaSection(title: "它眼中的你", hint: "YOUR · ROLE") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(safePersona.ownerRole)
-                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                                .foregroundStyle(NekoTheme.ink.opacity(0.85))
-                                .lineSpacing(7)
-
-                            HStack(spacing: 8) {
-                                ForEach(["温柔", "安全感", "可信", "陪伴者"], id: \.self) { chip in
-                                    Text(chip)
-                                        .font(.system(size: NekoTypography.web(10), weight: .medium))
-                                        .tracking(1.0)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(NekoTheme.selectedGradient, in: Capsule())
-                                        .shadow(color: NekoTheme.soulViolet.opacity(0.14), radius: 8, x: 0, y: 4)
-                                }
-                            }
-                        }
-                    }
-
-                    PersonaSection(title: "个性画像", hint: "PERSONALITY · PORTRAIT") {
-                        HStack(spacing: 0) {
-                            ForEach(displayTraits) { trait in
-                                PersonaTraitRing(trait: trait)
-                            }
-                        }
-                    }
-
-                    PersonaSection(
-                        title: "人格标签",
-                        hint: "TAGS · 06",
-                        actionTitle: "查看全部 ›"
-                    ) {
-                        FlowChipWrap(items: Array(displayTags.prefix(6)))
-                    }
-
-                    PersonaSection(title: "AI 观察依据", hint: "WHY · AI · THINKS · SO") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("最近 30 天观察")
-                                .font(.system(size: NekoTypography.web(10.5), weight: .regular))
-                                .tracking(1.2)
-                                .foregroundStyle(NekoTheme.muted)
-
-                            VStack(spacing: 8) {
-                                ForEach(displayObservations) { item in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(item.label)
-                                            .font(.system(size: NekoTypography.web(10), weight: .regular))
-                                            .tracking(2.2)
-                                            .foregroundStyle(NekoTheme.muted)
-
-                                        Text(item.value)
-                                            .font(.system(size: NekoTypography.web(12), weight: .medium))
-                                            .foregroundStyle(NekoTheme.ink)
-                                            .lineSpacing(4)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 10)
-                                    .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .stroke(NekoTheme.softPink.opacity(0.45), lineWidth: 1)
-                                    }
-                                }
-                            }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("AI 发现")
-                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
-                                    .tracking(3)
-                                    .foregroundStyle(NekoTheme.soulViolet)
-
-                                Text("它更倾向于观察后行动，因此形成明显的观察型人格特征。")
-                                    .font(.system(size: NekoTypography.web(12), weight: .regular))
-                                    .foregroundStyle(NekoTheme.ink.opacity(0.85))
-                                    .lineSpacing(5)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-                            }
-                        }
-                    }
-                }
-                .padding(.bottom, 128)
-            }
-
-            if isShareOpen {
-                PersonaShareOverlay(
-                    onClose: closeShare,
-                    onWeChat: {
-                        closeShare()
-                        appModel.noticeMessage = "正在调起微信，请选择要分享的好友…"
-                    },
-                    onMoments: {
-                        closeShare()
-                        appModel.noticeMessage = "正在打开朋友圈发布页…"
-                    },
-                    onSaveImage: {
-                        closeShare()
-                        appModel.noticeMessage = "已保存到相册"
-                    }
-                )
-                .transition(.opacity)
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            PersonaBottomActions(
-                onRestart: {
-                    dismiss()
-                    appModel.startOnboarding()
-                },
-                onSave: { dismiss() }
-            )
-        }
-        .navigationBarBackButtonHidden(true)
-        .nekoEdgeSwipeBack {
-            if isShareOpen {
-                closeShare()
-            } else {
+        LovablePersonaResultPage(
+            catName: profile.name,
+            avatarImage: nil,
+            avatarURL: profile.avatarURL,
+            avatarObjectKey: profile.avatarObjectKey,
+            persona: safePersona,
+            onBack: { dismiss() },
+            onRestart: {
                 dismiss()
-            }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-    }
-
-    private func closeShare() {
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.95)) {
-            isShareOpen = false
+                appModel.startOnboarding()
+            },
+            onSave: { dismiss() }
+        )
+        .nekoEdgeSwipeBack {
+            dismiss()
         }
     }
 }

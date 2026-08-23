@@ -1024,167 +1024,20 @@ private struct OnboardingResultScreen: View {
     let onSave: () -> Void
     let onRestartAnalysis: () -> Void
     let onBack: () -> Void
-    @State private var shareOpen = false
 
     var body: some View {
-        ZStack {
-            OnboardingWeb.welcomeGradient.ignoresSafeArea()
-            NekoSparkles(count: 22)
-
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ResultTopBar(onBack: onBack) {
-                        shareOpen = true
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 50)
-
-                    ResultHeroCard(draft: draft, avatarImage: avatarImage, persona: safePersona)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-
-                    ResultSection(title: "AI 内心独白", hint: "INNER · VOICE", tone: true) {
-                        ZStack(alignment: .topLeading) {
-                            Text("“")
-                                .font(.system(size: 34, weight: .regular, design: .serif))
-                                .foregroundStyle(OnboardingWeb.soulViolet.opacity(0.35))
-                                .offset(x: -6, y: -12)
-                            Text(safePersona.monologue)
-                                .font(.system(size: NekoTypography.web(14), weight: .light))
-                                .italic()
-                                .lineSpacing(8)
-                                .foregroundStyle(OnboardingWeb.ink)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 14)
-                                .padding(.top, 4)
-                            Text("”")
-                                .font(.system(size: 34, weight: .regular, design: .serif))
-                                .foregroundStyle(OnboardingWeb.soulViolet.opacity(0.35))
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                                .offset(x: 4, y: 8)
-                        }
-                        Text("—— \(draft.trimmedName) · by NEKO")
-                            .font(.system(size: NekoTypography.web(10), weight: .regular))
-                            .tracking(2.5)
-                            .foregroundStyle(OnboardingWeb.label)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .padding(.top, 12)
-                    }
-
-                    ResultSection(title: "AI 人格解析", hint: "PERSONALITY · ANALYSIS") {
-                        Text(safePersona.analysis)
-                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                            .lineSpacing(7)
-                            .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
-                    }
-
-                    ResultSection(title: "它眼中的你", hint: "YOUR · ROLE") {
-                        Text(safePersona.ownerRole)
-                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                            .lineSpacing(7)
-                            .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
-                        HStack(spacing: 6) {
-                            ForEach(["温柔", "安全感", "可信", "陪伴者"], id: \.self) { tag in
-                                Text(tag)
-                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
-                                    .tracking(1)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(OnboardingWeb.selectedGradient, in: Capsule())
-                            }
-                        }
-                        .padding(.top, 10)
-                    }
-
-                    ResultSection(title: "个性画像", hint: "PERSONALITY · PORTRAIT") {
-                        HStack(spacing: 8) {
-                            ForEach(Array(safePersona.traits.prefix(3))) { trait in
-                                TraitRing(trait: trait)
-                            }
-                        }
-                    }
-
-                    ResultSection(title: "人格标签", hint: "TAGS · 06", actionTitle: "查看全部 ›") {
-                        FlowWrap(items: Array(safePersona.tags.prefix(6)))
-                    }
-
-                    ResultSection(title: "AI 观察依据", hint: "WHY · AI · THINKS · SO") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("最近 30 天观察")
-                                .font(.system(size: NekoTypography.web(10.5), weight: .regular))
-                                .tracking(1.2)
-                                .foregroundStyle(OnboardingWeb.label)
-
-                            ForEach(safePersona.observations.prefix(4)) { item in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(item.label)
-                                        .font(.system(size: NekoTypography.web(10), weight: .regular))
-                                        .tracking(2.2)
-                                        .foregroundStyle(OnboardingWeb.label)
-                                    Text(item.value)
-                                        .font(.system(size: NekoTypography.web(12), weight: .medium))
-                                        .lineSpacing(5)
-                                        .foregroundStyle(OnboardingWeb.questionNumber)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .stroke(OnboardingWeb.border.opacity(0.70), lineWidth: 1)
-                                }
-                            }
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("AI 发现")
-                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
-                                    .tracking(3.0)
-                                    .foregroundStyle(OnboardingWeb.labelPink)
-                                Text("它更倾向于观察后行动，因此形成明显的观察型人格特征。")
-                                    .font(.system(size: NekoTypography.web(12), weight: .regular))
-                                    .lineSpacing(6)
-                                    .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        }
-                    }
-                }
-                .padding(.bottom, 110)
-            }
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button("重新识别") {
-                        onRestartAnalysis()
-                    }
-                    .buttonStyle(OnboardingSecondaryButtonStyle())
-
-                    Button {
-                        onSave()
-                    } label: {
-                        Text(isSaving ? "保存中…" : "保存结果")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(OnboardingPrimaryButtonStyle())
-                    .disabled(isSaving || persona == nil)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
-                .background(OnboardingFooterFade())
-            }
-
-            if shareOpen {
-                ResultShareSheet {
-                    shareOpen = false
-                }
-            }
-        }
+        LovablePersonaResultPage(
+            catName: draft.trimmedName,
+            avatarImage: avatarImage,
+            avatarURL: nil,
+            avatarObjectKey: nil,
+            persona: safePersona,
+            isSaving: isSaving,
+            saveDisabled: persona == nil,
+            onBack: onBack,
+            onRestart: onRestartAnalysis,
+            onSave: onSave
+        )
     }
 
     private var safePersona: CatPersonaResult {
