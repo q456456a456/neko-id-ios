@@ -39,48 +39,40 @@ enum MediaUploadProcessor {
     private static let maxAIImageBytes = 1_500_000
 
     static func prepareAvatarImage(from data: Data) throws -> PreparedImageUpload {
-        if let detected = detectImageType(data), data.count <= AppConfig.maxAvatarImageBytes {
-            return PreparedImageUpload(
-                data: data,
-                mimeType: detected.mimeType,
-                fileExtension: detected.fileExtension
-            )
+        guard data.count <= AppConfig.maxAvatarImageBytes else {
+            throw NekoMediaError.imageTooLarge
         }
-
-        guard let image = UIImage(data: data) else {
-            throw NekoMediaError.unsupportedImage
-        }
-
-        let normalized = image.resizedToFit(maxDimension: 1600)
-        for quality in [0.9, 0.82, 0.74, 0.66, 0.58, 0.5, 0.42] {
-            guard let jpeg = normalized.jpegData(compressionQuality: quality) else { continue }
-            if jpeg.count <= AppConfig.maxAvatarImageBytes {
-                return PreparedImageUpload(data: jpeg, mimeType: "image/jpeg", fileExtension: "jpg")
-            }
-        }
-
-        throw NekoMediaError.imageTooLarge
+        return try prepareStoredImageUpload(from: data, maxBytes: AppConfig.maxAvatarImageBytes)
     }
 
     static func prepareVoiceImage(from data: Data) throws -> PreparedImageUpload {
-        if let detected = detectImageType(data), data.count <= AppConfig.maxVoiceImageBytes {
-            return PreparedImageUpload(
-                data: data,
-                mimeType: detected.mimeType,
-                fileExtension: detected.fileExtension
-            )
+        guard data.count <= AppConfig.maxVoiceImageBytes else {
+            throw NekoMediaError.imageTooLarge
         }
+        return try prepareStoredImageUpload(from: data, maxBytes: AppConfig.maxVoiceImageBytes)
+    }
 
+    private static func prepareStoredImageUpload(from data: Data, maxBytes: Int) throws -> PreparedImageUpload {
         guard let image = UIImage(data: data) else {
             throw NekoMediaError.unsupportedImage
         }
 
         let normalized = image.resizedToFit(maxDimension: 1600)
-        for quality in [0.9, 0.82, 0.74, 0.66, 0.58, 0.5, 0.42] {
+        var fallback: Data?
+
+        for quality in [0.82, 0.74, 0.66, 0.58, 0.5, 0.42] {
             guard let jpeg = normalized.jpegData(compressionQuality: quality) else { continue }
-            if jpeg.count <= AppConfig.maxVoiceImageBytes {
+            guard jpeg.count <= maxBytes else { continue }
+
+            if jpeg.count <= data.count {
                 return PreparedImageUpload(data: jpeg, mimeType: "image/jpeg", fileExtension: "jpg")
             }
+
+            fallback = fallback ?? jpeg
+        }
+
+        if let fallback {
+            return PreparedImageUpload(data: fallback, mimeType: "image/jpeg", fileExtension: "jpg")
         }
 
         throw NekoMediaError.imageTooLarge
