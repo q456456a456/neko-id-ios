@@ -85,6 +85,22 @@ enum NekoTheme {
     )
 }
 
+enum NekoTypography {
+    /// Visual-equivalent scale from the Lovable/Tailwind web px values to native iOS SF points.
+    /// The web app remains the source of truth; these offsets compensate for native rendering
+    /// so small Chinese text does not look thinner or smaller than the Lovable UI.
+    static func web(_ px: CGFloat) -> CGFloat {
+        switch px {
+        case ..<10:
+            return px + 1.5
+        case ..<18:
+            return px + 1
+        default:
+            return px
+        }
+    }
+}
+
 struct NekoBackground: View {
     var body: some View {
         ZStack {
@@ -162,7 +178,7 @@ struct NekoGlassCard<Content: View>: View {
 struct NekoPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: NekoTypography.web(15), weight: .semibold))
             .foregroundStyle(.white)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
@@ -176,7 +192,7 @@ struct NekoPrimaryButtonStyle: ButtonStyle {
 struct NekoSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: NekoTypography.web(15), weight: .semibold))
             .foregroundStyle(NekoTheme.ink)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
@@ -199,7 +215,7 @@ struct NekoSectionLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: NekoTypography.web(10), weight: .semibold))
             .tracking(3.2)
             .foregroundStyle(NekoTheme.muted)
     }

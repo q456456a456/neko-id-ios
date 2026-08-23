@@ -87,6 +87,46 @@ struct ContentView: View {
     }
 }
 
+struct NekoEdgeSwipeBackModifier: ViewModifier {
+    let isEnabled: Bool
+    let edgeWidth: CGFloat
+    let minimumDistance: CGFloat
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18, coordinateSpace: .local)
+                    .onEnded { value in
+                        guard isEnabled else { return }
+                        guard value.startLocation.x <= edgeWidth else { return }
+                        guard value.translation.width >= minimumDistance else { return }
+                        guard abs(value.translation.height) <= value.translation.width * 0.75 else { return }
+                        action()
+                    }
+            )
+    }
+}
+
+extension View {
+    func nekoEdgeSwipeBack(
+        isEnabled: Bool = true,
+        edgeWidth: CGFloat = 44,
+        minimumDistance: CGFloat = 72,
+        action: @escaping () -> Void
+    ) -> some View {
+        modifier(
+            NekoEdgeSwipeBackModifier(
+                isEnabled: isEnabled,
+                edgeWidth: edgeWidth,
+                minimumDistance: minimumDistance,
+                action: action
+            )
+        )
+    }
+}
+
 private struct LaunchingView: View {
     var body: some View {
         VStack(spacing: 16) {
@@ -94,7 +134,7 @@ private struct LaunchingView: View {
                 .tint(NekoTheme.soulViolet)
 
             Text("正在寻找你的猫咪档案…")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: NekoTypography.web(14), weight: .medium))
                 .foregroundStyle(NekoTheme.muted)
         }
         .padding(24)
@@ -146,7 +186,7 @@ private struct LoginView: View {
                     HStack {
                         Spacer()
                         Button("暂不登录", action: onCancel)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: NekoTypography.web(12), weight: .medium))
                             .foregroundStyle(NekoTheme.soulViolet)
                             .padding(.horizontal, 14)
                             .frame(height: 34)
@@ -157,7 +197,7 @@ private struct LoginView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("NEKO ACCOUNT")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(10), weight: .semibold))
                         .tracking(4.6)
                         .foregroundStyle(NekoTheme.soulViolet)
 
@@ -166,7 +206,7 @@ private struct LoginView: View {
                         .foregroundStyle(NekoTheme.ink)
 
                     Text(subtitle)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: NekoTypography.web(12.5)))
                         .foregroundStyle(NekoTheme.muted)
                         .lineSpacing(4)
                         .padding(.top, 2)
@@ -180,7 +220,7 @@ private struct LoginView: View {
                             .keyboardType(.phonePad)
                             .textContentType(.telephoneNumber)
                             .autocorrectionDisabled()
-                            .font(.system(size: 14, weight: .regular))
+                            .font(.system(size: NekoTypography.web(14), weight: .regular))
                             .foregroundStyle(NekoTheme.ink)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
@@ -205,7 +245,7 @@ private struct LoginView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 if !codeNotice.isEmpty {
                                     Text(codeNotice)
-                                        .font(.system(size: 11.5, weight: .medium))
+                                        .font(.system(size: NekoTypography.web(11.5), weight: .medium))
                                         .foregroundStyle(NekoTheme.soulViolet)
                                         .frame(maxWidth: .infinity, alignment: .center)
                                 }
@@ -244,7 +284,7 @@ private struct LoginView: View {
                                 .disabled(appModel.isBusy || code.count != 6)
 
                                 Text("如果收不到验证码，稍等一会儿再重新发送。")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: NekoTypography.web(11)))
                                     .foregroundStyle(NekoTheme.muted)
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
@@ -256,7 +296,7 @@ private struct LoginView: View {
                 .padding(.top, 30)
 
                 Text("手机号会作为账号唯一标识。登录后，猫咪档案、人格和心声会只绑定到当前用户。")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: NekoTypography.web(11.5)))
                     .foregroundStyle(NekoTheme.muted)
                     .lineSpacing(4)
                     .padding(16)
@@ -292,7 +332,7 @@ private struct NativeOnboardingView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("CREATE PROFILE")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(11), weight: .semibold))
                         .tracking(4)
                         .foregroundStyle(NekoTheme.soulViolet)
 
@@ -301,7 +341,7 @@ private struct NativeOnboardingView: View {
                         .foregroundStyle(NekoTheme.ink)
 
                     Text("先建立基础档案。照片、视频和 AI 人格生成会继续原生化接入。")
-                        .font(.system(size: 14))
+                        .font(.system(size: NekoTypography.web(14)))
                         .foregroundStyle(NekoTheme.muted)
                         .lineSpacing(4)
                 }
@@ -313,11 +353,11 @@ private struct NativeOnboardingView: View {
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(avatarPreviewImage == nil ? "选择猫咪照片" : "更换猫咪照片")
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(.system(size: NekoTypography.web(15), weight: .semibold))
                                     .foregroundStyle(NekoTheme.ink)
 
                                 Text("会作为头像上传到私有云端，单张不超过 10MB。")
-                                    .font(.system(size: 12))
+                                    .font(.system(size: NekoTypography.web(12)))
                                     .foregroundStyle(NekoTheme.muted)
                                     .multilineTextAlignment(.leading)
                             }
@@ -369,7 +409,7 @@ private struct NativeOnboardingView: View {
                 Button("退出当前账号") {
                     appModel.signOut()
                 }
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(NekoTheme.muted)
                 .frame(maxWidth: .infinity)
             }
@@ -455,7 +495,7 @@ private struct HomeView: View {
                             Text("💭")
                                 .font(.system(size: 18))
                             Text("猫咪心声")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: NekoTypography.web(16), weight: .medium))
                                 .foregroundStyle(NekoTheme.ink)
                         }
                         .padding(.horizontal, 20)
@@ -652,12 +692,12 @@ private struct HomeProfileCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 7) {
                             Text(profile.name)
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: NekoTypography.web(14), weight: .medium))
                                 .foregroundStyle(NekoTheme.ink)
                                 .lineLimit(1)
 
                             Text(persona?.mbti ?? "INTJ-A")
-                                .font(.system(size: 8.5, weight: .semibold))
+                                .font(.system(size: NekoTypography.web(8.5), weight: .semibold))
                                 .tracking(1.3)
                                 .foregroundStyle(NekoTheme.soulViolet)
                                 .padding(.horizontal, 6)
@@ -666,7 +706,7 @@ private struct HomeProfileCard: View {
                         }
 
                         Text(persona?.type ?? "\(profile.gender.rawValue) · \(profile.ageStage.rawValue)")
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: NekoTypography.web(10.5), weight: .medium))
                             .foregroundStyle(NekoTheme.muted)
                             .lineLimit(1)
                     }
@@ -677,7 +717,7 @@ private struct HomeProfileCard: View {
                         onAccount()
                     } label: {
                         Text("查看人格 ›")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: NekoTypography.web(10), weight: .semibold))
                             .tracking(1.6)
                             .foregroundStyle(NekoTheme.soulViolet)
                             .padding(.horizontal, 10)
@@ -689,9 +729,9 @@ private struct HomeProfileCard: View {
 
                 HStack(spacing: 9) {
                     Text("😺")
-                        .font(.system(size: 14))
+                        .font(.system(size: NekoTypography.web(14)))
                     Text(persona?.dailyMood ?? "今天好像有点想你")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(NekoTheme.ink)
                         .lineLimit(2)
                     Spacer(minLength: 0)
@@ -742,12 +782,12 @@ private struct EmptyFeedCard: View {
                 }
 
                 Text("还没有心声哦")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: NekoTypography.web(15), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.top, 20)
 
                 Text("记录一个瞬间，听听它怎么说")
-                    .font(.system(size: 12))
+                    .font(.system(size: NekoTypography.web(12)))
                     .foregroundStyle(NekoTheme.muted)
                     .padding(.top, 6)
 
@@ -760,7 +800,7 @@ private struct EmptyFeedCard: View {
                         Text("识别猫咪心声")
                     }
                         .frame(maxWidth: .infinity)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: NekoTypography.web(13), weight: .medium))
                         .foregroundStyle(.white)
                         .padding(.vertical, 10)
                         .padding(.horizontal, 24)
@@ -808,7 +848,7 @@ private struct CatHeadphoneIcon: View {
 private struct ThoughtBubbleLabel: View {
     var body: some View {
         Text("喵～？")
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: NekoTypography.web(11), weight: .medium))
             .foregroundStyle(NekoTheme.soulViolet)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -846,7 +886,7 @@ private struct TimelineVoiceRow: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 6) {
                 Text(voice.time)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.system(size: NekoTypography.web(11), weight: .medium, design: .rounded))
                     .foregroundStyle(NekoTheme.soulViolet)
                     .lineLimit(1)
                 Circle()
@@ -973,11 +1013,11 @@ private struct VoiceFeedCard: View {
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text(profile.name)
-                                .font(.system(size: 8, weight: .semibold))
+                                .font(.system(size: NekoTypography.web(8), weight: .semibold))
                                 .tracking(3)
                                 .foregroundStyle(NekoTheme.muted)
                             Text("💭 \(voice.text)")
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .lineSpacing(4)
                                 .foregroundStyle(NekoTheme.ink)
                         }
@@ -1000,7 +1040,7 @@ private struct VoiceFeedCard: View {
 
                             if let location = voice.location, !location.isEmpty {
                                 Text("· \(location)")
-                                    .font(.system(size: 10.5))
+                                    .font(.system(size: NekoTypography.web(10.5)))
                                     .foregroundStyle(NekoTheme.muted)
                                     .lineLimit(1)
                                     .fixedSize(horizontal: true, vertical: false)
@@ -1251,7 +1291,7 @@ private struct VoiceActionSheet: View {
                     .padding(.bottom, 20)
 
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.bottom, 18)
 
@@ -1267,7 +1307,7 @@ private struct VoiceActionSheet: View {
                                     .frame(width: 25, height: 25)
                             }
                             Text(saveText)
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.ink)
                         }
                     }
@@ -1285,7 +1325,7 @@ private struct VoiceActionSheet: View {
                                         .foregroundStyle(Color(red: 0.941, green: 0.541, blue: 0.639))
                                 }
                                 Text("删除")
-                                    .font(.system(size: 12.5, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                     .foregroundStyle(NekoTheme.muted)
                             }
                         }
@@ -1348,10 +1388,10 @@ private struct VoiceBottomActionBar: View {
             Button(action: onShare) {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(14), weight: .semibold))
                     Text("分享")
                 }
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -1363,10 +1403,10 @@ private struct VoiceBottomActionBar: View {
             Button(action: onDelete) {
                 HStack(spacing: 8) {
                     Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(14), weight: .semibold))
                     Text("删除")
                 }
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
@@ -1482,6 +1522,15 @@ private struct VoiceDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack {
+            if confirmDelete {
+                confirmDelete = false
+            } else if isShareOpen {
+                isShareOpen = false
+            } else {
+                dismiss()
+            }
+        }
     }
 
     private var detailBackground: some View {
@@ -1523,7 +1572,7 @@ private struct VoiceDetailView: View {
             Spacer()
 
             Text("心声 · \(voice.time)")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: NekoTypography.web(11), weight: .medium))
                 .tracking(3.6)
                 .foregroundStyle(Color(red: 0.43, green: 0.38, blue: 0.52))
                 .padding(.horizontal, 14)
@@ -1558,12 +1607,12 @@ private struct VoiceDetailView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(catName)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: NekoTypography.web(10), weight: .medium))
                         .tracking(3.2)
                         .foregroundStyle(Color(red: 0.482, green: 0.447, blue: 0.565))
 
                     Text(voice.text)
-                        .font(.system(size: 12.5, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                         .foregroundStyle(NekoTheme.ink.opacity(0.90))
                         .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1603,15 +1652,15 @@ private struct VoiceDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("✨")
-                    .font(.system(size: 11))
+                    .font(.system(size: NekoTypography.web(11)))
                 Text("AI 心 声 解 析")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .tracking(3.6)
                     .foregroundStyle(Color(red: 0.482, green: 0.447, blue: 0.565))
             }
 
             Text(analysisText)
-                .font(.system(size: 12.5, weight: .regular))
+                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                 .foregroundStyle(NekoTheme.ink.opacity(0.85))
                 .lineSpacing(6)
                 .padding(.top, 10)
@@ -1666,7 +1715,7 @@ private struct DayDivider: View {
             LinearGradient(colors: [.clear, NekoTheme.softLilac.opacity(0.72)], startPoint: .leading, endPoint: .trailing)
                 .frame(height: 1)
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: NekoTypography.web(10), weight: .semibold))
                 .tracking(3)
                 .foregroundStyle(NekoTheme.soulViolet)
                 .padding(.horizontal, 12)
@@ -1685,7 +1734,7 @@ private struct MissingProfileCard: View {
         NekoGlassCard(cornerRadius: 28) {
             VStack(spacing: 16) {
                 Text("N E K O . I D")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: NekoTypography.web(10), weight: .semibold))
                     .tracking(5)
                     .foregroundStyle(NekoTheme.soulViolet)
                 Text("还没有猫咪档案")
@@ -1780,7 +1829,7 @@ private struct HomeTabIcon: View {
             NekoTabSymbol(kind: kind, active: active)
                 .frame(width: 22, height: 22)
             Text(label)
-                .font(.system(size: 9.5, weight: .medium))
+                .font(.system(size: NekoTypography.web(9.5), weight: .medium))
                 .tracking(1.6)
         }
         .foregroundStyle(active ? NekoTheme.tabActive : NekoTheme.tabInactive)
@@ -1805,7 +1854,7 @@ private struct MeView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text("我的")
-                            .font(.system(size: 17, weight: .light))
+                            .font(.system(size: NekoTypography.web(17), weight: .light))
                             .tracking(1)
                             .foregroundStyle(NekoTheme.ink)
 
@@ -1815,7 +1864,7 @@ private struct MeView: View {
                             appModel.noticeMessage = "设置中心即将上线 ⚙️"
                         } label: {
                             Text("⚙")
-                                .font(.system(size: 14))
+                                .font(.system(size: NekoTypography.web(14)))
                                 .frame(width: 36, height: 36)
                                 .background(Color.white.opacity(0.80), in: Circle())
                                 .shadow(color: NekoTheme.soulViolet.opacity(0.14), radius: 14, x: 0, y: 6)
@@ -1862,6 +1911,9 @@ private struct MeView: View {
             )
         }
         .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack {
+            dismiss()
+        }
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
                 .environmentObject(appModel)
@@ -1908,7 +1960,7 @@ private struct MeSummaryCard: View {
                             Text("\(persona?.type ?? "\(profile.gender.rawValue) · \(profile.ageStage.rawValue)") · \(persona?.mbti ?? "INTJ-A")")
                                 .lineLimit(1)
                         }
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: NekoTypography.web(10), weight: .medium))
                         .tracking(1.4)
                         .foregroundStyle(NekoTheme.soulViolet)
                         .padding(.horizontal, 8)
@@ -1920,7 +1972,7 @@ private struct MeSummaryCard: View {
                 }
 
                 Text("\"\(persona?.monologue ?? "它喜欢在窗边看世界，但只要你叫它的名字，它就会立刻回头。")\"")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: NekoTypography.web(11.5)))
                     .foregroundStyle(NekoTheme.ink.opacity(0.78))
                     .lineSpacing(4)
                     .padding(.horizontal, 14)
@@ -1948,7 +2000,7 @@ private struct CloudMemoryPanel: View {
                             CloudMemoryTitle()
 
                             Text(account)
-                                .font(.system(size: 12, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12), weight: .regular))
                                 .foregroundStyle(NekoTheme.ink.opacity(0.80))
                                 .lineLimit(1)
                         }
@@ -1958,7 +2010,7 @@ private struct CloudMemoryPanel: View {
                         Button("退出") {
                             appModel.signOut()
                         }
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(size: NekoTypography.web(11), weight: .regular))
                         .foregroundStyle(NekoTheme.muted)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
@@ -1967,7 +2019,7 @@ private struct CloudMemoryPanel: View {
                     }
 
                     Button("账号中心", action: onAccountCenter)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(NekoTheme.ink)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
@@ -1985,7 +2037,7 @@ private struct CloudMemoryPanel: View {
                             Text(busyAction == "save" ? "保存中" : "保存到云端")
                                 .frame(maxWidth: .infinity)
                         }
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: NekoTypography.web(12), weight: .medium))
                         .foregroundStyle(.white)
                         .padding(.vertical, 10)
                         .background(NekoTheme.primaryGradient, in: Capsule())
@@ -2001,7 +2053,7 @@ private struct CloudMemoryPanel: View {
                             Text(busyAction == "restore" ? "恢复中" : "从云端恢复")
                                 .frame(maxWidth: .infinity)
                         }
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(NekoTheme.ink)
                         .padding(.vertical, 10)
                         .background(Color.white.opacity(0.90), in: Capsule())
@@ -2013,7 +2065,7 @@ private struct CloudMemoryPanel: View {
                     CloudMemoryTitle()
 
                     Text("登录后，猫咪档案、人格和心声会保存到 Supabase。现在支持手机号验证码登录。")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: NekoTypography.web(11.5)))
                         .foregroundStyle(NekoTheme.ink.opacity(0.75))
                         .lineSpacing(4)
                         .padding(.top, 10)
@@ -2024,7 +2076,7 @@ private struct CloudMemoryPanel: View {
                         Text("手机号验证码登录")
                             .frame(maxWidth: .infinity)
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: NekoTypography.web(12), weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.vertical, 11)
                     .background(NekoTheme.primaryGradient, in: Capsule())
@@ -2056,10 +2108,10 @@ private struct CloudMemoryTitle: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("✦")
-                .font(.system(size: 13))
+                .font(.system(size: NekoTypography.web(13)))
                 .foregroundStyle(NekoTheme.soulViolet)
             Text("云 端 记 忆")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(3.5)
                 .foregroundStyle(NekoTheme.muted)
         }
@@ -2076,24 +2128,24 @@ private struct MeRowButton: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Text(icon)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: NekoTypography.web(16), weight: .medium))
                     .foregroundStyle(NekoTheme.menuIcon)
                     .frame(width: 40, height: 40)
                     .background(NekoTheme.menuIconGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 13.5, weight: .medium))
+                        .font(.system(size: NekoTypography.web(13.5), weight: .medium))
                         .foregroundStyle(NekoTheme.ink)
                     Text(sub)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: NekoTypography.web(10.5)))
                         .foregroundStyle(NekoTheme.muted)
                 }
 
                 Spacer()
 
                 Text("›")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: NekoTypography.web(16), weight: .medium))
                     .foregroundStyle(NekoTheme.muted)
             }
             .padding(.horizontal, 16)
@@ -2115,7 +2167,7 @@ private struct AppBackCircleButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: NekoTypography.web(16), weight: .semibold))
                 .foregroundStyle(NekoTheme.soulViolet)
                 .frame(width: 36, height: 36)
                 .background(Color.white.opacity(0.82), in: Circle())
@@ -2138,7 +2190,7 @@ private struct AccountCenterView: View {
 
             if busyAction == "load" && summary == nil {
                 Text("正在读取账号信息…")
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(size: NekoTypography.web(13), weight: .regular))
                     .foregroundStyle(NekoTheme.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if appModel.session == nil {
@@ -2171,7 +2223,7 @@ private struct AccountCenterView: View {
                             }
                         } label: {
                             Text(busyAction == "signout" ? "退出中…" : "退出登录")
-                                .font(.system(size: 13, weight: .regular))
+                                .font(.system(size: NekoTypography.web(13), weight: .regular))
                                 .foregroundStyle(NekoTheme.muted)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
@@ -2189,6 +2241,9 @@ private struct AccountCenterView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack(isEnabled: busyAction != "signout") {
+            dismiss()
+        }
         .task {
             await reload()
         }
@@ -2202,11 +2257,11 @@ private struct AccountCenterView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(summary?.profile.displayName?.nonEmpty ?? "NEKO 用户")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(.system(size: NekoTypography.web(17), weight: .medium))
                             .foregroundStyle(NekoTheme.ink)
                             .lineLimit(1)
                         Text(appModel.session?.user.loginIdentifier ?? summary?.profile.email ?? "未登录")
-                            .font(.system(size: 11, weight: .regular))
+                            .font(.system(size: NekoTypography.web(11), weight: .regular))
                             .foregroundStyle(NekoTheme.muted)
                             .lineLimit(1)
                     }
@@ -2228,12 +2283,12 @@ private struct AccountCenterView: View {
         AccountSectionCard {
             VStack(alignment: .leading, spacing: 0) {
                 Text("昵称")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .tracking(3.2)
                     .foregroundStyle(NekoTheme.muted)
 
                 TextField("NEKO 用户", text: clippedDisplayName)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(size: NekoTypography.web(13), weight: .regular))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 13)
@@ -2253,7 +2308,7 @@ private struct AccountCenterView: View {
                     }
                 } label: {
                     Text(busyAction == "saveName" ? "保存中…" : "保存昵称")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: NekoTypography.web(12.5), weight: .medium))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -2270,11 +2325,11 @@ private struct AccountCenterView: View {
         AccountSectionCard {
             VStack(alignment: .leading, spacing: 0) {
                 Text("云端数据")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .tracking(3.2)
                     .foregroundStyle(NekoTheme.muted)
                 Text("把当前设备上的猫咪档案和心声保存到 Supabase，或从云端恢复到本机。")
-                    .font(.system(size: 11.5, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                     .foregroundStyle(NekoTheme.ink.opacity(0.75))
                     .lineSpacing(4)
                     .padding(.top, 9)
@@ -2288,7 +2343,7 @@ private struct AccountCenterView: View {
                         }
                     } label: {
                         Text(busyAction == "saveCloud" ? "保存中" : "保存云端")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: NekoTypography.web(12), weight: .medium))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
@@ -2305,7 +2360,7 @@ private struct AccountCenterView: View {
                         }
                     } label: {
                         Text(busyAction == "restoreCloud" ? "恢复中" : "恢复本机")
-                            .font(.system(size: 12, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12), weight: .regular))
                             .foregroundStyle(NekoTheme.ink)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
@@ -2366,7 +2421,7 @@ private struct AccountTopBar: View {
             AppBackCircleButton(action: back)
             Spacer()
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(NekoTheme.ink)
             Spacer()
             Color.clear.frame(width: 36, height: 36)
@@ -2381,7 +2436,7 @@ private struct AccountNeedLoginView: View {
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(NekoTheme.ink)
             Text("登录后才能管理账号和云端数据。")
-                .font(.system(size: 12, weight: .regular))
+                .font(.system(size: NekoTypography.web(12), weight: .regular))
                 .foregroundStyle(NekoTheme.muted)
         }
         .frame(maxWidth: .infinity)
@@ -2402,7 +2457,7 @@ private struct AccountStatCard: View {
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(NekoTheme.ink)
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(2)
                 .foregroundStyle(NekoTheme.muted)
         }
@@ -2476,7 +2531,7 @@ private struct EditProfileView: View {
                             saveProfile(restart: false)
                         } label: {
                             Text(busyAction == "save" ? "保存中" : "保存修改")
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.ink)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
@@ -2490,7 +2545,7 @@ private struct EditProfileView: View {
                             saveProfile(restart: true)
                         } label: {
                             Text(busyAction == "restart" ? "保存中" : "保存并重新测试")
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .medium))
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
@@ -2507,6 +2562,9 @@ private struct EditProfileView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack(isEnabled: busyAction == nil) {
+            dismiss()
+        }
         .onAppear {
             hydrateFromProfile()
         }
@@ -2524,7 +2582,7 @@ private struct EditProfileView: View {
                     CatAvatarView(localImage: avatarPreview, remoteURL: appModel.catProfile?.avatarURL, objectKey: appModel.catProfile?.avatarObjectKey, size: 92)
 
                     Image(systemName: "pencil")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(11), weight: .semibold))
                         .foregroundStyle(NekoTheme.menuIcon)
                         .frame(width: 28, height: 28)
                         .background(Color.white.opacity(0.94), in: Circle())
@@ -2536,7 +2594,7 @@ private struct EditProfileView: View {
 
             PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
                 Text("更换照片 · ≤ 10MB")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: NekoTypography.web(11.5), weight: .medium))
                     .tracking(2.3)
                     .foregroundStyle(NekoTheme.menuIcon)
             }
@@ -2549,12 +2607,12 @@ private struct EditProfileView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("人格类型")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: NekoTypography.web(11), weight: .medium))
                         .tracking(2)
                         .foregroundStyle(NekoTheme.muted)
                     Spacer()
                     Text("不可编辑")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: NekoTypography.web(10), weight: .medium))
                         .tracking(1.5)
                         .foregroundStyle(NekoTheme.muted)
                         .padding(.horizontal, 8)
@@ -2564,10 +2622,10 @@ private struct EditProfileView: View {
 
                 HStack(spacing: 10) {
                     Text(appModel.persona?.type ?? "高冷观察者")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: NekoTypography.web(15), weight: .medium))
                         .foregroundStyle(NekoTheme.ink)
                     Text(appModel.persona?.mbti ?? "INTJ-A")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: NekoTypography.web(10), weight: .medium))
                         .tracking(1.5)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
@@ -2577,7 +2635,7 @@ private struct EditProfileView: View {
                 .padding(.top, 9)
 
                 Text("基于上传的资料生成 · 重新测试可更新")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11), weight: .regular))
                     .foregroundStyle(NekoTheme.muted)
                     .lineSpacing(3)
                     .padding(.top, 7)
@@ -2672,15 +2730,15 @@ private struct EditFieldRow: View {
         EditCard {
             VStack(alignment: .leading, spacing: 7) {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: NekoTypography.web(11), weight: .medium))
                     .tracking(2)
                     .foregroundStyle(NekoTheme.muted)
                 HStack {
                     TextField("", text: $text)
-                        .font(.system(size: 13, weight: .regular))
+                        .font(.system(size: NekoTypography.web(13), weight: .regular))
                         .foregroundStyle(NekoTheme.ink)
                     Image(systemName: "pencil")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(NekoTheme.muted)
                 }
             }
@@ -2699,7 +2757,7 @@ private struct EditChoiceRow: View {
         EditCard {
             VStack(alignment: .leading, spacing: 10) {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: NekoTypography.web(11), weight: .medium))
                     .tracking(2)
                     .foregroundStyle(NekoTheme.muted)
 
@@ -2759,7 +2817,7 @@ private struct ManageVoicesView: View {
                     ProgressView()
                         .tint(NekoTheme.soulViolet)
                     Text("正在读取猫咪心声…")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(NekoTheme.muted)
                         .padding(.top, 10)
                     Spacer()
@@ -2817,6 +2875,15 @@ private struct ManageVoicesView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack {
+            if confirmDelete {
+                confirmDelete = false
+            } else if editMode {
+                exitEditMode()
+            } else {
+                dismiss()
+            }
+        }
         .task {
             await refreshVoices()
         }
@@ -2844,7 +2911,7 @@ private struct ManageVoicesView: View {
                 Button("取消") {
                     exitEditMode()
                 }
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                 .foregroundStyle(NekoTheme.menuIcon)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
@@ -2860,7 +2927,7 @@ private struct ManageVoicesView: View {
             Spacer()
 
             Text(editMode ? "已选 \(selectedIDs.count) 条" : "猫咪心声")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(NekoTheme.ink)
 
             Spacer()
@@ -2869,7 +2936,7 @@ private struct ManageVoicesView: View {
                 Button("编辑") {
                     editMode = true
                 }
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                 .foregroundStyle(NekoTheme.menuIcon)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
@@ -2893,7 +2960,7 @@ private struct ManageVoicesView: View {
                 }
             } label: {
                 Text("删除所选 (\(selectedIDs.count))")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
@@ -2989,7 +3056,7 @@ private struct ManageVoicesEmptyState: View {
                     .frame(width: 120, height: 120)
 
                 Text("zzz")
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .foregroundStyle(NekoTheme.muted)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -2998,12 +3065,12 @@ private struct ManageVoicesEmptyState: View {
             }
 
             Text("还没有猫咪心声哦")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: NekoTypography.web(15), weight: .medium))
                 .foregroundStyle(NekoTheme.ink)
                 .padding(.top, 24)
 
             Text("记录一个瞬间，\n让 AI 听懂它的小心思 ✦")
-                .font(.system(size: 12, weight: .regular))
+                .font(.system(size: NekoTypography.web(12), weight: .regular))
                 .foregroundStyle(NekoTheme.muted)
                 .lineSpacing(5)
                 .multilineTextAlignment(.center)
@@ -3013,7 +3080,7 @@ private struct ManageVoicesEmptyState: View {
                 publish()
             } label: {
                 Text("发布第一条心声")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.system(size: NekoTypography.web(12.5), weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 26)
                     .padding(.vertical, 12)
@@ -3084,7 +3151,7 @@ private struct ManageVoiceCard: View {
                         )
 
                         Text("💭 \(voice.text)")
-                            .font(.system(size: 12, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12), weight: .regular))
                             .foregroundStyle(.white)
                             .lineLimit(2)
                             .lineSpacing(3)
@@ -3104,7 +3171,7 @@ private struct ManageVoiceCard: View {
                 .clipped()
 
                 Text(voice.time)
-                    .font(.system(size: 10.5, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10.5), weight: .regular))
                     .foregroundStyle(Color(red: 0.604, green: 0.569, blue: 0.682))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -3138,7 +3205,7 @@ private struct ManageVoiceCard: View {
                         .stroke(Color.white.opacity(0.70), lineWidth: selected ? 0 : 1)
                 }
             Text("✓")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: NekoTypography.web(11), weight: .bold))
                 .foregroundStyle(selected ? Color.white : Color.clear)
         }
         .frame(width: 24, height: 24)
@@ -3167,27 +3234,27 @@ private struct ConfirmSheetOverlay: View {
                     .padding(.top, 10)
 
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: NekoTypography.web(15), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.top, 18)
 
                 if !hint.isEmpty {
                     Text(hint)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(NekoTheme.muted)
                         .padding(.top, 6)
                 }
 
                 HStack(spacing: 10) {
                     Button("取消", action: onCancel)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: NekoTypography.web(13), weight: .medium))
                         .foregroundStyle(NekoTheme.ink)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(Color(red: 0.968, green: 0.944, blue: 0.982), in: Capsule())
 
                     Button(confirmText, action: onConfirm)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: NekoTypography.web(13), weight: .medium))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -3289,7 +3356,7 @@ private struct PersonaDetailView: View {
                     PersonaSection(title: "AI 内心独白", hint: "INNER · VOICE", tone: true) {
                         VStack(alignment: .trailing, spacing: 12) {
                             Text(safePersona.monologue)
-                                .font(.system(size: 14, weight: .light))
+                                .font(.system(size: NekoTypography.web(14), weight: .light))
                                 .italic()
                                 .foregroundStyle(NekoTheme.ink)
                                 .multilineTextAlignment(.center)
@@ -3311,7 +3378,7 @@ private struct PersonaDetailView: View {
                                 }
 
                             Text("—— \(profile.name) · by NEKO")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: NekoTypography.web(10), weight: .medium))
                                 .tracking(2.5)
                                 .foregroundStyle(NekoTheme.muted)
                         }
@@ -3319,7 +3386,7 @@ private struct PersonaDetailView: View {
 
                     PersonaSection(title: "AI 人格解析", hint: "PERSONALITY · ANALYSIS") {
                         Text(safePersona.analysis)
-                            .font(.system(size: 12.5, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                             .foregroundStyle(NekoTheme.ink.opacity(0.85))
                             .lineSpacing(7)
                     }
@@ -3327,14 +3394,14 @@ private struct PersonaDetailView: View {
                     PersonaSection(title: "它眼中的你", hint: "YOUR · ROLE") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(safePersona.ownerRole)
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.ink.opacity(0.85))
                                 .lineSpacing(7)
 
                             HStack(spacing: 8) {
                                 ForEach(["温柔", "安全感", "可信", "陪伴者"], id: \.self) { chip in
                                     Text(chip)
-                                        .font(.system(size: 10, weight: .medium))
+                                        .font(.system(size: NekoTypography.web(10), weight: .medium))
                                         .tracking(1.0)
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 10)
@@ -3365,7 +3432,7 @@ private struct PersonaDetailView: View {
                     PersonaSection(title: "AI 观察依据", hint: "WHY · AI · THINKS · SO") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("最近 30 天观察")
-                                .font(.system(size: 10.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(10.5), weight: .regular))
                                 .tracking(1.2)
                                 .foregroundStyle(NekoTheme.muted)
 
@@ -3373,12 +3440,12 @@ private struct PersonaDetailView: View {
                                 ForEach(displayObservations) { item in
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(item.label)
-                                            .font(.system(size: 10, weight: .regular))
+                                            .font(.system(size: NekoTypography.web(10), weight: .regular))
                                             .tracking(2.2)
                                             .foregroundStyle(NekoTheme.muted)
 
                                         Text(item.value)
-                                            .font(.system(size: 12, weight: .medium))
+                                            .font(.system(size: NekoTypography.web(12), weight: .medium))
                                             .foregroundStyle(NekoTheme.ink)
                                             .lineSpacing(4)
                                     }
@@ -3395,12 +3462,12 @@ private struct PersonaDetailView: View {
 
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("AI 发现")
-                                    .font(.system(size: 10, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                                     .tracking(3)
                                     .foregroundStyle(NekoTheme.soulViolet)
 
                                 Text("它更倾向于观察后行动，因此形成明显的观察型人格特征。")
-                                    .font(.system(size: 12, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(12), weight: .regular))
                                     .foregroundStyle(NekoTheme.ink.opacity(0.85))
                                     .lineSpacing(5)
                             }
@@ -3447,6 +3514,13 @@ private struct PersonaDetailView: View {
             )
         }
         .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack {
+            if isShareOpen {
+                closeShare()
+            } else {
+                dismiss()
+            }
+        }
         .toolbar(.hidden, for: .navigationBar)
     }
 
@@ -3466,7 +3540,7 @@ private struct PersonaTopBar: View {
             HStack(spacing: 12) {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(16), weight: .semibold))
                         .foregroundStyle(Color(red: 0.56, green: 0.32, blue: 0.62))
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.80), in: Circle())
@@ -3475,7 +3549,7 @@ private struct PersonaTopBar: View {
                 .buttonStyle(.plain)
 
                 Text("N E K O · I D")
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .tracking(5)
                     .foregroundStyle(Color(red: 0.56, green: 0.36, blue: 0.62))
             }
@@ -3528,7 +3602,7 @@ private struct PersonaHeroCard: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(profile.name)
-                        .font(.system(size: 15, weight: .light))
+                        .font(.system(size: NekoTypography.web(15), weight: .light))
                         .tracking(0.4)
                         .foregroundStyle(NekoTheme.muted)
                         .lineLimit(1)
@@ -3542,11 +3616,11 @@ private struct PersonaHeroCard: View {
 
                     HStack(spacing: 6) {
                         Text("MBTI")
-                            .font(.system(size: 9, weight: .regular))
+                            .font(.system(size: NekoTypography.web(9), weight: .regular))
                             .tracking(3)
                             .foregroundStyle(NekoTheme.muted)
                         Text(persona.mbti)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: NekoTypography.web(11.5), weight: .medium))
                             .tracking(0.9)
                             .foregroundStyle(NekoTheme.ink)
                     }
@@ -3568,7 +3642,7 @@ private struct PersonaHeroCard: View {
                 Text("\(persona.matchScore)%")
                     .fontWeight(.semibold)
             }
-            .font(.system(size: 9.5, weight: .regular))
+            .font(.system(size: NekoTypography.web(9.5), weight: .regular))
             .tracking(0.5)
             .foregroundStyle(NekoTheme.ink)
             .padding(.horizontal, 10)
@@ -3633,11 +3707,11 @@ private struct PersonaSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
 
                 Text(hint)
-                    .font(.system(size: 8, weight: .regular))
+                    .font(.system(size: NekoTypography.web(8), weight: .regular))
                     .tracking(2.4)
                     .foregroundStyle(Color(red: 0.60, green: 0.40, blue: 0.64))
                     .lineLimit(2)
@@ -3649,7 +3723,7 @@ private struct PersonaSection<Content: View>: View {
                     Button(actionTitle) {
                         action?()
                     }
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .tracking(0.8)
                     .foregroundStyle(Color(red: 0.50, green: 0.30, blue: 0.58))
                     .buttonStyle(.plain)
@@ -3719,18 +3793,18 @@ private struct PersonaTraitRing: View {
 
                 VStack(spacing: 0) {
                     Text("\(trait.value)%")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(15), weight: .semibold))
                         .foregroundStyle(NekoTheme.ink)
                         .tracking(-0.5)
 
                     Text(trait.icon)
-                        .font(.system(size: 11))
+                        .font(.system(size: NekoTypography.web(11)))
                 }
             }
             .frame(width: 72, height: 72)
 
             Text(trait.label)
-                .font(.system(size: 11, weight: .regular))
+                .font(.system(size: NekoTypography.web(11), weight: .regular))
                 .foregroundStyle(NekoTheme.ink.opacity(0.82))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -3768,7 +3842,7 @@ private struct FlexibleChipRow: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 58), spacing: 6)], alignment: .leading, spacing: 6) {
                 ForEach(items, id: \.self) { item in
                     Text(item)
-                        .font(.system(size: 9.5, weight: .regular))
+                        .font(.system(size: NekoTypography.web(9.5), weight: .regular))
                         .tracking(0.8)
                         .foregroundStyle(Color(red: 0.50, green: 0.32, blue: 0.58))
                         .lineLimit(1)
@@ -3793,7 +3867,7 @@ private struct FlowChipWrap: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], alignment: .leading, spacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 Text(item)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11), weight: .regular))
                     .tracking(0.5)
                     .foregroundStyle(index.isMultiple(of: 2) ? Color(red: 0.48, green: 0.30, blue: 0.56) : .white)
                     .lineLimit(1)
@@ -3828,7 +3902,7 @@ private struct PersonaBottomActions: View {
     var body: some View {
         HStack(spacing: 12) {
             Button("重新识别", action: onRestart)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(Color(red: 0.50, green: 0.30, blue: 0.58))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
@@ -3840,7 +3914,7 @@ private struct PersonaBottomActions: View {
                 .shadow(color: NekoTheme.soulViolet.opacity(0.10), radius: 16, x: 0, y: 8)
 
             Button("保存结果", action: onSave)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: NekoTypography.web(13), weight: .medium))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
@@ -3884,7 +3958,7 @@ private struct PersonaShareOverlay: View {
                     .frame(width: 40, height: 4)
 
                 Text("分享我的猫人格")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.top, 16)
 
@@ -3896,7 +3970,7 @@ private struct PersonaShareOverlay: View {
                 .padding(.top, 20)
 
                 Button("取消", action: onClose)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(Color(red: 0.45, green: 0.31, blue: 0.52))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
@@ -3931,7 +4005,7 @@ private struct PersonaShareItem: View {
                     .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 8)
 
                 Text(label)
-                    .font(.system(size: 11.5, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                     .foregroundStyle(NekoTheme.ink.opacity(0.80))
             }
             .frame(maxWidth: .infinity)
@@ -4166,6 +4240,9 @@ private struct VoicePublishSheet: View {
             }
         }
         .preferredColorScheme(.light)
+        .nekoEdgeSwipeBack(isEnabled: !isAnalyzing && !isPublishing) {
+            handleEdgeSwipeBack()
+        }
         .onChange(of: selectedPhotoItem) { _, item in
             Task { await loadPhoto(from: item) }
         }
@@ -4173,6 +4250,25 @@ private struct VoicePublishSheet: View {
             guard accessToken != nil, let stayOnPreview = pendingAnalysisAfterLogin else { return }
             pendingAnalysisAfterLogin = nil
             Task { await generatePreview(stayOnPreview: stayOnPreview) }
+        }
+    }
+
+    @MainActor
+    private func handleEdgeSwipeBack() {
+        if errorMessage != nil {
+            errorMessage = nil
+            return
+        }
+
+        switch step {
+        case .upload:
+            dismiss()
+        case .background:
+            step = .upload
+        case .preview:
+            step = .background
+        case .success:
+            dismiss()
         }
     }
 
@@ -4350,7 +4446,7 @@ private struct PublishUploadScreen: View {
                                 .font(.system(size: 24, weight: .light))
                                 .foregroundStyle(NekoTheme.ink)
                             Text("上传一张照片，AI 帮你读懂它的小心思 · 不超过 10MB")
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.muted)
                                 .lineSpacing(4)
                         }
@@ -4377,7 +4473,7 @@ private struct PublishUploadScreen: View {
                                 PublishTipItem(icon: "💗", text: "与主人互动")
                             }
                             Text("自然的瞬间，往往最能体现它当时的小心思")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: NekoTypography.web(11), weight: .regular))
                                 .foregroundStyle(PublishWebStyle.step)
                                 .lineSpacing(4)
                                 .padding(.top, 4)
@@ -4387,7 +4483,7 @@ private struct PublishUploadScreen: View {
 
                         PublishInfoCard(title: "AI 会做什么？") {
                             Text("AI 将结合这张照片与猫咪人格档案，来生成一条专属于它的猫咪心声。")
-                                .font(.system(size: 11.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.ink.opacity(0.85))
                                 .lineSpacing(5)
                         }
@@ -4420,7 +4516,7 @@ private struct PublishBackgroundScreen: View {
                         PublishTopBar(stepText: "STEP 02 / 03", onBack: onBack) {
                             Button(action: onAnalyze) {
                                 Text("跳过")
-                                    .font(.system(size: 11, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(11), weight: .regular))
                                     .tracking(2.2)
                                     .foregroundStyle(PublishWebStyle.step)
                                     .padding(.horizontal, 14)
@@ -4437,7 +4533,7 @@ private struct PublishBackgroundScreen: View {
                                 .font(.system(size: 22, weight: .light))
                                 .foregroundStyle(NekoTheme.ink)
                             Text("补充背景信息，可以让 AI 更懂它哦 （可选）")
-                                .font(.system(size: 12, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12), weight: .regular))
                                 .foregroundStyle(NekoTheme.muted)
                         }
                         .padding(.horizontal, 28)
@@ -4448,13 +4544,13 @@ private struct PublishBackgroundScreen: View {
                             ZStack(alignment: .topLeading) {
                                 if scene.isEmpty {
                                     Text("例如：我刚打开猫条，它就跑过来了")
-                                        .font(.system(size: 12.5, weight: .regular))
+                                        .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                         .foregroundStyle(NekoTheme.mutedLight)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 13)
                                 }
                                 TextEditor(text: $scene)
-                                    .font(.system(size: 12.5, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                     .foregroundStyle(NekoTheme.ink)
                                     .lineSpacing(4)
                                     .scrollContentBackground(.hidden)
@@ -4463,7 +4559,7 @@ private struct PublishBackgroundScreen: View {
                                     .background(PublishWebStyle.textarea, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
                             Text("\(scene.count) / 120")
-                                .font(.system(size: 9.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(9.5), weight: .regular))
                                 .foregroundStyle(PublishWebStyle.step.opacity(0.82))
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                         }
@@ -4514,7 +4610,7 @@ private struct PublishPreviewScreen: View {
                                 .foregroundStyle(NekoTheme.soulViolet)
                             Text("AI 已 读 懂 它 的 心 声")
                         }
-                        .font(.system(size: 9.5, weight: .regular))
+                        .font(.system(size: NekoTypography.web(9.5), weight: .regular))
                         .tracking(3.0)
                         .foregroundStyle(PublishWebStyle.step)
                         .padding(.horizontal, 12)
@@ -4590,14 +4686,14 @@ private struct PublishSuccessScreen: View {
                     VStack(spacing: 0) {
                         VStack(spacing: 9) {
                             Text("A VOICE IS BORN")
-                                .font(.system(size: 10, weight: .regular))
+                                .font(.system(size: NekoTypography.web(10), weight: .regular))
                                 .tracking(4.5)
                                 .foregroundStyle(Color(red: 0.665, green: 0.420, blue: 0.635))
                             Text("它，第一次开口了")
                                 .font(.system(size: 22, weight: .medium))
                                 .foregroundStyle(NekoTheme.ink)
                             Text("\(catName)的声音，\n刚刚从猫咪世界传了过来")
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(PublishWebStyle.step)
                                 .multilineTextAlignment(.center)
                                 .lineSpacing(5)
@@ -4613,13 +4709,13 @@ private struct PublishSuccessScreen: View {
                                 Text("✦")
                                     .foregroundStyle(NekoTheme.soulViolet)
                                 Text("AI 发 现")
-                                    .font(.system(size: 10, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                                     .tracking(4.0)
                                     .foregroundStyle(PublishWebStyle.step)
                             }
 
                             Text(voice?.analysis?.nonEmpty ?? "暂未获得\(catName)的 AI 心声解析。")
-                                .font(.system(size: 12.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.ink.opacity(0.86))
                                 .lineSpacing(6)
                         }
@@ -4634,7 +4730,7 @@ private struct PublishSuccessScreen: View {
                         .padding(.top, 16)
 
                         Text("把这个来自猫咪世界的故事\n分享给你在乎的人")
-                            .font(.system(size: 11.5, weight: .regular))
+                            .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                             .foregroundStyle(PublishWebStyle.step)
                             .multilineTextAlignment(.center)
                             .lineSpacing(5)
@@ -4668,7 +4764,7 @@ private struct PublishTopBar<Trailing: View>: View {
             PublishBackButton(onBack: onBack)
             Spacer()
             Text(stepText)
-                .font(.system(size: 10, weight: .regular))
+                .font(.system(size: NekoTypography.web(10), weight: .regular))
                 .tracking(4.0)
                 .foregroundStyle(PublishWebStyle.step)
             Spacer()
@@ -4719,7 +4815,7 @@ private struct PublishUploadPhotoCard: View {
                         Text("· 点击可重新选择")
                             .foregroundStyle(NekoTheme.muted)
                     }
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: NekoTypography.web(12), weight: .regular))
                 }
                 .padding(20)
             } else {
@@ -4760,10 +4856,10 @@ private struct PublishUploadPhotoCard: View {
                                     .frame(width: 20, height: 20)
                             }
                             Text("点击上传照片")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: NekoTypography.web(14), weight: .medium))
                                 .foregroundStyle(NekoTheme.ink)
                             Text("支持 JPG / PNG")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: NekoTypography.web(11), weight: .regular))
                                 .foregroundStyle(NekoTheme.muted)
                         }
                     }
@@ -4814,7 +4910,7 @@ private struct PublishSectionTitle: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .regular))
+            .font(.system(size: NekoTypography.web(10), weight: .regular))
             .tracking(3.5)
             .foregroundStyle(PublishWebStyle.step)
     }
@@ -4827,9 +4923,9 @@ private struct PublishTipItem: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(icon)
-                .font(.system(size: 13))
+                .font(.system(size: NekoTypography.web(13)))
             Text(text)
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                 .foregroundStyle(NekoTheme.ink)
         }
     }
@@ -4858,7 +4954,7 @@ private struct PublishBottomCTA: View {
                     }
                     Text(isBusy ? "识别中…" : title)
                 }
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: NekoTypography.web(14), weight: .medium))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
@@ -4895,7 +4991,7 @@ private struct PublishPreviewStageCard: View {
                         .clipped()
                 } else {
                     Text("等待照片")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .tracking(2.0)
                         .foregroundStyle(PublishWebStyle.step)
                         .frame(width: proxy.size.width, height: 560)
@@ -4921,7 +5017,7 @@ private struct PublishPreviewStageCard: View {
                                 .tint(.white)
                                 .scaleEffect(0.82)
                             Text("AI 正在听它怎么说")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(.system(size: NekoTypography.web(10.5), weight: .medium))
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 13)
@@ -4936,7 +5032,7 @@ private struct PublishPreviewStageCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         PublishSectionTitle("AI 心 声 解 析")
                         Text(analysisText)
-                            .font(.system(size: 12, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12), weight: .regular))
                             .foregroundStyle(NekoTheme.ink.opacity(0.86))
                             .lineSpacing(5)
                     }
@@ -5009,7 +5105,7 @@ private struct PublishSuccessVoiceCard: View {
                             .frame(width: proxy.size.width, height: 300)
                     } else {
                         Text("等待照片")
-                            .font(.system(size: 12, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12), weight: .regular))
                             .tracking(2.0)
                             .foregroundStyle(PublishWebStyle.step)
                             .frame(width: proxy.size.width, height: 300)
@@ -5031,7 +5127,7 @@ private struct PublishSuccessVoiceCard: View {
                     .padding(.top, 14)
 
                     Text("✦")
-                        .font(.system(size: 12))
+                        .font(.system(size: NekoTypography.web(12)))
                         .foregroundStyle(NekoTheme.soulPink)
                         .shadow(color: .white.opacity(0.8), radius: 10)
                         .frame(width: proxy.size.width, alignment: .trailing)
@@ -5043,7 +5139,7 @@ private struct PublishSuccessVoiceCard: View {
                 HStack(spacing: 8) {
                     ForEach(Array(tags.prefix(2)), id: \.self) { tag in
                         Text(tag)
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: NekoTypography.web(10.5), weight: .medium))
                             .foregroundStyle(Color(red: 0.455, green: 0.285, blue: 0.545))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -5058,7 +5154,7 @@ private struct PublishSuccessVoiceCard: View {
                     }
                     Spacer()
                     Text("刚刚发布")
-                        .font(.system(size: 10, weight: .regular))
+                        .font(.system(size: NekoTypography.web(10), weight: .regular))
                         .tracking(2.5)
                         .foregroundStyle(PublishWebStyle.step.opacity(0.86))
                 }
@@ -5086,11 +5182,11 @@ private struct PublishSpeechBubble: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(catName)
-                    .font(.system(size: 8, weight: .regular))
+                    .font(.system(size: NekoTypography.web(8), weight: .regular))
                     .tracking(3.5)
                     .foregroundStyle(PublishWebStyle.step)
                 Text(text)
-                    .font(.system(size: 12.5, weight: .regular))
+                    .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                     .foregroundStyle(NekoTheme.ink)
                     .lineSpacing(4)
             }
@@ -5132,10 +5228,10 @@ private struct PublishLoadingOverlay: View {
                         .scaleEffect(1.25)
                 }
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                 Text(hint)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11), weight: .regular))
                     .tracking(2.0)
                     .foregroundStyle(PublishWebStyle.step)
             }
@@ -5171,10 +5267,10 @@ private struct PublishErrorOverlay: View {
                     .shadow(color: PublishWebStyle.shadow, radius: 18, x: 0, y: 8)
 
                 Text(title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: NekoTypography.web(14), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                 Text(hint)
-                    .font(.system(size: 11.5, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                     .foregroundStyle(PublishWebStyle.step)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
@@ -5199,7 +5295,7 @@ private struct PublishErrorOverlay: View {
 private struct PublishPrimaryPillStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: NekoTypography.web(13), weight: .medium))
             .foregroundStyle(.white)
             .padding(.vertical, 14)
             .padding(.horizontal, 18)
@@ -5213,7 +5309,7 @@ private struct PublishPrimaryPillStyle: ButtonStyle {
 private struct PublishSecondaryPillStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12.5, weight: .regular))
+            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
             .foregroundStyle(NekoTheme.ink)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -5275,23 +5371,23 @@ private struct VoicePreviewCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("已发布")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: NekoTypography.web(11), weight: .semibold))
                     .tracking(3)
                     .foregroundStyle(NekoTheme.soulViolet)
                 Spacer()
                 Text(voice.time)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: NekoTypography.web(12), weight: .medium))
                     .foregroundStyle(NekoTheme.muted)
             }
 
             Text("“\(voice.text)”")
-                .font(.system(size: 17, weight: .light))
+                .font(.system(size: NekoTypography.web(17), weight: .light))
                 .lineSpacing(6)
                 .foregroundStyle(NekoTheme.ink)
 
             if let analysis = voice.analysis, !analysis.isEmpty {
                 Text(analysis)
-                    .font(.system(size: 13))
+                    .font(.system(size: NekoTypography.web(13)))
                     .foregroundStyle(NekoTheme.muted)
                     .lineSpacing(5)
             }
@@ -5300,7 +5396,7 @@ private struct VoicePreviewCard: View {
                 HStack {
                     ForEach(voice.tags.prefix(3), id: \.self) { tag in
                         Text(tag)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: NekoTypography.web(11), weight: .medium))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(NekoTheme.softPink.opacity(0.72), in: Capsule())
@@ -5327,10 +5423,10 @@ private struct LatestVoiceCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("刚发布的动态")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: NekoTypography.web(12), weight: .semibold))
                     .foregroundStyle(NekoTheme.muted)
                 Text("“\(voice.text)”")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: NekoTypography.web(14), weight: .medium))
                     .foregroundStyle(NekoTheme.ink)
                     .lineLimit(3)
             }
@@ -5392,7 +5488,7 @@ private struct FieldTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: NekoTypography.web(11), weight: .semibold))
             .tracking(2)
             .foregroundStyle(NekoTheme.muted)
     }
@@ -5401,7 +5497,7 @@ private struct FieldTitle: View {
 private struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: NekoTypography.web(15), weight: .semibold))
             .foregroundStyle(.white)
             .padding(.vertical, 15)
             .background(NekoTheme.primaryGradient, in: Capsule())
@@ -5414,7 +5510,7 @@ private struct PrimaryButtonStyle: ButtonStyle {
 private struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: NekoTypography.web(15), weight: .semibold))
             .foregroundStyle(NekoTheme.ink)
             .padding(.vertical, 15)
             .background(.white.opacity(configuration.isPressed ? 0.62 : 0.82), in: Capsule())

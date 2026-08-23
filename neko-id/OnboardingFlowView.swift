@@ -106,6 +106,9 @@ struct NativeOnboardingFlowView: View {
                     .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
+        .nekoEdgeSwipeBack(isEnabled: canEdgeSwipeBack) {
+            handleEdgeSwipeBack()
+        }
         .onAppear {
             hydrateExistingProfileForRetest()
         }
@@ -123,6 +126,21 @@ struct NativeOnboardingFlowView: View {
             guard accessToken != nil, pendingSaveAfterLogin else { return }
             pendingSaveAfterLogin = false
             saveResult()
+        }
+    }
+
+    private var canEdgeSwipeBack: Bool {
+        guard !appModel.isBusy, !isAnalyzing, !isValidatingProfile, !isValidatingVideo else {
+            return false
+        }
+        return step.rawValue > NativeOnboardingStep.welcome.rawValue || appModel.catProfile != nil
+    }
+
+    private func handleEdgeSwipeBack() {
+        if step.rawValue > NativeOnboardingStep.welcome.rawValue {
+            goBack()
+        } else if appModel.catProfile != nil {
+            appModel.cancelOnboardingIfPossible()
         }
     }
 
@@ -480,7 +498,7 @@ private struct OnboardingWelcomeScreen: View {
 
                 VStack(spacing: 0) {
                     Text("N E K O . I D")
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(size: NekoTypography.web(11), weight: .regular))
                         .tracking(6.1)
                         .foregroundStyle(OnboardingWeb.labelPink)
 
@@ -496,7 +514,7 @@ private struct OnboardingWelcomeScreen: View {
                     .padding(.top, 12)
 
                     Text("AI 将通过照片、视频和行为分析\n生成专属于它的人格档案")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: NekoTypography.web(12), weight: .regular))
                         .foregroundStyle(OnboardingWeb.muted)
                         .lineSpacing(6)
                         .multilineTextAlignment(.center)
@@ -618,7 +636,7 @@ private struct OnboardingProfileScreen: View {
                         .padding(13)
 
                         Text("＋")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(.system(size: NekoTypography.web(17), weight: .medium))
                             .foregroundStyle(.white)
                             .frame(width: 36, height: 36)
                             .background(
@@ -634,7 +652,7 @@ private struct OnboardingProfileScreen: View {
                 .buttonStyle(.plain)
 
                 Text("点击上传 · JPG / PNG")
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .tracking(3.0)
                     .foregroundStyle(OnboardingWeb.label)
                     .padding(.top, 12)
@@ -645,13 +663,13 @@ private struct OnboardingProfileScreen: View {
                         TextField("它叫什么名字呀～", text: $draft.name)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: NekoTypography.web(14), weight: .medium))
                             .foregroundStyle(OnboardingWeb.ink)
                             .onChange(of: draft.name) { _, value in
                                 draft.name = String(value.prefix(12))
                             }
                         Text("\(draft.trimmedName.count) / 12")
-                            .font(.system(size: 11, weight: .regular))
+                            .font(.system(size: NekoTypography.web(11), weight: .regular))
                             .foregroundStyle(OnboardingWeb.label)
                     }
                     .padding(.horizontal, 16)
@@ -771,12 +789,12 @@ private struct OnboardingVideoScreen: View {
                                 .padding(.top, 4)
 
                             Text(videoClips.count >= 3 ? "最多只能上传 3 个视频" : "轻触上传视频")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: NekoTypography.web(14), weight: .medium))
                                 .foregroundStyle(OnboardingWeb.ink)
                                 .padding(.top, 12)
 
                             Text("每次 1 个 · 可添加 3 次 · ≤ 100MB")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: NekoTypography.web(11), weight: .regular))
                                 .foregroundStyle(OnboardingWeb.label)
                                 .padding(.top, 5)
                         }
@@ -791,13 +809,13 @@ private struct OnboardingVideoScreen: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text("已上传 · \(videoClips.count) / 3")
-                                .font(.system(size: 10, weight: .regular))
+                                .font(.system(size: NekoTypography.web(10), weight: .regular))
                                 .tracking(4)
                                 .foregroundStyle(OnboardingWeb.label)
                             Spacer()
                             if videoClips.count < 3 {
                                 Text("可继续添加 \(3 - videoClips.count) 个")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: NekoTypography.web(10)))
                                     .foregroundStyle(OnboardingWeb.label)
                             }
                         }
@@ -829,7 +847,7 @@ private struct OnboardingVideoScreen: View {
                     HStack(spacing: 8) {
                         Text("💡")
                         Text("越自然的日常画面，AI 越能感受到它的性格")
-                            .font(.system(size: 10))
+                            .font(.system(size: NekoTypography.web(10)))
                             .foregroundStyle(OnboardingWeb.labelPink)
                     }
                     .padding(.horizontal, 12)
@@ -875,13 +893,13 @@ private struct OnboardingQuizScreen: View {
                     OnboardingCard(cornerRadius: 22, topPadding: 0) {
                         HStack(alignment: .center, spacing: 8) {
                             Text("\(question.id + 1)")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: NekoTypography.web(10), weight: .medium))
                                 .foregroundStyle(OnboardingWeb.questionNumber)
                                 .frame(width: 20, height: 20)
                                 .background(Color(red: 0.984, green: 0.904, blue: 1.0), in: Circle())
 
                             Text(question.question)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.system(size: NekoTypography.web(12.5), weight: .medium))
                                 .foregroundStyle(OnboardingWeb.ink)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -921,7 +939,7 @@ private struct OnboardingQuizScreen: View {
                 .buttonStyle(OnboardingPrimaryButtonStyle())
 
                 Text("AI 将结合测试结果，\n生成更准确的人格分析")
-                    .font(.system(size: 10.5, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10.5), weight: .regular))
                     .lineSpacing(3)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(OnboardingWeb.muted)
@@ -956,7 +974,7 @@ private struct OnboardingAnalyzingScreen: View {
 
             VStack(spacing: 0) {
                 Text("A I · A N A L Y Z I N G")
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .tracking(4.5)
                     .foregroundStyle(OnboardingWeb.labelPink)
                     .padding(.top, 64)
@@ -967,7 +985,7 @@ private struct OnboardingAnalyzingScreen: View {
                     .padding(.top, 8)
 
                 Text("正在构建属于它的人格画像")
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: NekoTypography.web(12), weight: .regular))
                     .foregroundStyle(OnboardingWeb.muted)
                     .padding(.top, 3)
 
@@ -986,7 +1004,7 @@ private struct OnboardingAnalyzingScreen: View {
                 Spacer()
 
                 Text("每只猫，\n都有独一无二的灵魂")
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: NekoTypography.web(12), weight: .regular))
                     .lineSpacing(5)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(OnboardingWeb.muted)
@@ -1032,7 +1050,7 @@ private struct OnboardingResultScreen: View {
                                 .foregroundStyle(OnboardingWeb.soulViolet.opacity(0.35))
                                 .offset(x: -6, y: -12)
                             Text(safePersona.monologue)
-                                .font(.system(size: 14, weight: .light))
+                                .font(.system(size: NekoTypography.web(14), weight: .light))
                                 .italic()
                                 .lineSpacing(8)
                                 .foregroundStyle(OnboardingWeb.ink)
@@ -1047,7 +1065,7 @@ private struct OnboardingResultScreen: View {
                                 .offset(x: 4, y: 8)
                         }
                         Text("—— \(draft.trimmedName) · by NEKO")
-                            .font(.system(size: 10, weight: .regular))
+                            .font(.system(size: NekoTypography.web(10), weight: .regular))
                             .tracking(2.5)
                             .foregroundStyle(OnboardingWeb.label)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1056,20 +1074,20 @@ private struct OnboardingResultScreen: View {
 
                     ResultSection(title: "AI 人格解析", hint: "PERSONALITY · ANALYSIS") {
                         Text(safePersona.analysis)
-                            .font(.system(size: 12.5, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                             .lineSpacing(7)
                             .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
                     }
 
                     ResultSection(title: "它眼中的你", hint: "YOUR · ROLE") {
                         Text(safePersona.ownerRole)
-                            .font(.system(size: 12.5, weight: .regular))
+                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                             .lineSpacing(7)
                             .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
                         HStack(spacing: 6) {
                             ForEach(["温柔", "安全感", "可信", "陪伴者"], id: \.self) { tag in
                                 Text(tag)
-                                    .font(.system(size: 10, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                                     .tracking(1)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 10)
@@ -1095,18 +1113,18 @@ private struct OnboardingResultScreen: View {
                     ResultSection(title: "AI 观察依据", hint: "WHY · AI · THINKS · SO") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("最近 30 天观察")
-                                .font(.system(size: 10.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(10.5), weight: .regular))
                                 .tracking(1.2)
                                 .foregroundStyle(OnboardingWeb.label)
 
                             ForEach(safePersona.observations.prefix(4)) { item in
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(item.label)
-                                        .font(.system(size: 10, weight: .regular))
+                                        .font(.system(size: NekoTypography.web(10), weight: .regular))
                                         .tracking(2.2)
                                         .foregroundStyle(OnboardingWeb.label)
                                     Text(item.value)
-                                        .font(.system(size: 12, weight: .medium))
+                                        .font(.system(size: NekoTypography.web(12), weight: .medium))
                                         .lineSpacing(5)
                                         .foregroundStyle(OnboardingWeb.questionNumber)
                                 }
@@ -1122,11 +1140,11 @@ private struct OnboardingResultScreen: View {
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("AI 发现")
-                                    .font(.system(size: 10, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                                     .tracking(3.0)
                                     .foregroundStyle(OnboardingWeb.labelPink)
                                 Text("它更倾向于观察后行动，因此形成明显的观察型人格特征。")
-                                    .font(.system(size: 12, weight: .regular))
+                                    .font(.system(size: NekoTypography.web(12), weight: .regular))
                                     .lineSpacing(6)
                                     .foregroundStyle(OnboardingWeb.ink.opacity(0.86))
                             }
@@ -1225,7 +1243,7 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
                                         skipAction()
                                     } label: {
                                         Text("跳过 ›")
-                                            .font(.system(size: 10, weight: .regular))
+                                            .font(.system(size: NekoTypography.web(10), weight: .regular))
                                             .tracking(3)
                                             .foregroundStyle(OnboardingWeb.label)
                                     }
@@ -1234,7 +1252,7 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
                             }
 
                             Text(subtitle)
-                                .font(.system(size: 12, weight: .regular))
+                                .font(.system(size: NekoTypography.web(12), weight: .regular))
                                 .foregroundStyle(OnboardingWeb.muted)
                                 .lineSpacing(4)
                                 .padding(.top, 6)
@@ -1270,7 +1288,7 @@ private struct WebBackButton: View {
             onBack()
         } label: {
             Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: NekoTypography.web(16), weight: .semibold))
                 .foregroundStyle(OnboardingWeb.soulViolet)
                 .frame(width: 36, height: 36)
                 .background(.white.opacity(0.80), in: Circle())
@@ -1345,7 +1363,7 @@ private struct OnboardingFieldTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 10, weight: .regular))
+            .font(.system(size: NekoTypography.web(10), weight: .regular))
             .tracking(4)
             .foregroundStyle(OnboardingWeb.label)
     }
@@ -1363,11 +1381,11 @@ private struct ChoiceChip: View {
         } label: {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 10, weight: .regular))
+                        .font(.system(size: NekoTypography.web(10), weight: .regular))
                         .lineLimit(1)
                 }
             }
@@ -1403,11 +1421,11 @@ private struct QuizOptionButton: View {
         } label: {
             HStack(alignment: .center, spacing: 8) {
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .frame(width: 20, height: 20)
                     .background(active ? .white.opacity(0.25) : Color(red: 0.95, green: 0.92, blue: 0.98), in: Circle())
                 Text(text)
-                    .font(.system(size: 12, weight: active ? .medium : .regular))
+                    .font(.system(size: NekoTypography.web(12), weight: active ? .medium : .regular))
                     .lineLimit(2)
                     .minimumScaleFactor(0.86)
             }
@@ -1481,11 +1499,11 @@ private struct FlowAvatarView: View {
                     .background(.white.opacity(0.82), in: Circle())
                     .shadow(color: OnboardingWeb.soulViolet.opacity(0.12), radius: 12, x: 0, y: 6)
                 Text(placeholderTitle)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11), weight: .regular))
                     .tracking(2.2)
                 if let placeholderSubtitle {
                     Text(placeholderSubtitle)
-                        .font(.system(size: 9, weight: .regular))
+                        .font(.system(size: NekoTypography.web(9), weight: .regular))
                         .tracking(1.8)
                         .foregroundStyle(OnboardingWeb.muted.opacity(0.75))
                 }
@@ -1517,13 +1535,13 @@ private struct VideoClipCard: View {
                 LinearGradient(colors: [.clear, .black.opacity(0.36)], startPoint: .center, endPoint: .bottom)
 
                 Text("▶")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .foregroundStyle(OnboardingWeb.questionNumber)
                     .frame(width: 28, height: 28)
                     .background(.white.opacity(0.85), in: Circle())
 
                 Text(clip.durationLabel)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: NekoTypography.web(9), weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
@@ -1532,7 +1550,7 @@ private struct VideoClipCard: View {
                     .padding(7)
 
                 Text(clip.label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -1547,7 +1565,7 @@ private struct VideoClipCard: View {
                 onRemove()
             } label: {
                 Text("×")
-                    .font(.system(size: 14, weight: .regular))
+                    .font(.system(size: NekoTypography.web(14), weight: .regular))
                     .foregroundStyle(OnboardingWeb.ink)
                     .frame(width: 24, height: 24)
                     .background(.white.opacity(0.90), in: Circle())
@@ -1569,7 +1587,7 @@ private struct CaptureTip: View {
             Text(emoji)
                 .font(.system(size: 20))
             Text(title)
-                .font(.system(size: 11, weight: .regular))
+                .font(.system(size: NekoTypography.web(11), weight: .regular))
                 .foregroundStyle(OnboardingWeb.labelPink)
         }
         .frame(maxWidth: .infinity)
@@ -1603,7 +1621,7 @@ private struct AnalysisRing: View {
             FlowAvatarView(image: avatarImage, size: 154, placeholderTitle: "等待头像", placeholderIcon: "cat")
 
             Text("\(Int(progress * 100))%")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: NekoTypography.web(11), weight: .medium))
                 .tracking(2.7)
                 .foregroundStyle(OnboardingWeb.questionNumber)
                 .padding(.horizontal, 12)
@@ -1629,14 +1647,14 @@ private struct AnalysisStepRow: View {
                 .shadow(color: isActive ? OnboardingWeb.soulPink.opacity(0.70) : .clear, radius: 5)
 
             Text(title + (isActive ? "" : "..."))
-                .font(.system(size: 12, weight: .regular))
+                .font(.system(size: NekoTypography.web(12), weight: .regular))
                 .foregroundStyle(isDone || isActive ? OnboardingWeb.ink : OnboardingWeb.muted.opacity(0.70))
 
             Spacer()
 
             if isDone {
                 Text("✓")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: NekoTypography.web(11), weight: .medium))
                     .foregroundStyle(OnboardingWeb.labelPink)
             } else if isActive {
                 HStack(spacing: 4) {
@@ -1665,7 +1683,7 @@ private struct ResultTopBar: View {
             HStack(spacing: 12) {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(16), weight: .semibold))
                         .foregroundStyle(OnboardingWeb.labelPink)
                         .frame(width: 36, height: 36)
                         .background(.white.opacity(0.80), in: Circle())
@@ -1674,7 +1692,7 @@ private struct ResultTopBar: View {
                 .buttonStyle(.plain)
 
                 Text("N E K O · I D")
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .tracking(5)
                     .foregroundStyle(OnboardingWeb.labelPink)
             }
@@ -1683,7 +1701,7 @@ private struct ResultTopBar: View {
 
             Button(action: onShare) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: NekoTypography.web(17), weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
                     .background(LinearGradient(colors: [Color(red: 0.714, green: 0.604, blue: 0.937), Color(red: 0.902, green: 0.722, blue: 0.812)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
@@ -1714,7 +1732,7 @@ private struct ResultHeroCard: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(draft.trimmedName)
-                        .font(.system(size: 15, weight: .light))
+                        .font(.system(size: NekoTypography.web(15), weight: .light))
                         .foregroundStyle(OnboardingWeb.label)
 
                     Text(persona.type)
@@ -1724,11 +1742,11 @@ private struct ResultHeroCard: View {
 
                     HStack(spacing: 8) {
                         Text("MBTI")
-                            .font(.system(size: 9, weight: .regular))
+                            .font(.system(size: NekoTypography.web(9), weight: .regular))
                             .tracking(3)
                             .foregroundStyle(OnboardingWeb.label)
                         Text(persona.mbti)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: NekoTypography.web(11.5), weight: .medium))
                             .tracking(1)
                             .foregroundStyle(OnboardingWeb.questionNumber)
                     }
@@ -1737,7 +1755,7 @@ private struct ResultHeroCard: View {
                     HStack(spacing: 5) {
                         ForEach(Array(persona.tags.prefix(4)), id: \.self) { tag in
                             Text(tag)
-                                .font(.system(size: 9.5, weight: .regular))
+                                .font(.system(size: NekoTypography.web(9.5), weight: .regular))
                                 .tracking(0.8)
                                 .foregroundStyle(OnboardingWeb.labelPink)
                                 .padding(.horizontal, 8)
@@ -1773,7 +1791,7 @@ private struct ResultHeroCard: View {
                 Text("\(persona.matchScore)%")
                     .fontWeight(.semibold)
             }
-            .font(.system(size: 9.5, weight: .regular))
+            .font(.system(size: NekoTypography.web(9.5), weight: .regular))
             .tracking(0.4)
             .foregroundStyle(OnboardingWeb.questionNumber)
             .padding(.horizontal, 10)
@@ -1799,17 +1817,17 @@ private struct ResultSection<Content: View>: View {
             HStack(alignment: .top, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: NekoTypography.web(13), weight: .medium))
                         .foregroundStyle(OnboardingWeb.ink)
                     Text(hint)
-                        .font(.system(size: 8, weight: .regular))
+                        .font(.system(size: NekoTypography.web(8), weight: .regular))
                         .tracking(2.4)
                         .foregroundStyle(OnboardingWeb.labelPink)
                 }
                 Spacer()
                 if let actionTitle {
                     Text(actionTitle)
-                        .font(.system(size: 10, weight: .regular))
+                        .font(.system(size: NekoTypography.web(10), weight: .regular))
                         .tracking(0.8)
                         .foregroundStyle(OnboardingWeb.questionNumber)
                 }
@@ -1849,16 +1867,16 @@ private struct TraitRing: View {
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 1) {
                     Text("\(trait.value)%")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: NekoTypography.web(15), weight: .semibold))
                         .foregroundStyle(OnboardingWeb.questionNumber)
                     Text(traitIcon(for: trait.label))
-                        .font(.system(size: 11))
+                        .font(.system(size: NekoTypography.web(11)))
                 }
             }
             .frame(width: 72, height: 72)
 
             Text(trait.label)
-                .font(.system(size: 11, weight: .regular))
+                .font(.system(size: NekoTypography.web(11), weight: .regular))
                 .foregroundStyle(OnboardingWeb.ink.opacity(0.80))
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
@@ -1881,7 +1899,7 @@ private struct FlowWrap: View {
         FlowLayout(spacing: 7, rowSpacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 Text(item)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: NekoTypography.web(11), weight: .regular))
                     .tracking(0.5)
                     .foregroundStyle(index % 2 == 0 ? OnboardingWeb.questionNumber : .white)
                     .padding(.horizontal, 12)
@@ -1968,7 +1986,7 @@ private struct ResultShareSheet: View {
                     .frame(width: 40, height: 4)
 
                 Text("分享我的猫人格")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(OnboardingWeb.ink)
                     .padding(.top, 16)
 
@@ -1980,7 +1998,7 @@ private struct ResultShareSheet: View {
                 .padding(.top, 20)
 
                 Button("取消", action: onClose)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: NekoTypography.web(13), weight: .medium))
                     .foregroundStyle(OnboardingWeb.questionNumber)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
@@ -2010,7 +2028,7 @@ private struct ShareItem: View {
                 .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
                 .shadow(color: OnboardingWeb.ink.opacity(0.16), radius: 10, x: 0, y: 6)
             Text(label)
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                 .foregroundStyle(OnboardingWeb.ink.opacity(0.80))
         }
         .frame(maxWidth: .infinity)
@@ -2031,7 +2049,7 @@ private struct OnboardingFooterFade: View {
 private struct OnboardingPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(size: NekoTypography.web(14), weight: .medium))
             .foregroundStyle(.white)
             .padding(.vertical, 16)
             .padding(.horizontal, 18)
@@ -2045,7 +2063,7 @@ private struct OnboardingPrimaryButtonStyle: ButtonStyle {
 private struct OnboardingSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: NekoTypography.web(13), weight: .medium))
             .foregroundStyle(OnboardingWeb.questionNumber)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
