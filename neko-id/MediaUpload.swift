@@ -20,6 +20,8 @@ enum NekoMediaError: LocalizedError {
     case unsupportedVideo
     case imageTooLarge
     case videoTooLarge
+    case videoTooShort(duration: Double)
+    case videoTooLong(duration: Double)
 
     var errorDescription: String? {
         switch self {
@@ -31,7 +33,16 @@ enum NekoMediaError: LocalizedError {
             return "图片太大了，请选择 10MB 以内的图片。"
         case .videoTooLarge:
             return "视频不能超过 100MB，请压缩后再上传。"
+        case .videoTooShort(let duration):
+            return "视频只有 \(formatVideoDuration(duration))，必须至少 5 秒。"
+        case .videoTooLong(let duration):
+            return "视频时长为 \(formatVideoDuration(duration))，不能超过 60 秒。"
         }
+    }
+
+    private func formatVideoDuration(_ seconds: Double) -> String {
+        let safeSeconds = max(0, Int(seconds.rounded()))
+        return String(format: "%d:%02d", safeSeconds / 60, safeSeconds % 60)
     }
 }
 
@@ -112,27 +123,36 @@ enum MediaUploadProcessor {
 
         do {
             try data.write(to: temporaryURL, options: .atomic)
-            defer { try? FileManager.default.removeItem(at: temporaryURL) }
-
-            let asset = AVURLAsset(url: temporaryURL)
-            let duration = try await asset.load(.duration)
-            let durationLabel = formatDuration(duration.seconds)
-            let thumbnailData = makeThumbnailData(from: asset)
-
-            return OnboardingVideoClip(
-                label: label,
-                durationLabel: durationLabel,
-                sizeLabel: sizeLabel,
-                thumbnailData: thumbnailData
-            )
         } catch {
-            return OnboardingVideoClip(
-                label: label,
-                durationLabel: "已选择",
-                sizeLabel: sizeLabel,
-                thumbnailData: nil
-            )
+            throw NekoMediaError.unsupportedVideo
         }
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+
+        let asset = AVURLAsset(url: temporaryURL)
+        let duration: CMTime
+        do {
+            duration = try await asset.load(.duration)
+        } catch {
+            throw NekoMediaError.unsupportedVideo
+        }
+
+        let seconds = duration.seconds
+        guard seconds.isFinite, seconds >= 0 else {
+            throw NekoMediaError.unsupportedVideo
+        }
+        guard seconds >= 5 else {
+            throw NekoMediaError.videoTooShort(duration: seconds)
+        }
+        guard seconds <= 60 else {
+            throw NekoMediaError.videoTooLong(duration: seconds)
+        }
+
+        return OnboardingVideoClip(
+            label: label,
+            durationLabel: formatDuration(seconds),
+            sizeLabel: sizeLabel,
+            thumbnailData: makeThumbnailData(from: asset)
+        )
     }
 
     private static func detectImageType(_ data: Data) -> (mimeType: String, fileExtension: String)? {

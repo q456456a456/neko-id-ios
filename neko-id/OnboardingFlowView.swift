@@ -22,9 +22,9 @@ struct NativeOnboardingFlowView: View {
     @EnvironmentObject private var appModel: NekoAppModel
     @State private var step: NativeOnboardingStep = .welcome
     @State private var draft = CatProfileDraft()
-    @State private var selectedAvatarItem: PhotosPickerItem?
     @State private var avatarImageData: Data?
     @State private var avatarPreviewImage: UIImage?
+    @State private var showsCamera = false
     @State private var selectedVideoItems: [PhotosPickerItem] = []
     @State private var videoClips: [OnboardingVideoClip] = []
     @State private var quizAnswers: [Int: QuizChoice] = [:]
@@ -54,11 +54,11 @@ struct NativeOnboardingFlowView: View {
                 case .profile:
                     OnboardingProfileScreen(
                         draft: $draft,
-                        selectedAvatarItem: $selectedAvatarItem,
                         avatarPreviewImage: avatarPreviewImage,
                         avatarRemoteURL: appModel.catProfile?.avatarURL,
                         avatarRemoteObjectKey: appModel.catProfile?.avatarObjectKey,
                         isValidating: isValidatingProfile,
+                        onAddPhoto: { showsCamera = true },
                         onNext: validateProfileAndContinue,
                         onBack: goBack
                     )
@@ -112,9 +112,6 @@ struct NativeOnboardingFlowView: View {
         .onAppear {
             hydrateExistingProfileForRetest()
         }
-        .onChange(of: selectedAvatarItem) { _, item in
-            Task { await loadAvatar(from: item) }
-        }
         .onChange(of: selectedVideoItems) { _, items in
             Task { await loadVideos(from: items) }
         }
@@ -126,6 +123,15 @@ struct NativeOnboardingFlowView: View {
             guard accessToken != nil, pendingSaveAfterLogin else { return }
             pendingSaveAfterLogin = false
             saveResult()
+        }
+        .fullScreenCover(isPresented: $showsCamera) {
+            NekoCameraView(
+                onClose: { showsCamera = false },
+                onUsePhoto: { image in
+                    showsCamera = false
+                    Task { await loadAvatar(from: image) }
+                }
+            )
         }
     }
 
@@ -253,14 +259,11 @@ struct NativeOnboardingFlowView: View {
     }
 
     @MainActor
-    private func loadAvatar(from item: PhotosPickerItem?) async {
-        guard let item else { return }
-
+    private func loadAvatar(from image: UIImage) async {
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else {
+            guard let data = image.jpegData(compressionQuality: 0.94) ?? image.pngData() else {
                 throw NekoMediaError.unsupportedImage
             }
-
             let prepared = try MediaUploadProcessor.prepareAvatarImage(from: data)
             avatarImageData = prepared.data
             avatarPreviewImage = UIImage(data: prepared.data)
@@ -274,9 +277,11 @@ struct NativeOnboardingFlowView: View {
         guard !items.isEmpty else { return }
         defer { selectedVideoItems = [] }
 
-        for item in items {
+        var rejectionMessages: [String] = []
+
+        for (selectionIndex, item) in items.enumerated() {
             guard videoClips.count < 3 else {
-                appModel.errorMessage = "最多只能选择 3 段视频。"
+                rejectionMessages.append("第 \(selectionIndex + 1) 个视频：最多只能选择 3 段视频。")
                 break
             }
 
@@ -292,8 +297,14 @@ struct NativeOnboardingFlowView: View {
                 )
                 videoClips.append(clip)
             } catch {
-                appModel.errorMessage = userFacingMediaMessage(error)
+                rejectionMessages.append(
+                    "第 \(selectionIndex + 1) 个视频：\(userFacingMediaMessage(error))"
+                )
             }
+        }
+
+        if !rejectionMessages.isEmpty {
+            appModel.errorMessage = rejectionMessages.joined(separator: "\n")
         }
     }
 
@@ -590,11 +601,11 @@ private struct OnboardingHeroImage: View {
 
 private struct OnboardingProfileScreen: View {
     @Binding var draft: CatProfileDraft
-    @Binding var selectedAvatarItem: PhotosPickerItem?
     let avatarPreviewImage: UIImage?
     let avatarRemoteURL: URL?
     let avatarRemoteObjectKey: String?
     let isValidating: Bool
+    let onAddPhoto: () -> Void
     let onNext: () -> Void
     let onBack: () -> Void
 
@@ -606,7 +617,7 @@ private struct OnboardingProfileScreen: View {
             onBack: onBack
         ) {
             VStack(spacing: 0) {
-                PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
+                Button(action: onAddPhoto) {
                     ZStack(alignment: .bottomTrailing) {
                         Circle()
                             .fill(
@@ -651,7 +662,7 @@ private struct OnboardingProfileScreen: View {
                 }
                 .buttonStyle(.plain)
 
-                Text("点击上传 · JPG / PNG")
+                Text("点击拍摄 · 也可从系统照片图库选择")
                     .font(.system(size: NekoTypography.web(10), weight: .regular))
                     .tracking(3.0)
                     .foregroundStyle(OnboardingWeb.label)
@@ -747,14 +758,16 @@ private struct OnboardingVideoScreen: View {
         OnboardingScrollableStep(
             step: 2,
             title: "上传猫咪视频",
-            subtitle: "上传 1～3 个视频展示猫咪日常，单个不超过 100MB",
+            subtitle: "选择 1～3 个猫咪视频，每个需为 5～60 秒",
             onBack: onBack
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 PhotosPicker(
                     selection: $selectedVideoItems,
                     maxSelectionCount: max(1, 3 - videoClips.count),
-                    matching: .videos
+                    selectionBehavior: .ordered,
+                    matching: .videos,
+                    preferredItemEncoding: .current
                 ) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -793,7 +806,7 @@ private struct OnboardingVideoScreen: View {
                                 .foregroundStyle(OnboardingWeb.ink)
                                 .padding(.top, 12)
 
-                            Text("每次 1 个 · 可添加 3 次 · ≤ 100MB")
+                            Text("可多选 · 最多 3 个 · 每个 5～60 秒")
                                 .font(.system(size: NekoTypography.web(11), weight: .regular))
                                 .foregroundStyle(OnboardingWeb.label)
                                 .padding(.top, 5)
