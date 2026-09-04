@@ -19,6 +19,30 @@ struct NekoServerAPIClient {
         self.session = session
     }
 
+    func requestPhoneOTP(phone: String) async throws {
+        let _: PhoneOTPResponse = try await perform(
+            path: "/api/ios/auth/phone-otp",
+            body: PhoneOTPServerRequest(phone: phone),
+            accessToken: nil
+        )
+    }
+
+    func verifyPhoneOTP(phone: String, token: String) async throws -> NekoSession {
+        try await perform(
+            path: "/api/ios/auth/phone-verify",
+            body: VerifyPhoneOTPServerRequest(phone: phone, token: token),
+            accessToken: nil
+        )
+    }
+
+    func refreshSession(_ session: NekoSession) async throws -> NekoSession {
+        try await perform(
+            path: "/api/ios/auth/refresh",
+            body: RefreshSessionServerRequest(refreshToken: session.refreshToken),
+            accessToken: nil
+        )
+    }
+
     func detectCatFace(
         imageData: Data,
         mode: CatDetectionMode,
@@ -311,6 +335,23 @@ enum NekoServerAPIError: LocalizedError {
             return message
         }
     }
+}
+
+private struct PhoneOTPServerRequest: Encodable {
+    let phone: String
+}
+
+private struct PhoneOTPResponse: Decodable {
+    let sent: Bool
+}
+
+private struct VerifyPhoneOTPServerRequest: Encodable {
+    let phone: String
+    let token: String
+}
+
+private struct RefreshSessionServerRequest: Encodable {
+    let refreshToken: String
 }
 
 private struct DetectCatFaceRequest: Encodable {

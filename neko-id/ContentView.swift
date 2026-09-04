@@ -31,6 +31,7 @@ struct ContentView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
         }
+        .nekoDismissKeyboardOnTap()
         .id(appModel.phase)
         .task {
             await appModel.bootstrap()
@@ -4793,6 +4794,7 @@ private struct PublishBottomCTA: View {
             .background(NekoTheme.lilacBottom.opacity(0.78))
         }
         .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 

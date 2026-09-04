@@ -25,9 +25,9 @@ final class NekoAppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var noticeMessage: String?
 
-    private let api = SupabaseRESTClient()
     private let serverAPI = NekoServerAPIClient()
-    private let sessionAccount = "supabase-session"
+    private let sessionAccount = "neko-session"
+    private let legacySessionAccount = "supabase-session"
     private var bootstrapped = false
     private var signedMediaCache: [String: CachedSignedMediaURL] = [:]
 
@@ -36,20 +36,20 @@ final class NekoAppModel: ObservableObject {
         bootstrapped = true
 
         do {
-            guard var storedSession = try KeychainStore.load(NekoSession.self, account: sessionAccount) else {
+            guard var storedSession = try loadStoredSession() else {
                 phase = .onboarding
                 return
             }
 
             if storedSession.isExpired {
-                storedSession = try await api.refreshSession(storedSession)
-                try KeychainStore.save(storedSession, account: sessionAccount)
+                storedSession = try await serverAPI.refreshSession(storedSession)
+                try saveStoredSession(storedSession)
             }
 
             session = storedSession
             try await reloadCloudState(session: storedSession)
         } catch {
-            KeychainStore.delete(account: sessionAccount)
+            deleteStoredSession()
             session = nil
             catProfile = nil
             persona = nil
@@ -67,7 +67,7 @@ final class NekoAppModel: ObservableObject {
         noticeMessage = nil
 
         do {
-            try await api.requestPhoneOTP(phone: try phone.normalizedMainlandPhone())
+            try await serverAPI.requestPhoneOTP(phone: try phone.normalizedMainlandPhone())
             isBusy = false
             return true
         } catch {
@@ -89,11 +89,11 @@ final class NekoAppModel: ObservableObject {
         noticeMessage = nil
 
         do {
-            let nextSession = try await api.verifyPhoneOTP(
+            let nextSession = try await serverAPI.verifyPhoneOTP(
                 phone: try phone.normalizedMainlandPhone(),
                 token: code.trimmingCharacters(in: .whitespacesAndNewlines)
             )
-            try KeychainStore.save(nextSession, account: sessionAccount)
+            try saveStoredSession(nextSession)
             session = nextSession
             if reloadCloudStateAfterLogin {
                 try await reloadCloudState(session: nextSession)
@@ -428,7 +428,7 @@ final class NekoAppModel: ObservableObject {
     }
 
     func signOut() {
-        KeychainStore.delete(account: sessionAccount)
+        deleteStoredSession()
         session = nil
         catProfile = nil
         persona = nil
@@ -453,12 +453,36 @@ final class NekoAppModel: ObservableObject {
         }
 
         if activeSession.isExpired {
-            activeSession = try await api.refreshSession(activeSession)
-            try KeychainStore.save(activeSession, account: sessionAccount)
+            activeSession = try await serverAPI.refreshSession(activeSession)
+            try saveStoredSession(activeSession)
             session = activeSession
         }
 
         return activeSession
+    }
+
+    private func loadStoredSession() throws -> NekoSession? {
+        if let session = try KeychainStore.load(NekoSession.self, account: sessionAccount) {
+            return session
+        }
+
+        guard let legacySession = try KeychainStore.load(NekoSession.self, account: legacySessionAccount) else {
+            return nil
+        }
+
+        try saveStoredSession(legacySession)
+        KeychainStore.delete(account: legacySessionAccount)
+        return legacySession
+    }
+
+    private func saveStoredSession(_ session: NekoSession) throws {
+        try KeychainStore.save(session, account: sessionAccount)
+        KeychainStore.delete(account: legacySessionAccount)
+    }
+
+    private func deleteStoredSession() {
+        KeychainStore.delete(account: sessionAccount)
+        KeychainStore.delete(account: legacySessionAccount)
     }
 
     private func reloadCloudState(session activeSession: NekoSession) async throws {

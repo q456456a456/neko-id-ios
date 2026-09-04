@@ -1,7 +1,6 @@
 import AVFoundation
 import Combine
 import Photos
-import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -12,7 +11,7 @@ struct NekoCameraView: View {
     @StateObject private var camera = NekoCameraController()
     @State private var capturedImage: UIImage?
     @State private var recentImage: UIImage?
-    @State private var showsPhotoPicker = false
+    @State private var showsPhotoLibrary = false
 
     var body: some View {
         ZStack {
@@ -70,12 +69,18 @@ struct NekoCameraView: View {
         .onDisappear {
             camera.stop()
         }
-        .sheet(isPresented: $showsPhotoPicker) {
-            SystemPhotoPicker { image in
-                recentImage = image
-                capturedImage = image
-            }
-            .ignoresSafeArea()
+        .fullScreenCover(isPresented: $showsPhotoLibrary) {
+            NekoPhotoLibraryPicker(
+                onCancel: {
+                    showsPhotoLibrary = false
+                },
+                onConfirm: { image in
+                    recentImage = image
+                    capturedImage = image
+                    camera.stop()
+                    showsPhotoLibrary = false
+                }
+            )
         }
     }
 
@@ -129,7 +134,7 @@ struct NekoCameraView: View {
         } else if !camera.authorizationDenied {
             HStack {
                 Button {
-                    showsPhotoPicker = true
+                    showsPhotoLibrary = true
                 } label: {
                     Group {
                         if let recentImage {
@@ -150,6 +155,7 @@ struct NekoCameraView: View {
                             .stroke(.white.opacity(0.78), lineWidth: 1.5)
                     }
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("从照片图库选择")
 
                 Spacer()
@@ -209,7 +215,7 @@ struct NekoCameraView: View {
             }
             .buttonStyle(NekoCameraPrimaryButtonStyle())
             Button("从照片图库选择") {
-                showsPhotoPicker = true
+                showsPhotoLibrary = true
             }
             .foregroundStyle(NekoTheme.soulViolet)
         }
@@ -246,6 +252,287 @@ struct NekoCameraView: View {
             guard let image else { return }
             Task { @MainActor in recentImage = image }
         }
+    }
+
+}
+
+private struct NekoPhotoLibraryPicker: View {
+    let onCancel: () -> Void
+    let onConfirm: (UIImage) -> Void
+
+    @StateObject private var library = NekoPhotoLibraryStore()
+    @State private var selectedAssetID: String?
+    @State private var isLoadingSelection = false
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            Group {
+                if library.canReadPhotos {
+                    if library.assets.isEmpty {
+                        emptyState
+                    } else {
+                        assetGrid
+                    }
+                } else {
+                    permissionState
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.white.ignoresSafeArea())
+        .task {
+            library.requestAccessAndLoad()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Color.black.opacity(0.86))
+                    .frame(width: 48, height: 48)
+                    .background(.white, in: Circle())
+                    .shadow(color: .black.opacity(0.06), radius: 18, x: 0, y: 8)
+            }
+            .accessibilityLabel("取消")
+
+            Spacer()
+
+            Text("选择照片")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.black.opacity(0.88))
+
+            Spacer()
+
+            Button {
+                Task { await confirmSelection() }
+            } label: {
+                Text(isLoadingSelection ? "处理中" : "确认")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(selectedAssetID == nil ? Color.black.opacity(0.28) : NekoTheme.soulViolet)
+                    .frame(width: 58, height: 40)
+                    .background(.white, in: Capsule())
+                    .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 6)
+            }
+            .disabled(selectedAssetID == nil || isLoadingSelection)
+            .accessibilityLabel("确认选择照片")
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 18)
+        .padding(.bottom, 16)
+        .background(Color.white)
+    }
+
+    private var assetGrid: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(library.assets, id: \.localIdentifier) { asset in
+                    Button {
+                        selectedAssetID = asset.localIdentifier
+                    } label: {
+                        NekoPhotoLibraryAssetCell(
+                            asset: asset,
+                            isSelected: selectedAssetID == asset.localIdentifier
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 2)
+            .padding(.bottom, 28)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(NekoTheme.soulViolet.opacity(0.72))
+            Text("没有可选择的照片")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(NekoTheme.ink)
+            Text("可以先把猫咪照片保存到相册，再回来选择。")
+                .font(.system(size: 13))
+                .foregroundStyle(NekoTheme.muted)
+        }
+        .multilineTextAlignment(.center)
+        .padding(28)
+    }
+
+    private var permissionState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "photo.badge.exclamationmark")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(NekoTheme.soulViolet.opacity(0.72))
+            Text("需要相册权限")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(NekoTheme.ink)
+            Text("允许访问相册后，才能从图库选择猫咪照片。")
+                .font(.system(size: 13))
+                .foregroundStyle(NekoTheme.muted)
+                .multilineTextAlignment(.center)
+            Button("打开系统设置") {
+                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                UIApplication.shared.open(url)
+            }
+            .buttonStyle(NekoCameraPrimaryButtonStyle())
+            .padding(.top, 4)
+        }
+        .padding(28)
+    }
+
+    @MainActor
+    private func confirmSelection() async {
+        guard let selectedAssetID,
+              let asset = library.assets.first(where: { $0.localIdentifier == selectedAssetID }),
+              !isLoadingSelection else { return }
+
+        isLoadingSelection = true
+        defer { isLoadingSelection = false }
+
+        guard let image = await library.fullSizeImage(for: asset) else { return }
+        onConfirm(image)
+    }
+}
+
+private struct NekoPhotoLibraryAssetCell: View {
+    let asset: PHAsset
+    let isSelected: Bool
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottomTrailing) {
+                Rectangle()
+                    .fill(Color.black.opacity(0.05))
+
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                }
+
+                if isSelected {
+                    Circle()
+                        .fill(NekoTheme.soulPink)
+                        .frame(width: 26, height: 26)
+                        .overlay {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .overlay {
+                            Circle().stroke(.white, lineWidth: 2)
+                        }
+                        .padding(8)
+                }
+            }
+            .contentShape(Rectangle())
+            .task(id: asset.localIdentifier) {
+                await loadThumbnail(side: proxy.size.width)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+
+    @MainActor
+    private func loadThumbnail(side: CGFloat) async {
+        let scale = UIScreen.main.scale
+        let targetSize = CGSize(width: max(side * scale, 180), height: max(side * scale, 180))
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true
+
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        ) { nextImage, _ in
+            guard let nextImage else { return }
+            Task { @MainActor in
+                image = nextImage
+            }
+        }
+    }
+}
+
+@MainActor
+private final class NekoPhotoLibraryStore: ObservableObject {
+    @Published private(set) var authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @Published private(set) var assets: [PHAsset] = []
+
+    var canReadPhotos: Bool {
+        authorizationStatus == .authorized || authorizationStatus == .limited
+    }
+
+    func requestAccessAndLoad() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        authorizationStatus = status
+
+        if status == .notDetermined {
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] newStatus in
+                Task { @MainActor in
+                    self?.authorizationStatus = newStatus
+                    self?.loadAssetsIfPossible()
+                }
+            }
+            return
+        }
+
+        loadAssetsIfPossible()
+    }
+
+    func fullSizeImage(for asset: PHAsset) async -> UIImage? {
+        await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.resizeMode = .none
+            options.isNetworkAccessAllowed = true
+            options.version = .current
+
+            var didResume = false
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: PHImageManagerMaximumSize,
+                contentMode: .aspectFit,
+                options: options
+            ) { image, info in
+                let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) == true
+                guard !isDegraded, !didResume else { return }
+                didResume = true
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
+    private func loadAssetsIfPossible() {
+        guard canReadPhotos else {
+            assets = []
+            return
+        }
+
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
+        options.fetchLimit = 300
+
+        let result = PHAsset.fetchAssets(with: options)
+        var nextAssets: [PHAsset] = []
+        nextAssets.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in
+            nextAssets.append(asset)
+        }
+        assets = nextAssets
     }
 }
 
@@ -377,55 +664,6 @@ private final class NekoCameraController: NSObject, ObservableObject, AVCaptureP
             if session.isRunning { session.stopRunning() }
         }
         onPhotoCaptured?(image)
-    }
-}
-
-private struct SystemPhotoPicker: UIViewControllerRepresentable {
-    let onPick: (UIImage) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPick: onPick, dismiss: dismiss)
-    }
-
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var configuration = PHPickerConfiguration(photoLibrary: .shared())
-        configuration.filter = .images
-        configuration.selectionLimit = 1
-        configuration.preferredAssetRepresentationMode = .current
-        let picker = PHPickerViewController(configuration: configuration)
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
-
-    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let onPick: (UIImage) -> Void
-        let dismiss: DismissAction
-
-        init(onPick: @escaping (UIImage) -> Void, dismiss: DismissAction) {
-            self.onPick = onPick
-            self.dismiss = dismiss
-        }
-
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            guard let provider = results.first?.itemProvider,
-                  provider.canLoadObject(ofClass: UIImage.self) else {
-                dismiss()
-                return
-            }
-            provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
-                guard let self, let image = object as? UIImage else {
-                    Task { @MainActor in self?.dismiss() }
-                    return
-                }
-                Task { @MainActor in
-                    self.onPick(image)
-                    self.dismiss()
-                }
-            }
-        }
     }
 }
 

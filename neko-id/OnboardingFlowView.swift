@@ -1092,7 +1092,7 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         StepBar(step: step)
@@ -1132,14 +1132,15 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
                     }
                     .padding(.bottom, 152)
                 }
-                .safeAreaInset(edge: .bottom) {
-                    footer
-                        .padding(.horizontal, 20)
-                        .padding(.top, 14)
-                        .padding(.bottom, 10)
-                        .background(OnboardingFooterFade())
-                }
+
+                footer
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+                    .background(OnboardingFooterFade())
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
             }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
 
             WebBackButton(onBack: onBack)
         }
