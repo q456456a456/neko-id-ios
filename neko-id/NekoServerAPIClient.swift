@@ -331,9 +331,107 @@ enum NekoServerAPIError: LocalizedError {
             return "服务器地址配置错误。"
         case .invalidResponse:
             return "服务器返回了无法识别的数据。"
-        case .server(_, let message):
-            return message
+        case .server(let statusCode, let message):
+            return NekoUserFacingError.message(from: message, statusCode: statusCode)
         }
+    }
+}
+
+enum NekoUserFacingError {
+    static func message(
+        for error: Error,
+        fallback: String = "操作失败，请稍后再试。"
+    ) -> String {
+        if let description = (error as? LocalizedError)?.errorDescription, !description.isEmpty {
+            return message(from: description, fallback: fallback)
+        }
+
+        return message(from: error.localizedDescription, fallback: fallback)
+    }
+
+    static func message(
+        from rawMessage: String?,
+        statusCode: Int? = nil,
+        fallback: String = "操作失败，请稍后再试。"
+    ) -> String {
+        let message = (rawMessage ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return fallback }
+
+        let lowercased = message.lowercased()
+
+        if lowercased.contains("rate") || lowercased.contains("too many") {
+            return "验证码发送太频繁了，稍等一会儿再试。"
+        }
+
+        if lowercased.contains("invalid") && lowercased.contains("otp") {
+            return "验证码不正确或已过期，请重新获取。"
+        }
+
+        if lowercased.contains("expired") && lowercased.contains("登录") {
+            return "登录状态已过期，请重新登录。"
+        }
+
+        if lowercased.contains("missing bearer") || lowercased.contains("bearer token") {
+            return "请先登录后再继续。"
+        }
+
+        if lowercased.contains("keychain returned") || lowercased.contains("osstatus") {
+            return "登录状态保存失败，请重启 App 后再试。"
+        }
+
+        if lowercased.contains("internet connection") ||
+            lowercased.contains("network connection") ||
+            lowercased.contains("offline") ||
+            lowercased.contains("not connected") {
+            return "网络连接不太稳定，请检查后再试。"
+        }
+
+        if lowercased.contains("timed out") ||
+            lowercased.contains("timeout") ||
+            lowercased.contains("operation was aborted") {
+            if message.contains("心声") {
+                return "AI 现在有点忙，猫咪心声暂时没有生成成功，请稍后再试。"
+            }
+            if message.contains("人格") {
+                return "AI 现在有点忙，人格档案暂时没有生成成功，请稍后再试。"
+            }
+            return "服务响应有点慢，请稍后再试。"
+        }
+
+        if containsInternalDetails(lowercased) {
+            if message.contains("心声") {
+                return "AI 心声暂时没有生成成功，请稍后再试。"
+            }
+            if message.contains("人格") {
+                return "AI 人格档案暂时没有生成成功，请稍后再试。"
+            }
+            if statusCode == 401 {
+                return "登录状态已过期，请重新登录。"
+            }
+            return fallback
+        }
+
+        return message
+    }
+
+    private static func containsInternalDetails(_ lowercasedMessage: String) -> Bool {
+        let tokens = [
+            "bytecat",
+            "openai",
+            "qwen",
+            "deepseek",
+            "dashscope",
+            "supabase",
+            "api_key",
+            "bearer",
+            "timeout after",
+            "nsurlerrordomain",
+            "nscocoaerrordomain",
+            "stack trace",
+            "localizederror"
+        ]
+
+        return tokens.contains { lowercasedMessage.contains($0) }
     }
 }
 

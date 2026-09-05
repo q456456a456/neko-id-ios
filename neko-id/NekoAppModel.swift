@@ -130,6 +130,17 @@ final class NekoAppModel: ObservableObject {
 
         await runBusy {
             let activeSession = try await authenticatedSession()
+
+            if catProfile == nil {
+                let didRestoreHistory = try await restoreExistingCloudState(
+                    session: activeSession,
+                    showNotice: true
+                )
+                if didRestoreHistory {
+                    return
+                }
+            }
+
             let finalPersona = generatedPersona ?? PersonaGenerator.generate(
                 profile: draft,
                 quizAnswers: quizAnswers,
@@ -487,6 +498,27 @@ final class NekoAppModel: ObservableObject {
 
     private func reloadCloudState(session activeSession: NekoSession) async throws {
         let cloudState = try await serverAPI.fetchCloudState(accessToken: activeSession.accessToken)
+        applyCloudState(cloudState)
+    }
+
+    @discardableResult
+    private func restoreExistingCloudState(
+        session activeSession: NekoSession,
+        showNotice: Bool
+    ) async throws -> Bool {
+        let cloudState = try await serverAPI.fetchCloudState(accessToken: activeSession.accessToken)
+        guard cloudState.profile != nil else {
+            return false
+        }
+
+        applyCloudState(cloudState)
+        if showNotice {
+            noticeMessage = "已恢复账号里的历史猫咪档案。"
+        }
+        return true
+    }
+
+    private func applyCloudState(_ cloudState: NekoCloudState) {
         catProfile = cloudState.profile
         persona = cloudState.persona
         voices = cloudState.voices
@@ -509,17 +541,7 @@ final class NekoAppModel: ObservableObject {
     }
 
     private func userFacingMessage(for error: Error) -> String {
-        if let description = (error as? LocalizedError)?.errorDescription, !description.isEmpty {
-            if description.localizedCaseInsensitiveContains("rate") {
-                return "验证码发送太频繁了，稍等一会儿再试。"
-            }
-            if description.localizedCaseInsensitiveContains("invalid") || description.localizedCaseInsensitiveContains("expired") {
-                return "验证码不正确或已过期，请重新获取。"
-            }
-            return description
-        }
-
-        return "操作失败，请稍后再试。"
+        NekoUserFacingError.message(for: error)
     }
 }
 

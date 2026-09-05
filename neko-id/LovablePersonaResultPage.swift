@@ -214,7 +214,10 @@ struct LovablePersonaResultPage: View {
                 try await LovablePhotoLibrarySaver.save(image)
                 appModel.noticeMessage = "已保存到相册"
             } catch {
-                appModel.errorMessage = (error as? LocalizedError)?.errorDescription ?? "保存到相册失败，请检查相册权限。"
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "保存到相册失败，请检查相册权限。"
+                )
             }
         }
     }

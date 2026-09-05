@@ -8,6 +8,7 @@
 import PhotosUI
 import SwiftUI
 import UIKit
+import Combine
 
 struct ContentView: View {
     @EnvironmentObject private var appModel: NekoAppModel
@@ -36,6 +37,10 @@ struct ContentView: View {
         .task {
             await appModel.bootstrap()
         }
+        .nekoToastHost(
+            errorMessage: $appModel.errorMessage,
+            noticeMessage: $appModel.noticeMessage
+        )
         .sheet(item: $appModel.loginPrompt) { prompt in
             LoginView(
                 title: "继续前先登录",
@@ -50,6 +55,10 @@ struct ContentView: View {
                 }
             )
             .presentationDetents([.large])
+            .nekoToastHost(
+                errorMessage: $appModel.errorMessage,
+                noticeMessage: $appModel.noticeMessage
+            )
         }
         .onChange(of: scenePhase) { _, nextPhase in
             guard nextPhase == .active else { return }
@@ -57,34 +66,140 @@ struct ContentView: View {
                 await appModel.refreshSignedMediaURLs()
             }
         }
-        .alert("提示", isPresented: errorBinding) {
-            Button("知道了", role: .cancel) {
-                appModel.errorMessage = nil
-            }
-        } message: {
-            Text(appModel.errorMessage ?? "")
+    }
+}
+
+private enum NekoToastKind: Equatable {
+    case error
+    case notice
+}
+
+private struct NekoToastPayload: Equatable {
+    let kind: NekoToastKind
+    let message: String
+
+    var id: String {
+        "\(kind)-\(message)"
+    }
+}
+
+private struct NekoToastHostModifier: ViewModifier {
+    @Binding var errorMessage: String?
+    @Binding var noticeMessage: String?
+    @State private var dismissTask: Task<Void, Never>?
+
+    private var activeToast: NekoToastPayload? {
+        if let message = errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !message.isEmpty {
+            return NekoToastPayload(kind: .error, message: message)
         }
-        .alert("完成", isPresented: noticeBinding) {
-            Button("好", role: .cancel) {
-                appModel.noticeMessage = nil
+        if let message = noticeMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !message.isEmpty {
+            return NekoToastPayload(kind: .notice, message: message)
+        }
+        return nil
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .center) {
+                if let activeToast {
+                    NekoToastView(payload: activeToast)
+                        .padding(.horizontal, 30)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                        .onTapGesture {
+                            dismiss(activeToast)
+                        }
+                        .zIndex(200)
+                }
             }
-        } message: {
-            Text(appModel.noticeMessage ?? "")
+            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: activeToast)
+            .onChange(of: errorMessage) { _, _ in
+                scheduleDismiss()
+            }
+            .onChange(of: noticeMessage) { _, _ in
+                scheduleDismiss()
+            }
+            .onDisappear {
+                dismissTask?.cancel()
+            }
+    }
+
+    private func scheduleDismiss() {
+        dismissTask?.cancel()
+        guard let toast = activeToast else { return }
+        let seconds: Double = toast.message.count > 28 ? 4.2 : 2.6
+
+        dismissTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                switch toast.kind {
+                case .error:
+                    if errorMessage == toast.message {
+                        errorMessage = nil
+                    }
+                case .notice:
+                    if noticeMessage == toast.message {
+                        noticeMessage = nil
+                    }
+                }
+            }
         }
     }
 
-    private var errorBinding: Binding<Bool> {
-        Binding(
-            get: { appModel.errorMessage != nil },
-            set: { if !$0 { appModel.errorMessage = nil } }
+    private func dismiss(_ toast: NekoToastPayload) {
+        dismissTask?.cancel()
+        switch toast.kind {
+        case .error:
+            errorMessage = nil
+        case .notice:
+            noticeMessage = nil
+        }
+    }
+}
+
+private struct NekoToastView: View {
+    let payload: NekoToastPayload
+
+    var body: some View {
+        HStack(spacing: 10) {
+            icon
+
+            Text(payload.message)
+                .font(.system(size: NekoTypography.web(12.5), weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 330)
+        .background(
+            RoundedRectangle(cornerRadius: 23, style: .continuous)
+                .fill(Color.black.opacity(0.46))
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 23, style: .continuous)
+                .stroke(Color.white.opacity(0.20), lineWidth: 1)
+        }
+        .shadow(color: NekoTheme.ink.opacity(0.22), radius: 18, x: 0, y: 10)
+        .accessibilityElement(children: .combine)
     }
 
-    private var noticeBinding: Binding<Bool> {
-        Binding(
-            get: { appModel.noticeMessage != nil },
-            set: { if !$0 { appModel.noticeMessage = nil } }
-        )
+    @ViewBuilder
+    private var icon: some View {
+        switch payload.kind {
+        case .error:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color(red: 1.0, green: 0.78, blue: 0.72))
+        case .notice:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.92))
+        }
     }
 }
 
@@ -111,6 +226,18 @@ struct NekoEdgeSwipeBackModifier: ViewModifier {
 }
 
 extension View {
+    func nekoToastHost(
+        errorMessage: Binding<String?>,
+        noticeMessage: Binding<String?>
+    ) -> some View {
+        modifier(
+            NekoToastHostModifier(
+                errorMessage: errorMessage,
+                noticeMessage: noticeMessage
+            )
+        )
+    }
+
     func nekoEdgeSwipeBack(
         isEnabled: Bool = true,
         edgeWidth: CGFloat = 44,
@@ -161,6 +288,9 @@ private struct LoginView: View {
     @State private var code = ""
     @State private var codeSent = false
     @State private var codeNotice = ""
+    @State private var resendCooldown = 0
+    @State private var lastSentPhone = ""
+    @FocusState private var focusedField: LoginFocusField?
 
     init(
         title: String = "手机号验证码登录",
@@ -214,83 +344,91 @@ private struct LoginView: View {
                 }
 
                 NekoGlassCard(cornerRadius: 28) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 14) {
                         FieldTitle("手机号")
-                        TextField("13800138000", text: $phone)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.phonePad)
-                            .textContentType(.telephoneNumber)
-                            .autocorrectionDisabled()
-                            .font(.system(size: NekoTypography.web(14), weight: .regular))
-                            .foregroundStyle(NekoTheme.ink)
+                        HStack(spacing: 12) {
+                            Text("+86")
+                                .font(.system(size: NekoTypography.web(15), weight: .semibold))
+                                .foregroundStyle(NekoTheme.ink)
+
+                            Rectangle()
+                                .fill(NekoTheme.softLilac.opacity(0.72))
+                                .frame(width: 1, height: 22)
+
+                            TextField("138 0013 8000", text: phoneBinding)
+                                .textInputAutocapitalization(.never)
+                                .keyboardType(.phonePad)
+                                .textContentType(.telephoneNumber)
+                                .autocorrectionDisabled()
+                                .focused($focusedField, equals: .phone)
+                                .font(.system(size: NekoTypography.web(15), weight: .regular))
+                                .foregroundStyle(NekoTheme.ink)
+
+                            if !phone.isEmpty {
+                                Button {
+                                    resetPhoneInput()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(NekoTheme.muted.opacity(0.55))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
                             .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-                        Button {
-                            Task {
-                                let didSend = await appModel.requestLoginCode(phone: phone)
-                                if didSend {
-                                    codeSent = true
-                                    codeNotice = "验证码已发送，请查收短信。"
-                                }
+                        FieldTitle("验证码")
+                            .padding(.top, 4)
+                        HStack(spacing: 12) {
+                            TextField("输入验证码", text: codeBinding)
+                                .keyboardType(.numberPad)
+                                .textContentType(.oneTimeCode)
+                                .font(.system(size: NekoTypography.web(15), weight: .regular))
+                                .foregroundStyle(NekoTheme.ink)
+                                .focused($focusedField, equals: .code)
+                                .disabled(!codeSent)
+
+                            Button {
+                                sendLoginCode()
+                            } label: {
+                                Text(sendCodeTitle)
+                                    .font(.system(size: NekoTypography.web(12.5), weight: .semibold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.82)
+                                    .foregroundStyle(canSendCode ? NekoTheme.soulViolet : NekoTheme.muted.opacity(0.70))
+                                    .frame(minWidth: 96, alignment: .trailing)
                             }
+                            .buttonStyle(.plain)
+                            .disabled(!canSendCode)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                        if !codeNotice.isEmpty {
+                            Text(codeNotice)
+                                .font(.system(size: NekoTypography.web(11.5), weight: .medium))
+                                .foregroundStyle(NekoTheme.soulViolet)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .transition(.opacity)
+                        }
+
+                        Button {
+                            completeLogin()
                         } label: {
-                            Label(codeSent ? "重新发送验证码" : "发送验证码", systemImage: "message")
+                            Label("完成登录", systemImage: "checkmark.circle")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(NekoPrimaryButtonStyle())
-                        .disabled(appModel.isBusy || phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!canCompleteLogin)
+                        .padding(.top, 2)
 
-                        if codeSent {
-                            VStack(alignment: .leading, spacing: 12) {
-                                if !codeNotice.isEmpty {
-                                    Text(codeNotice)
-                                        .font(.system(size: NekoTypography.web(11.5), weight: .medium))
-                                        .foregroundStyle(NekoTheme.soulViolet)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                }
-
-                                FieldTitle("6 位验证码")
-                                TextField("123456", text: $code)
-                                    .keyboardType(.numberPad)
-                                    .textContentType(.oneTimeCode)
-                                    .multilineTextAlignment(.center)
-                                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                                    .tracking(8)
-                                    .foregroundStyle(NekoTheme.ink)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 13)
-                                    .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    .onChange(of: code) { _, newValue in
-                                        code = String(newValue.filter(\.isNumber).prefix(6))
-                                    }
-
-                                Button {
-                                    Task {
-                                        let didLogin = await appModel.verifyLoginCode(
-                                            phone: phone,
-                                            code: code,
-                                            reloadCloudStateAfterLogin: reloadCloudStateAfterLogin
-                                        )
-                                        if didLogin {
-                                            onAuthenticated()
-                                        }
-                                    }
-                                } label: {
-                                    Label("完成登录", systemImage: "checkmark.circle")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(NekoPrimaryButtonStyle())
-                                .disabled(appModel.isBusy || code.count != 6)
-
-                                Text("如果收不到验证码，稍等一会儿再重新发送。")
-                                    .font(.system(size: NekoTypography.web(11)))
-                                    .foregroundStyle(NekoTheme.muted)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                            }
-                            .padding(.top, 8)
-                        }
+                        Text(codeSent ? "如果收不到验证码，稍等一会儿再重新发送。" : "未注册手机号登录成功后会自动创建账号。")
+                            .font(.system(size: NekoTypography.web(11)))
+                            .foregroundStyle(NekoTheme.muted)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .padding(16)
                 }
@@ -310,6 +448,10 @@ private struct LoginView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            guard resendCooldown > 0 else { return }
+            resendCooldown -= 1
+        }
         .overlay(alignment: .center) {
             if appModel.isBusy {
                 ProgressView()
@@ -319,6 +461,115 @@ private struct LoginView: View {
             }
         }
     }
+
+    private var phoneBinding: Binding<String> {
+        Binding(
+            get: { formatPhone(phone) },
+            set: { updatePhoneInput($0) }
+        )
+    }
+
+    private var codeBinding: Binding<String> {
+        Binding(
+            get: { code },
+            set: { code = String($0.filter(\.isNumber).prefix(6)) }
+        )
+    }
+
+    private var isPhoneReady: Bool {
+        phone.range(of: #"^1\d{10}$"#, options: .regularExpression) != nil
+    }
+
+    private var canSendCode: Bool {
+        !appModel.isBusy && isPhoneReady && resendCooldown == 0
+    }
+
+    private var canCompleteLogin: Bool {
+        !appModel.isBusy && isPhoneReady && codeSent && code.count == 6
+    }
+
+    private var sendCodeTitle: String {
+        if resendCooldown > 0 {
+            return "重新发送(\(resendCooldown)s)"
+        }
+        return codeSent ? "重新发送" : "发送验证码"
+    }
+
+    private func updatePhoneInput(_ value: String) {
+        var digits = value.filter(\.isNumber)
+        if digits.hasPrefix("86"), digits.count > 11 {
+            digits = String(digits.dropFirst(2))
+        }
+        phone = String(digits.prefix(11))
+
+        if phone != lastSentPhone {
+            code = ""
+            codeSent = false
+            codeNotice = ""
+            resendCooldown = 0
+        }
+    }
+
+    private func resetPhoneInput() {
+        phone = ""
+        code = ""
+        codeSent = false
+        codeNotice = ""
+        resendCooldown = 0
+        lastSentPhone = ""
+        focusedField = .phone
+    }
+
+    private func sendLoginCode() {
+        guard canSendCode else { return }
+
+        Task {
+            let didSend = await appModel.requestLoginCode(phone: phone)
+            if didSend {
+                lastSentPhone = phone
+                codeSent = true
+                code = ""
+                codeNotice = "验证码已发送，请查收短信。"
+                resendCooldown = 60
+                focusedField = .code
+            }
+        }
+    }
+
+    private func completeLogin() {
+        guard canCompleteLogin else { return }
+
+        Task {
+            let didLogin = await appModel.verifyLoginCode(
+                phone: phone,
+                code: code,
+                reloadCloudStateAfterLogin: reloadCloudStateAfterLogin
+            )
+            if didLogin {
+                onAuthenticated()
+            }
+        }
+    }
+
+    private func formatPhone(_ value: String) -> String {
+        let digits = String(value.filter(\.isNumber).prefix(11))
+        guard digits.count > 3 else { return digits }
+
+        let first = digits.prefix(3)
+        let rest = digits.dropFirst(3)
+        if rest.count <= 4 {
+            return "\(first) \(rest)"
+        }
+
+        let middle = rest.prefix(4)
+        let last = rest.dropFirst(4)
+        return "\(first) \(middle) \(last)"
+    }
+}
+
+private enum LoginFocusField: Hashable {
+    case phone
+    case code
 }
 
 private struct NativeOnboardingView: View {
@@ -432,6 +683,7 @@ private struct NativeOnboardingView: View {
     @MainActor
     private func loadAvatarPreview(from item: PhotosPickerItem?) async {
         guard let item else { return }
+        defer { selectedAvatarItem = nil }
 
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -666,7 +918,10 @@ private struct HomeView: View {
                 appModel.noticeMessage = "心声已删除"
             } catch {
                 confirmDeleteVoice = nil
-                appModel.errorMessage = error.localizedDescription.isEmpty ? "删除失败，请稍后再试。" : error.localizedDescription
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "删除失败，请稍后再试。"
+                )
             }
         }
     }
@@ -1702,7 +1957,10 @@ private struct VoiceDetailView: View {
                 dismiss()
             } catch {
                 confirmDelete = false
-                appModel.errorMessage = error.localizedDescription.isEmpty ? "删除失败，请稍后再试。" : error.localizedDescription
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "删除失败，请稍后再试。"
+                )
             }
         }
     }
@@ -2065,7 +2323,7 @@ private struct CloudMemoryPanel: View {
                 } else {
                     CloudMemoryTitle()
 
-                    Text("登录后，猫咪档案、人格和心声会保存到 Supabase。现在支持手机号验证码登录。")
+                    Text("登录后，猫咪档案、人格和心声会安全保存到云端。现在支持手机号验证码登录。")
                         .font(.system(size: NekoTypography.web(11.5)))
                         .foregroundStyle(NekoTheme.ink.opacity(0.75))
                         .lineSpacing(4)
@@ -2098,7 +2356,10 @@ private struct CloudMemoryPanel: View {
             do {
                 try await task()
             } catch {
-                appModel.errorMessage = error.localizedDescription.isEmpty ? "云端操作失败，请稍后再试。" : error.localizedDescription
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "云端操作失败，请稍后再试。"
+                )
             }
             busyAction = nil
         }
@@ -2329,7 +2590,7 @@ private struct AccountCenterView: View {
                     .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .tracking(3.2)
                     .foregroundStyle(NekoTheme.muted)
-                Text("把当前设备上的猫咪档案和心声保存到 Supabase，或从云端恢复到本机。")
+                Text("把当前设备上的猫咪档案和心声保存到云端，或从云端恢复到本机。")
                     .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                     .foregroundStyle(NekoTheme.ink.opacity(0.75))
                     .lineSpacing(4)
@@ -2406,7 +2667,10 @@ private struct AccountCenterView: View {
             do {
                 try await task()
             } catch {
-                appModel.errorMessage = error.localizedDescription.isEmpty ? "账号操作失败，请稍后再试。" : error.localizedDescription
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "账号操作失败，请稍后再试。"
+                )
             }
             busyAction = nil
         }
@@ -2663,6 +2927,8 @@ private struct EditProfileView: View {
     @MainActor
     private func loadAvatar(from item: PhotosPickerItem?) async {
         guard let item else { return }
+        defer { selectedAvatarItem = nil }
+
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw NekoMediaError.unsupportedImage
@@ -2673,7 +2939,10 @@ private struct EditProfileView: View {
             avatarImageData = data
             appModel.noticeMessage = "照片已更新"
         } catch {
-            appModel.errorMessage = error.localizedDescription.isEmpty ? "照片读取失败" : error.localizedDescription
+            appModel.errorMessage = NekoUserFacingError.message(
+                for: error,
+                fallback: "照片读取失败，请换一张照片再试。"
+            )
         }
     }
 
@@ -2700,7 +2969,10 @@ private struct EditProfileView: View {
                     dismiss()
                 }
             } catch {
-                appModel.errorMessage = error.localizedDescription.isEmpty ? "保存失败，请稍后再试。" : error.localizedDescription
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "保存失败，请稍后再试。"
+                )
             }
             busyAction = nil
         }
@@ -3034,7 +3306,10 @@ private struct ManageVoicesView: View {
                 appModel.noticeMessage = "已删除 \(ids.count) 条心声"
                 exitEditMode()
             } catch {
-                appModel.errorMessage = error.localizedDescription.isEmpty ? "删除失败，请稍后再试。" : error.localizedDescription
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "删除失败，请稍后再试。"
+                )
             }
         }
     }
@@ -4055,15 +4330,12 @@ private struct VoicePublishSheet: View {
             if let loadingText {
                 PublishLoadingOverlay(title: loadingText.title, hint: loadingText.hint)
             }
-
-            if let errorMessage {
-                PublishErrorOverlay(
-                    title: "发布失败了喵",
-                    hint: errorMessage,
-                    onCancel: { self.errorMessage = nil }
-                )
-            }
         }
+        .nekoToastHost(errorMessage: $errorMessage, noticeMessage: .constant(nil))
+        .nekoToastHost(
+            errorMessage: $appModel.errorMessage,
+            noticeMessage: $appModel.noticeMessage
+        )
         .preferredColorScheme(.light)
         .nekoEdgeSwipeBack(isEnabled: !isAnalyzing && !isPublishing) {
             handleEdgeSwipeBack()
@@ -4100,6 +4372,7 @@ private struct VoicePublishSheet: View {
     @MainActor
     private func loadPhoto(from item: PhotosPickerItem?) async {
         guard let item else { return }
+        defer { selectedPhotoItem = nil }
 
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -4199,10 +4472,7 @@ private struct VoicePublishSheet: View {
     }
 
     private func userFacingMessage(_ error: Error) -> String {
-        if let description = (error as? LocalizedError)?.errorDescription, !description.isEmpty {
-            return description
-        }
-        return "动态发布失败，请稍后再试。"
+        NekoUserFacingError.message(for: error, fallback: "动态发布失败，请稍后再试。")
     }
 }
 
@@ -4830,12 +5100,15 @@ private struct PublishPreviewStageCard: View {
                 )
 
                 VStack(spacing: 0) {
-                    PublishSpeechBubble(
-                        catName: catName,
-                        text: bubbleText,
-                        centered: true
-                    )
-                    .padding(.top, 12)
+                    if let voiceText {
+                        PublishSpeechBubble(
+                            catName: catName,
+                            text: voiceText,
+                            centered: true
+                        )
+                        .padding(.top, 12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    }
 
                     if isLoading {
                         HStack(spacing: 8) {
@@ -4849,7 +5122,7 @@ private struct PublishPreviewStageCard: View {
                         .padding(.horizontal, 13)
                         .padding(.vertical, 7)
                         .background(Color.black.opacity(0.22), in: Capsule())
-                        .padding(.top, 10)
+                        .padding(.top, voiceText == nil ? 22 : 10)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
 
@@ -4883,14 +5156,11 @@ private struct PublishPreviewStageCard: View {
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 30, x: 0, y: 16)
         .animation(.easeInOut(duration: 0.22), value: isLoading)
-        .animation(.easeInOut(duration: 0.22), value: voice?.text ?? "")
+        .animation(.easeInOut(duration: 0.22), value: voiceText ?? "")
     }
 
-    private var bubbleText: String {
-        if let text = voice?.text.nonEmpty {
-            return text
-        }
-        return isLoading ? "我正在听懂这一刻，马上告诉你喵～" : "识别结果还没有回来，请重新识别。"
+    private var voiceText: String? {
+        voice?.text.nonEmpty
     }
 
     private var analysisText: String {
@@ -5063,58 +5333,6 @@ private struct PublishLoadingOverlay: View {
             }
         }
         .zIndex(50)
-    }
-}
-
-private struct PublishErrorOverlay: View {
-    let title: String
-    let hint: String
-    let onCancel: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.white.opacity(0.62)
-                .ignoresSafeArea()
-                .background(.ultraThinMaterial)
-
-            VStack(spacing: 14) {
-                Text("!")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(NekoTheme.ink)
-                    .frame(width: 64, height: 64)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(red: 0.996, green: 0.905, blue: 0.800), Color(red: 0.975, green: 0.810, blue: 0.800)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: Circle()
-                    )
-                    .shadow(color: PublishWebStyle.shadow, radius: 18, x: 0, y: 8)
-
-                Text(title)
-                    .font(.system(size: NekoTypography.web(14), weight: .medium))
-                    .foregroundStyle(NekoTheme.ink)
-                Text(hint)
-                    .font(.system(size: NekoTypography.web(11.5), weight: .regular))
-                    .foregroundStyle(PublishWebStyle.step)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-
-                Button("知道了", action: onCancel)
-                    .buttonStyle(PublishPrimaryPillStyle())
-                    .padding(.top, 4)
-            }
-            .padding(26)
-            .frame(maxWidth: 280)
-            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(.white.opacity(0.75), lineWidth: 1)
-            }
-            .shadow(color: NekoTheme.ink.opacity(0.16), radius: 28, x: 0, y: 14)
-        }
-        .zIndex(60)
     }
 }
 

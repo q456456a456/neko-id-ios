@@ -30,7 +30,7 @@ enum NekoMediaError: LocalizedError {
         case .unsupportedVideo:
             return "这段视频暂时无法读取，请换一段猫咪日常视频。"
         case .imageTooLarge:
-            return "图片太大了，请选择 10MB 以内的图片。"
+            return "图片太大了，请选择10MB以内的图片。"
         case .videoTooLarge:
             return "视频不能超过 100MB，请压缩后再上传。"
         case .videoTooShort(let duration):

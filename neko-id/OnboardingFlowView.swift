@@ -222,7 +222,7 @@ struct NativeOnboardingFlowView: View {
 
         guard appModel.session != nil else {
             pendingSaveAfterLogin = true
-            appModel.requestLogin(message: "保存猫咪人格档案前需要先登录。登录后，这份测试结果会绑定到你的账号。")
+            appModel.requestLogin(message: "登录后才能把猫咪档案安全绑定到你的账号，也能先帮你找回已有的云端档案。")
             return
         }
 
@@ -343,10 +343,7 @@ struct NativeOnboardingFlowView: View {
 
             step = .quiz
         } catch {
-            appModel.errorMessage = userFacingServerMessage(
-                error,
-                fallback: "视频校验失败，请稍后再试或换一段视频。"
-            )
+            step = .quiz
         }
     }
 
@@ -408,10 +405,7 @@ struct NativeOnboardingFlowView: View {
     }
 
     private func userFacingServerMessage(_ error: Error, fallback: String) -> String {
-        if let description = (error as? LocalizedError)?.errorDescription, !description.isEmpty {
-            return description
-        }
-        return fallback
+        NekoUserFacingError.message(for: error, fallback: fallback)
     }
 }
 
