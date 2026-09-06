@@ -1942,7 +1942,7 @@ private struct VoiceDetailView: View {
     }
 
     private var analysisText: String {
-        voice.analysis ?? "它似乎在表达：这个瞬间里，它正在用自己的方式向你靠近。"
+        voice.analysisText ?? "它似乎在表达：这个瞬间里，它正在用自己的方式向你靠近。"
     }
 
     private var detailAspect: String {
@@ -4936,10 +4936,16 @@ private struct PublishSuccessScreen: View {
                                     .foregroundStyle(PublishWebStyle.step)
                             }
 
-                            Text(voice?.analysis?.nonEmpty ?? "暂未获得\(catName)的 AI 心声解析。")
-                                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                                .foregroundStyle(NekoTheme.ink.opacity(0.86))
-                                .lineSpacing(6)
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(voice?.analysis?.summary.nonEmpty ?? "暂未获得\(catName)的画面分析。")
+                                if let interpretation = voice?.analysis?.personalityInterpretation.nonEmpty {
+                                    Divider().overlay(.white.opacity(0.7))
+                                    Text(interpretation)
+                                }
+                            }
+                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
+                            .foregroundStyle(NekoTheme.ink.opacity(0.86))
+                            .lineSpacing(6)
                         }
                         .padding(16)
                         .background(PublishWebStyle.insightGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -5051,9 +5057,10 @@ private struct PublishSuccessScreen: View {
             catName: catName,
             mbti: persona?.mbti.nonEmpty ?? "猫咪人格",
             personalityTitle: persona?.type.nonEmpty ?? "专属小性格",
-            personalityTags: Array(tags.prefix(3)),
+            personalityTags: Array((voice.share?.tags.isEmpty == false ? voice.share?.tags ?? [] : tags).prefix(3)),
             photo: photoPreviewImage,
             generatedVoice: voice.text,
+            shareHeadline: voice.share?.headline.nonEmpty ?? voice.text,
             insightSummary: shareInsightSummary(for: voice)
         )
 
@@ -5064,8 +5071,9 @@ private struct PublishSuccessScreen: View {
     }
 
     private func shareInsightSummary(for voice: CatVoiceResult) -> String {
-        let source = voice.insightSummary?.nonEmpty
-            ?? voice.analysis?.nonEmpty
+        let source = voice.share?.insight.nonEmpty
+            ?? voice.analysis?.personalityInterpretation.nonEmpty
+            ?? voice.analysis?.summary.nonEmpty
             ?? persona?.analysis.nonEmpty
             ?? "它正用自己的方式观察世界，也悄悄表达对你的信任。"
         let normalized = source
@@ -5381,7 +5389,7 @@ private struct PublishPreviewStageCard: View {
     }
 
     private var analysisText: String {
-        if let analysis = voice?.analysis?.nonEmpty {
+        if let analysis = voice?.analysisText {
             return analysis
         }
         return isLoading ? "AI 正在结合照片、场景和猫咪人格档案生成这一刻的心声…" : "暂未获得 AI 心声解析，请点击重新识别。"
@@ -5646,7 +5654,7 @@ private struct VoicePreviewCard: View {
                 .lineSpacing(6)
                 .foregroundStyle(NekoTheme.ink)
 
-            if let analysis = voice.analysis, !analysis.isEmpty {
+            if let analysis = voice.analysisText, !analysis.isEmpty {
                 Text(analysis)
                     .font(.system(size: NekoTypography.web(13)))
                     .foregroundStyle(NekoTheme.muted)

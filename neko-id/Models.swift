@@ -192,6 +192,17 @@ struct CatPersonaResult: Codable, Equatable {
     }
 }
 
+struct CatVoiceAnalysis: Codable, Equatable {
+    var summary: String
+    var personalityInterpretation: String
+}
+
+struct CatVoiceShare: Codable, Equatable {
+    var headline: String
+    var insight: String
+    var tags: [String]
+}
+
 struct CatVoiceResult: Codable, Equatable, Identifiable {
     var id: String { cloudId ?? "\(createdAt ?? 0)-\(text)" }
 
@@ -206,9 +217,19 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
     var mediaType: String?
     var aspect: String?
     var videoDuration: String?
-    var analysis: String?
-    var insightSummary: String?
+    var analysis: CatVoiceAnalysis?
+    var share: CatVoiceShare?
     var mediaURL: URL?
+
+    var analysisText: String? {
+        guard let analysis else { return nil }
+        return [analysis.summary, analysis.personalityInterpretation]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n\n")
+            .nonEmpty
+    }
+
+    var insightSummary: String? { share?.insight.nonEmpty }
 
     enum CodingKeys: String, CodingKey {
         case cloudId
@@ -223,7 +244,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         case aspect
         case videoDuration
         case analysis
-        case insightSummary
+        case share
         case mediaURL
     }
 
@@ -239,8 +260,8 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         mediaType: String? = "photo",
         aspect: String? = "3:4",
         videoDuration: String? = nil,
-        analysis: String? = nil,
-        insightSummary: String? = nil,
+        analysis: CatVoiceAnalysis? = nil,
+        share: CatVoiceShare? = nil,
         mediaURL: URL? = nil
     ) {
         self.cloudId = cloudId
@@ -255,7 +276,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         self.aspect = aspect
         self.videoDuration = videoDuration
         self.analysis = analysis
-        self.insightSummary = insightSummary
+        self.share = share
         self.mediaURL = mediaURL
     }
 
@@ -273,8 +294,14 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         mediaType = try container.decodeIfPresent(String.self, forKey: .mediaType) ?? "photo"
         aspect = try container.decodeIfPresent(String.self, forKey: .aspect) ?? "3:4"
         videoDuration = try container.decodeIfPresent(String.self, forKey: .videoDuration)
-        analysis = try container.decodeIfPresent(String.self, forKey: .analysis)
-        insightSummary = try container.decodeIfPresent(String.self, forKey: .insightSummary)
+        if let structured = try? container.decode(CatVoiceAnalysis.self, forKey: .analysis) {
+            analysis = structured
+        } else if let legacy = try? container.decode(String.self, forKey: .analysis), !legacy.isEmpty {
+            analysis = CatVoiceAnalysis(summary: legacy, personalityInterpretation: "")
+        } else {
+            analysis = nil
+        }
+        share = try container.decodeIfPresent(CatVoiceShare.self, forKey: .share)
         mediaURL = try container.decodeIfPresent(URL.self, forKey: .mediaURL)
     }
 }

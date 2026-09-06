@@ -9,6 +9,7 @@ struct VoiceShareCardData {
     let personalityTags: [String]
     let photo: UIImage
     let generatedVoice: String
+    let shareHeadline: String
     let insightSummary: String
 }
 
@@ -49,16 +50,23 @@ struct VoiceShareCard: View {
 
                     Spacer()
 
-                    Text("“\(data.generatedVoice)”")
-                        .font(.system(size: 24, weight: .medium))
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(data.shareHeadline)
+                            .font(.system(size: 22, weight: .semibold))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.80)
+                        Text("“\(data.generatedVoice)”")
+                            .font(.system(size: 14, weight: .medium))
+                            .lineSpacing(3)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.84)
+                            .opacity(0.84)
+                    }
                         .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.34))
-                        .lineSpacing(5)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.78)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 18)
-                        .padding(.vertical, 15)
+                        .padding(.vertical, 14)
                         .background(.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .overlay {
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
