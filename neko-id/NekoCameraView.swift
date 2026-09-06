@@ -110,7 +110,7 @@ struct NekoCameraView: View {
 
             Spacer()
 
-            Text("NEKO.ID")
+            Text("喵懂")
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(4.2)
                 .foregroundStyle(.white.opacity(0.88))
@@ -216,7 +216,7 @@ struct NekoCameraView: View {
             Text("需要相机权限")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(NekoTheme.ink)
-            Text("请在系统设置中允许 NEKO.ID 使用相机，或从照片图库选择猫咪照片。")
+            Text("请在系统设置中允许相机访问，或从照片图库选择猫咪照片。")
                 .font(.system(size: 13))
                 .foregroundStyle(NekoTheme.muted)
                 .multilineTextAlignment(.center)

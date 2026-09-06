@@ -34,7 +34,7 @@ struct VoiceShareCard: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("喵懂  NEKO.ID")
+                            Text("喵懂")
                                 .font(.system(size: 10, weight: .semibold))
                                 .tracking(2.2)
                             Text("\(data.catName) · \(data.mbti)")
@@ -188,7 +188,7 @@ enum VoiceShareError: LocalizedError {
         case .missingContent:
             return "分享图内容还没有准备好，请稍后再试。"
         case .photoPermissionDenied:
-            return "没有相册写入权限，请在系统设置里允许喵懂添加照片。"
+            return "没有相册写入权限，请在系统设置里允许添加照片。"
         case .renderFailed:
             return "分享图生成失败，请稍后再试。"
         case .saveFailed:

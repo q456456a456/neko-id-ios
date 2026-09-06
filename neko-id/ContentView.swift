@@ -436,7 +436,7 @@ private struct LoginView: View {
 
     private var loginHeading: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("NEKO ACCOUNT")
+            Text("喵懂账号")
                 .font(.system(size: NekoTypography.web(10), weight: .semibold))
                 .tracking(4.6)
                 .foregroundStyle(NekoTheme.soulViolet)
@@ -2738,7 +2738,7 @@ private struct AccountCenterView: View {
                     CatAvatarView(localImage: nil, remoteURL: appModel.catProfile?.avatarURL, objectKey: appModel.catProfile?.avatarObjectKey, size: 68)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(summary?.profile.displayName?.nonEmpty ?? "NEKO 用户")
+                        Text(summary?.profile.displayName?.nonEmpty ?? "喵懂用户")
                             .font(.system(size: NekoTypography.web(17), weight: .medium))
                             .foregroundStyle(NekoTheme.ink)
                             .lineLimit(1)
@@ -2769,7 +2769,7 @@ private struct AccountCenterView: View {
                     .tracking(3.2)
                     .foregroundStyle(NekoTheme.muted)
 
-                TextField("NEKO 用户", text: clippedDisplayName)
+                TextField("喵懂用户", text: clippedDisplayName)
                     .font(.system(size: NekoTypography.web(13), weight: .regular))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.horizontal, 16)

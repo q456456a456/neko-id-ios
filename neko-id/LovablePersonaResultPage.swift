@@ -336,7 +336,7 @@ private struct LovableResultTopBar: View {
 
             Spacer()
 
-            Text("NEKO.ID")
+            Text("喵懂")
                 .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(5)
                 .foregroundStyle(Color(red: 0.545, green: 0.410, blue: 0.595))
@@ -881,7 +881,7 @@ private struct LovableResultShareImage: View {
 
                     Spacer()
 
-                    Text("NEKO.ID")
+                    Text("喵懂")
                         .font(.system(size: NekoTypography.web(10), weight: .medium))
                         .tracking(5)
                         .foregroundStyle(Color(red: 0.545, green: 0.410, blue: 0.595))
@@ -906,7 +906,7 @@ private struct LovableResultShareImage: View {
             )
             .padding(.top, 28)
 
-            Text("NEKO.ID")
+            Text("喵懂 · 读懂它的小世界")
                 .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(5)
                 .foregroundStyle(LovableResultStyle.label.opacity(0.72))
@@ -939,7 +939,7 @@ private enum LovableShareError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .photoPermissionDenied:
-            return "没有相册写入权限，请在系统设置里允许 NEKO.ID 添加照片。"
+            return "没有相册写入权限，请在系统设置里允许添加照片。"
         case .saveFailed:
             return "保存到相册失败，请稍后再试。"
         }
