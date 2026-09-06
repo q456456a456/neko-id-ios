@@ -27,7 +27,7 @@ struct ContentView: View {
                 case .onboarding:
                     NativeOnboardingFlowView()
                 case .home:
-                    HomeView()
+                    MainTabRootView()
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -65,6 +65,41 @@ struct ContentView: View {
             Task {
                 await appModel.refreshSignedMediaURLs()
             }
+        }
+    }
+}
+
+private struct MainTabRootView: View {
+    @State private var activeTab: HomeTabBar.Selection = .home
+
+    var body: some View {
+        ZStack {
+            HomeView {
+                switchTo(.me)
+            }
+            .opacity(activeTab == .home ? 1 : 0)
+            .allowsHitTesting(activeTab == .home)
+            .accessibilityHidden(activeTab != .home)
+
+            MeView {
+                switchTo(.home)
+            }
+            .opacity(activeTab == .me ? 1 : 0)
+            .allowsHitTesting(activeTab == .me)
+            .accessibilityHidden(activeTab != .me)
+        }
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
+    }
+
+    private func switchTo(_ tab: HomeTabBar.Selection) {
+        guard activeTab != tab else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            activeTab = tab
         }
     }
 }
@@ -699,8 +734,8 @@ private struct NativeOnboardingView: View {
 
 private struct HomeView: View {
     @EnvironmentObject private var appModel: NekoAppModel
+    let onAccount: () -> Void
     @State private var isPublishSheetPresented = false
-    @State private var isMePresented = false
     @State private var isPersonaPresented = false
     @State private var latestPublishedVoice: CatVoiceResult?
     @State private var selectedVoice: CatVoiceResult?
@@ -799,7 +834,7 @@ private struct HomeView: View {
                 active: .home,
                 onHome: {},
                 onPublish: { isPublishSheetPresented = true },
-                onAccount: { isMePresented = true }
+                onAccount: onAccount
             )
 
             if let actionVoice {
@@ -834,10 +869,6 @@ private struct HomeView: View {
         }
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
-                .environmentObject(appModel)
-        }
-        .navigationDestination(isPresented: $isMePresented) {
-            MeView()
                 .environmentObject(appModel)
         }
         .navigationDestination(isPresented: $isPersonaPresented) {
@@ -2097,8 +2128,8 @@ private struct HomeTabIcon: View {
 }
 
 private struct MeView: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appModel: NekoAppModel
+    let onHome: () -> Void
     @State private var isPublishSheetPresented = false
     @State private var isAccountPresented = false
     @State private var isEditProfilePresented = false
@@ -2118,17 +2149,6 @@ private struct MeView: View {
                             .foregroundStyle(NekoTheme.ink)
 
                         Spacer()
-
-                        Button {
-                            appModel.noticeMessage = "设置中心即将上线 ⚙️"
-                        } label: {
-                            Text("⚙")
-                                .font(.system(size: NekoTypography.web(14)))
-                                .frame(width: 36, height: 36)
-                                .background(Color.white.opacity(0.80), in: Circle())
-                                .shadow(color: NekoTheme.soulViolet.opacity(0.14), radius: 14, x: 0, y: 6)
-                        }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 52)
@@ -2139,14 +2159,14 @@ private struct MeView: View {
                             .padding(.top, 16)
                     }
 
-                    CloudMemoryPanel {
+                    AccountQuickPanel {
                         isAccountPresented = true
                     }
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
 
                     VStack(spacing: 10) {
-                        MeRowButton(icon: "☁︎", title: "账号与云端数据", sub: "手机号登录、昵称和同步管理") {
+                        MeRowButton(icon: "☁︎", title: "账号与数据", sub: "手机号登录、昵称和账号管理") {
                             isAccountPresented = true
                         }
                         MeRowButton(icon: "✎", title: "修改人格档案", sub: "编辑猫咪基本信息") {
@@ -2164,14 +2184,10 @@ private struct MeView: View {
 
             HomeTabBar(
                 active: .me,
-                onHome: { dismiss() },
+                onHome: onHome,
                 onPublish: { isPublishSheetPresented = true },
                 onAccount: {}
             )
-        }
-        .navigationBarBackButtonHidden(true)
-        .nekoEdgeSwipeBack {
-            dismiss()
         }
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
@@ -2245,9 +2261,8 @@ private struct MeSummaryCard: View {
     }
 }
 
-private struct CloudMemoryPanel: View {
+private struct AccountQuickPanel: View {
     @EnvironmentObject private var appModel: NekoAppModel
-    @State private var busyAction: String?
     let onAccountCenter: () -> Void
 
     var body: some View {
@@ -2285,45 +2300,10 @@ private struct CloudMemoryPanel: View {
                         .background(Color.white.opacity(0.90), in: Capsule())
                         .padding(.top, 12)
                         .buttonStyle(.plain)
-
-                    HStack(spacing: 8) {
-                        Button {
-                            runCloudAction("save") {
-                                let summary = try await appModel.saveCurrentStateToCloud()
-                                appModel.noticeMessage = "已保存到云端 · \(summary.voiceCount) 条心声"
-                            }
-                        } label: {
-                            Text(busyAction == "save" ? "保存中" : "保存到云端")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .font(.system(size: NekoTypography.web(12), weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.vertical, 10)
-                        .background(NekoTheme.primaryGradient, in: Capsule())
-                        .disabled(busyAction != nil)
-                        .buttonStyle(.plain)
-
-                        Button {
-                            runCloudAction("restore") {
-                                let summary = try await appModel.restoreFromCloud()
-                                appModel.noticeMessage = "已恢复云端记忆 · \(summary.voiceCount) 条心声"
-                            }
-                        } label: {
-                            Text(busyAction == "restore" ? "恢复中" : "从云端恢复")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .font(.system(size: NekoTypography.web(12), weight: .regular))
-                        .foregroundStyle(NekoTheme.ink)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.90), in: Capsule())
-                        .disabled(busyAction != nil)
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 8)
                 } else {
                     CloudMemoryTitle()
 
-                    Text("登录后，猫咪档案、人格和心声会安全保存到云端。现在支持手机号验证码登录。")
+                    Text("登录后，猫咪档案、人格和心声会自动绑定到你的账号。现在支持手机号验证码登录。")
                         .font(.system(size: NekoTypography.web(11.5)))
                         .foregroundStyle(NekoTheme.ink.opacity(0.75))
                         .lineSpacing(4)
@@ -2348,22 +2328,6 @@ private struct CloudMemoryPanel: View {
         }
         .frame(maxWidth: .infinity)
     }
-
-    private func runCloudAction(_ action: String, task: @escaping () async throws -> Void) {
-        guard busyAction == nil else { return }
-        busyAction = action
-        Task {
-            do {
-                try await task()
-            } catch {
-                appModel.errorMessage = NekoUserFacingError.message(
-                    for: error,
-                    fallback: "云端操作失败，请稍后再试。"
-                )
-            }
-            busyAction = nil
-        }
-    }
 }
 
 private struct CloudMemoryTitle: View {
@@ -2372,7 +2336,7 @@ private struct CloudMemoryTitle: View {
             Text("✦")
                 .font(.system(size: NekoTypography.web(13)))
                 .foregroundStyle(NekoTheme.soulViolet)
-            Text("云 端 记 忆")
+            Text("账 号 同 步")
                 .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(3.5)
                 .foregroundStyle(NekoTheme.muted)
@@ -2474,7 +2438,7 @@ private struct AccountCenterView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, 16)
 
-                        cloudDataCard
+                        autoSyncCard
                             .padding(.horizontal, 20)
                             .padding(.top, 16)
 
@@ -2533,7 +2497,7 @@ private struct AccountCenterView: View {
 
                 HStack(spacing: 8) {
                     AccountStatCard(label: "猫咪档案", value: summary?.catCount ?? 0)
-                    AccountStatCard(label: "云端心声", value: summary?.voiceCount ?? appModel.voices.count)
+                    AccountStatCard(label: "猫咪心声", value: summary?.voiceCount ?? appModel.voices.count)
                 }
             }
             .padding(20)
@@ -2583,55 +2547,18 @@ private struct AccountCenterView: View {
         }
     }
 
-    private var cloudDataCard: some View {
+    private var autoSyncCard: some View {
         AccountSectionCard {
             VStack(alignment: .leading, spacing: 0) {
-                Text("云端数据")
+                Text("自动同步")
                     .font(.system(size: NekoTypography.web(10), weight: .medium))
                     .tracking(3.2)
                     .foregroundStyle(NekoTheme.muted)
-                Text("把当前设备上的猫咪档案和心声保存到云端，或从云端恢复到本机。")
+                Text("登录后，猫咪档案、人格和心声会自动绑定到当前账号。换设备登录时，会优先读取账号里的历史档案。")
                     .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                     .foregroundStyle(NekoTheme.ink.opacity(0.75))
                     .lineSpacing(4)
                     .padding(.top, 9)
-
-                HStack(spacing: 8) {
-                    Button {
-                        runAccountAction("saveCloud") {
-                            let next = try await appModel.saveCurrentStateToCloud()
-                            summary = next
-                            appModel.noticeMessage = "已保存到云端 · \(next.voiceCount) 条心声"
-                        }
-                    } label: {
-                        Text(busyAction == "saveCloud" ? "保存中" : "保存云端")
-                            .font(.system(size: NekoTypography.web(12), weight: .medium))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .background(NekoTheme.primaryGradient, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busyAction != nil)
-
-                    Button {
-                        runAccountAction("restoreCloud") {
-                            let next = try await appModel.restoreFromCloud()
-                            summary = next
-                            appModel.noticeMessage = "已恢复 · \(next.voiceCount) 条心声"
-                        }
-                    } label: {
-                        Text(busyAction == "restoreCloud" ? "恢复中" : "恢复本机")
-                            .font(.system(size: NekoTypography.web(12), weight: .regular))
-                            .foregroundStyle(NekoTheme.ink)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .background(Color.white.opacity(0.90), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busyAction != nil)
-                }
-                .padding(.top, 13)
             }
         }
     }
@@ -2700,7 +2627,7 @@ private struct AccountNeedLoginView: View {
             Text("需要先登录")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(NekoTheme.ink)
-            Text("登录后才能管理账号和云端数据。")
+            Text("登录后才能管理账号数据。")
                 .font(.system(size: NekoTypography.web(12), weight: .regular))
                 .foregroundStyle(NekoTheme.muted)
         }
