@@ -4454,6 +4454,7 @@ private struct VoicePublishSheet: View {
                     catName: catName,
                     photoPreviewImage: photoPreviewImage,
                     voice: publishedVoice ?? draftVoice,
+                    persona: appModel.persona,
                     onReturnHome: { dismiss() }
                 )
             }
@@ -4878,9 +4879,15 @@ private struct PublishPreviewScreen: View {
 }
 
 private struct PublishSuccessScreen: View {
+    @EnvironmentObject private var appModel: NekoAppModel
+    @State private var shareImage: UIImage?
+    @State private var showsSystemShare = false
+    @State private var isGeneratingShareImage = false
+
     let catName: String
     let photoPreviewImage: UIImage?
     let voice: CatVoiceResult?
+    let persona: CatPersonaResult?
     let onReturnHome: () -> Void
 
     var body: some View {
@@ -4944,6 +4951,32 @@ private struct PublishSuccessScreen: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
 
+                        HStack(spacing: 10) {
+                            Button(action: saveShareImage) {
+                                Label("保存图片", systemImage: "square.and.arrow.down")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(PublishSecondaryPillStyle())
+                            .disabled(isGeneratingShareImage)
+
+                            Button(action: presentSystemShare) {
+                                HStack(spacing: 7) {
+                                    if isGeneratingShareImage {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: "square.and.arrow.up")
+                                    }
+                                    Text(isGeneratingShareImage ? "生成中…" : "分享到…")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(PublishPrimaryPillStyle())
+                            .disabled(isGeneratingShareImage)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+
                         Text("把这个来自猫咪世界的故事\n分享给你在乎的人")
                             .font(.system(size: NekoTypography.web(11.5), weight: .regular))
                             .foregroundStyle(PublishWebStyle.step)
@@ -4960,6 +4993,86 @@ private struct PublishSuccessScreen: View {
                     .frame(width: proxy.size.width)
             }
         }
+        .sheet(isPresented: $showsSystemShare) {
+            if let shareImage {
+                VoiceSystemShareView(image: shareImage)
+                    .ignoresSafeArea()
+            }
+        }
+    }
+
+    @MainActor
+    private func saveShareImage() {
+        guard !isGeneratingShareImage else { return }
+        isGeneratingShareImage = true
+
+        Task { @MainActor in
+            defer { isGeneratingShareImage = false }
+            do {
+                let image = try makeShareImage()
+                try await VoicePhotoLibrarySaver.save(image)
+                appModel.noticeMessage = "已保存，可以去晒晒它的小心思了"
+            } catch {
+                appModel.errorMessage = NekoUserFacingError.message(for: error, fallback: "保存分享图失败，请稍后再试。")
+            }
+        }
+    }
+
+    @MainActor
+    private func presentSystemShare() {
+        guard !isGeneratingShareImage else { return }
+        isGeneratingShareImage = true
+
+        Task { @MainActor in
+            defer { isGeneratingShareImage = false }
+            do {
+                shareImage = try makeShareImage()
+                showsSystemShare = true
+            } catch {
+                appModel.errorMessage = NekoUserFacingError.message(for: error, fallback: "分享图生成失败，请稍后再试。")
+            }
+        }
+    }
+
+    @MainActor
+    private func makeShareImage() throws -> UIImage {
+        guard let photoPreviewImage, let voice else {
+            throw VoiceShareError.missingContent
+        }
+
+        var tags: [String] = []
+        for tag in (persona?.tags ?? []) + voice.tags {
+            let cleaned = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty, !tags.contains(cleaned) else { continue }
+            tags.append(cleaned)
+        }
+
+        let data = VoiceShareCardData(
+            catName: catName,
+            mbti: persona?.mbti.nonEmpty ?? "猫咪人格",
+            personalityTitle: persona?.type.nonEmpty ?? "专属小性格",
+            personalityTags: Array(tags.prefix(3)),
+            photo: photoPreviewImage,
+            generatedVoice: voice.text,
+            insightSummary: shareInsightSummary(for: voice)
+        )
+
+        guard let image = VoiceShareImageRenderer.render(data: data) else {
+            throw VoiceShareError.renderFailed
+        }
+        return image
+    }
+
+    private func shareInsightSummary(for voice: CatVoiceResult) -> String {
+        let source = voice.insightSummary?.nonEmpty
+            ?? voice.analysis?.nonEmpty
+            ?? persona?.analysis.nonEmpty
+            ?? "它正用自己的方式观察世界，也悄悄表达对你的信任。"
+        let normalized = source
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > 35 else { return normalized }
+        return String(normalized.prefix(34)) + "…"
     }
 }
 

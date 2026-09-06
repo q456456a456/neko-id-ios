@@ -207,6 +207,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
     var aspect: String?
     var videoDuration: String?
     var analysis: String?
+    var insightSummary: String?
     var mediaURL: URL?
 
     enum CodingKeys: String, CodingKey {
@@ -222,6 +223,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         case aspect
         case videoDuration
         case analysis
+        case insightSummary
         case mediaURL
     }
 
@@ -238,6 +240,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         aspect: String? = "3:4",
         videoDuration: String? = nil,
         analysis: String? = nil,
+        insightSummary: String? = nil,
         mediaURL: URL? = nil
     ) {
         self.cloudId = cloudId
@@ -252,6 +255,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         self.aspect = aspect
         self.videoDuration = videoDuration
         self.analysis = analysis
+        self.insightSummary = insightSummary
         self.mediaURL = mediaURL
     }
 
@@ -270,6 +274,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         aspect = try container.decodeIfPresent(String.self, forKey: .aspect) ?? "3:4"
         videoDuration = try container.decodeIfPresent(String.self, forKey: .videoDuration)
         analysis = try container.decodeIfPresent(String.self, forKey: .analysis)
+        insightSummary = try container.decodeIfPresent(String.self, forKey: .insightSummary)
         mediaURL = try container.decodeIfPresent(URL.self, forKey: .mediaURL)
     }
 }
