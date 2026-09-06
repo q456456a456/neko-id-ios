@@ -41,10 +41,10 @@ struct ContentView: View {
             errorMessage: $appModel.errorMessage,
             noticeMessage: $appModel.noticeMessage
         )
-        .sheet(item: $appModel.loginPrompt) { prompt in
+        .sheet(item: $appModel.loginPrompt) { _ in
             LoginView(
                 title: "继续前先登录",
-                subtitle: prompt.message,
+                subtitle: "保存猫咪人格档案前需要先登录，登录后测试结果会绑定到你的账号。",
                 allowDismiss: true,
                 reloadCloudStateAfterLogin: false,
                 onAuthenticated: {
@@ -321,15 +321,16 @@ private struct LoginView: View {
 
     @State private var phone = ""
     @State private var code = ""
-    @State private var codeSent = false
-    @State private var codeNotice = ""
+    @State private var step: LoginStep = .phoneEntry
     @State private var resendCooldown = 0
     @State private var lastSentPhone = ""
+    @State private var verificationError: String?
+    @State private var lastAutoSubmittedCode: String?
     @FocusState private var focusedField: LoginFocusField?
 
     init(
-        title: String = "手机号验证码登录",
-        subtitle: String = "输入手机号，我们会通过短信给你发送 6 位验证码。",
+        title: String = "继续前先登录",
+        subtitle: String = "保存猫咪人格档案前需要先登录，登录后测试结果会绑定到你的账号。",
         allowDismiss: Bool = false,
         reloadCloudStateAfterLogin: Bool = true,
         onAuthenticated: @escaping () -> Void = {},
@@ -344,148 +345,48 @@ private struct LoginView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 72)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Spacer(minLength: 52)
+                    loginNavigation
+                    loginHeading
 
-                if allowDismiss {
-                    HStack {
-                        Spacer()
-                        Button("暂不登录", action: onCancel)
-                            .font(.system(size: NekoTypography.web(12), weight: .medium))
-                            .foregroundStyle(NekoTheme.soulViolet)
-                            .padding(.horizontal, 14)
-                            .frame(height: 34)
-                            .background(Color.white.opacity(0.72), in: Capsule())
+                    Group {
+                        if step == .phoneEntry {
+                            phoneEntryCard
+                                .id(LoginFocusField.phone)
+                        } else {
+                            codeVerificationCard
+                                .id(LoginFocusField.code)
+                        }
                     }
-                    .padding(.bottom, 18)
+                    .padding(.top, 26)
+
+                    Spacer(minLength: 36)
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("NEKO ACCOUNT")
-                        .font(.system(size: NekoTypography.web(10), weight: .semibold))
-                        .tracking(4.6)
-                        .foregroundStyle(NekoTheme.soulViolet)
-
-                    Text(title)
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(NekoTheme.ink)
-
-                    Text(subtitle)
-                        .font(.system(size: NekoTypography.web(12.5)))
-                        .foregroundStyle(NekoTheme.muted)
-                        .lineSpacing(4)
-                        .padding(.top, 2)
-                }
-
-                NekoGlassCard(cornerRadius: 28) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        FieldTitle("手机号")
-                        HStack(spacing: 12) {
-                            Text("+86")
-                                .font(.system(size: NekoTypography.web(15), weight: .semibold))
-                                .foregroundStyle(NekoTheme.ink)
-
-                            Rectangle()
-                                .fill(NekoTheme.softLilac.opacity(0.72))
-                                .frame(width: 1, height: 22)
-
-                            TextField("138 0013 8000", text: phoneBinding)
-                                .textInputAutocapitalization(.never)
-                                .keyboardType(.phonePad)
-                                .textContentType(.telephoneNumber)
-                                .autocorrectionDisabled()
-                                .focused($focusedField, equals: .phone)
-                                .font(.system(size: NekoTypography.web(15), weight: .regular))
-                                .foregroundStyle(NekoTheme.ink)
-
-                            if !phone.isEmpty {
-                                Button {
-                                    resetPhoneInput()
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(NekoTheme.muted.opacity(0.55))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                        FieldTitle("验证码")
-                            .padding(.top, 4)
-                        HStack(spacing: 12) {
-                            TextField("输入验证码", text: codeBinding)
-                                .keyboardType(.numberPad)
-                                .textContentType(.oneTimeCode)
-                                .font(.system(size: NekoTypography.web(15), weight: .regular))
-                                .foregroundStyle(NekoTheme.ink)
-                                .focused($focusedField, equals: .code)
-                                .disabled(!codeSent)
-
-                            Button {
-                                sendLoginCode()
-                            } label: {
-                                Text(sendCodeTitle)
-                                    .font(.system(size: NekoTypography.web(12.5), weight: .semibold))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.82)
-                                    .foregroundStyle(canSendCode ? NekoTheme.soulViolet : NekoTheme.muted.opacity(0.70))
-                                    .frame(minWidth: 96, alignment: .trailing)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!canSendCode)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                        if !codeNotice.isEmpty {
-                            Text(codeNotice)
-                                .font(.system(size: NekoTypography.web(11.5), weight: .medium))
-                                .foregroundStyle(NekoTheme.soulViolet)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .transition(.opacity)
-                        }
-
-                        Button {
-                            completeLogin()
-                        } label: {
-                            Label("完成登录", systemImage: "checkmark.circle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(NekoPrimaryButtonStyle())
-                        .disabled(!canCompleteLogin)
-                        .padding(.top, 2)
-
-                        Text(codeSent ? "如果收不到验证码，稍等一会儿再重新发送。" : "未注册手机号登录成功后会自动创建账号。")
-                            .font(.system(size: NekoTypography.web(11)))
-                            .foregroundStyle(NekoTheme.muted)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                    .padding(16)
-                }
-                .padding(.top, 30)
-
-                Text("手机号会作为账号唯一标识。登录后，猫咪档案、人格和心声会只绑定到当前用户。")
-                    .font(.system(size: NekoTypography.web(11.5)))
-                    .foregroundStyle(NekoTheme.muted)
-                    .lineSpacing(4)
-                    .padding(16)
-                    .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .padding(.top, 16)
-
-                Spacer(minLength: 80)
+                .padding(.horizontal, 28)
+                .frame(maxWidth: 480)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 28)
-            .frame(maxWidth: 480)
-            .frame(maxWidth: .infinity)
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: focusedField) { _, field in
+                guard let field else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(field, anchor: .center)
+                }
+            }
         }
+        .background(NekoBackground())
+        .onAppear { focusedField = step == .phoneEntry ? .phone : .code }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             guard resendCooldown > 0 else { return }
             resendCooldown -= 1
+        }
+        .onChange(of: code) { _, newCode in
+            guard step == .codeVerification, newCode.count == 6,
+                  newCode != lastAutoSubmittedCode, !appModel.isBusy else { return }
+            completeLogin(automatically: true)
         }
         .overlay(alignment: .center) {
             if appModel.isBusy {
@@ -494,6 +395,174 @@ private struct LoginView: View {
                     .padding(18)
                     .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var loginNavigation: some View {
+        HStack {
+            if step == .codeVerification {
+                Button {
+                    verificationError = nil
+                    code = ""
+                    step = .phoneEntry
+                    focusedField = .phone
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.74), in: Circle())
+                }
+                .foregroundStyle(NekoTheme.soulViolet)
+                .buttonStyle(.plain)
+                .accessibilityLabel("返回输入手机号")
+            } else {
+                Color.clear.frame(width: 36, height: 36)
+            }
+
+            Spacer()
+
+            if allowDismiss, step == .phoneEntry {
+                Button("暂不登录", action: onCancel)
+                    .font(.system(size: NekoTypography.web(12), weight: .medium))
+                    .foregroundStyle(NekoTheme.soulViolet)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(Color.white.opacity(0.72), in: Capsule())
+            }
+        }
+        .frame(height: 36)
+    }
+
+    private var loginHeading: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NEKO ACCOUNT")
+                .font(.system(size: NekoTypography.web(10), weight: .semibold))
+                .tracking(4.6)
+                .foregroundStyle(NekoTheme.soulViolet)
+
+            Text(step == .phoneEntry ? title : "输入验证码")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(NekoTheme.ink)
+
+            Text(step == .phoneEntry ? subtitle : "验证码已发送至 \(maskedPhone)")
+                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
+                .foregroundStyle(NekoTheme.muted)
+                .lineSpacing(4)
+                .padding(.top, 2)
+        }
+        .padding(.top, 22)
+    }
+
+    private var phoneEntryCard: some View {
+        NekoGlassCard(cornerRadius: 28) {
+            VStack(alignment: .leading, spacing: 16) {
+                FieldTitle("手机号")
+                HStack(spacing: 12) {
+                    Text("+86")
+                        .font(.system(size: NekoTypography.web(15), weight: .semibold))
+                        .foregroundStyle(NekoTheme.ink)
+
+                    Rectangle()
+                        .fill(NekoTheme.softLilac.opacity(0.72))
+                        .frame(width: 1, height: 22)
+
+                    TextField("请输入手机号", text: phoneBinding)
+                        .keyboardType(.numberPad)
+                        .textContentType(.telephoneNumber)
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .phone)
+                        .font(.system(size: NekoTypography.web(15), weight: .regular))
+                        .foregroundStyle(NekoTheme.ink)
+
+                    if !phone.isEmpty {
+                        Button(action: resetPhoneInput) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(NekoTheme.muted.opacity(0.55))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                Button(action: sendLoginCode) {
+                    Text(
+                        appModel.isBusy
+                            ? "发送中…"
+                            : resendCooldown > 0
+                                ? "\(resendCooldown)s 后可重新获取"
+                                : "获取验证码"
+                    )
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(NekoPrimaryButtonStyle())
+                .disabled(!canSendCode)
+            }
+            .padding(16)
+        }
+    }
+
+    private var codeVerificationCard: some View {
+        NekoGlassCard(cornerRadius: 28) {
+            VStack(spacing: 18) {
+                ZStack {
+                    HStack(spacing: 8) {
+                        ForEach(0..<6, id: \.self) { index in
+                            Text(codeCharacter(at: index))
+                                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                                .foregroundStyle(NekoTheme.ink)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 54)
+                                .background(NekoTheme.field, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                        .stroke(otpSlotColor(at: index), lineWidth: verificationError == nil ? 1 : 1.5)
+                                }
+                        }
+                    }
+
+                    TextField("", text: codeBinding)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .focused($focusedField, equals: .code)
+                        .foregroundStyle(.clear)
+                        .tint(.clear)
+                        .opacity(0.02)
+                        .accessibilityLabel("6 位短信验证码")
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { focusedField = .code }
+
+                if let verificationError {
+                    Text(verificationError)
+                        .font(.system(size: NekoTypography.web(11.5), weight: .medium))
+                        .foregroundStyle(Color(red: 0.72, green: 0.28, blue: 0.38))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+
+                Button {
+                    resendLoginCode()
+                } label: {
+                    Text(resendCooldown > 0 ? "重新发送 \(resendCooldown)s" : "重新发送验证码")
+                        .font(.system(size: NekoTypography.web(12.5), weight: .medium))
+                        .foregroundStyle(resendCooldown > 0 ? NekoTheme.muted : NekoTheme.soulViolet)
+                }
+                .buttonStyle(.plain)
+                .disabled(resendCooldown > 0 || appModel.isBusy)
+
+                Button {
+                    completeLogin()
+                } label: {
+                    Text(appModel.isBusy ? "验证中…" : "完成登录")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(NekoPrimaryButtonStyle())
+                .disabled(!canCompleteLogin)
+            }
+            .padding(16)
         }
     }
 
@@ -507,7 +576,11 @@ private struct LoginView: View {
     private var codeBinding: Binding<String> {
         Binding(
             get: { code },
-            set: { code = String($0.filter(\.isNumber).prefix(6)) }
+            set: {
+                code = String($0.filter(\.isNumber).prefix(6))
+                verificationError = nil
+                lastAutoSubmittedCode = nil
+            }
         )
     }
 
@@ -520,14 +593,12 @@ private struct LoginView: View {
     }
 
     private var canCompleteLogin: Bool {
-        !appModel.isBusy && isPhoneReady && codeSent && code.count == 6
+        !appModel.isBusy && isPhoneReady && step == .codeVerification && code.count == 6
     }
 
-    private var sendCodeTitle: String {
-        if resendCooldown > 0 {
-            return "重新发送(\(resendCooldown)s)"
-        }
-        return codeSent ? "重新发送" : "发送验证码"
+    private var maskedPhone: String {
+        guard phone.count == 11 else { return phone }
+        return "\(phone.prefix(3))****\(phone.suffix(4))"
     }
 
     private func updatePhoneInput(_ value: String) {
@@ -539,19 +610,18 @@ private struct LoginView: View {
 
         if phone != lastSentPhone {
             code = ""
-            codeSent = false
-            codeNotice = ""
             resendCooldown = 0
+            verificationError = nil
         }
     }
 
     private func resetPhoneInput() {
         phone = ""
         code = ""
-        codeSent = false
-        codeNotice = ""
         resendCooldown = 0
         lastSentPhone = ""
+        verificationError = nil
+        lastAutoSubmittedCode = nil
         focusedField = .phone
     }
 
@@ -562,17 +632,35 @@ private struct LoginView: View {
             let didSend = await appModel.requestLoginCode(phone: phone)
             if didSend {
                 lastSentPhone = phone
-                codeSent = true
                 code = ""
-                codeNotice = "验证码已发送，请查收短信。"
-                resendCooldown = 60
+                verificationError = nil
+                resendCooldown = 59
+                step = .codeVerification
+                try? await Task.sleep(for: .milliseconds(250))
                 focusedField = .code
             }
         }
     }
 
-    private func completeLogin() {
+    private func resendLoginCode() {
+        guard resendCooldown == 0, !appModel.isBusy else { return }
+        Task {
+            let didSend = await appModel.requestLoginCode(phone: phone)
+            if didSend {
+                code = ""
+                verificationError = nil
+                lastAutoSubmittedCode = nil
+                resendCooldown = 59
+                focusedField = .code
+            }
+        }
+    }
+
+    private func completeLogin(automatically: Bool = false) {
         guard canCompleteLogin else { return }
+        if automatically {
+            lastAutoSubmittedCode = code
+        }
 
         Task {
             let didLogin = await appModel.verifyLoginCode(
@@ -581,9 +669,31 @@ private struct LoginView: View {
                 reloadCloudStateAfterLogin: reloadCloudStateAfterLogin
             )
             if didLogin {
+                verificationError = nil
                 onAuthenticated()
+            } else {
+                let message = appModel.errorMessage ?? ""
+                verificationError = message.contains("已失效") || message.contains("已过期") && !message.contains("不正确或")
+                    ? "验证码已失效，请重新获取"
+                    : "验证码错误，请重新输入"
+                appModel.errorMessage = nil
+                focusedField = .code
             }
         }
+    }
+
+    private func codeCharacter(at index: Int) -> String {
+        guard index < code.count else { return "" }
+        return String(code[code.index(code.startIndex, offsetBy: index)])
+    }
+
+    private func otpSlotColor(at index: Int) -> Color {
+        if verificationError != nil {
+            return Color(red: 0.82, green: 0.48, blue: 0.56).opacity(0.75)
+        }
+        return index == min(code.count, 5) && focusedField == .code
+            ? NekoTheme.soulViolet.opacity(0.62)
+            : Color.white.opacity(0.68)
     }
 
     private func formatPhone(_ value: String) -> String {
@@ -600,6 +710,11 @@ private struct LoginView: View {
         let last = rest.dropFirst(4)
         return "\(first) \(middle) \(last)"
     }
+}
+
+private enum LoginStep {
+    case phoneEntry
+    case codeVerification
 }
 
 private enum LoginFocusField: Hashable {
