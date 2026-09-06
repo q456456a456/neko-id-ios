@@ -4424,8 +4424,6 @@ private struct VoicePublishSheet: View {
             case .upload:
                 PublishUploadScreen(
                     photoPreviewImage: photoPreviewImage,
-                    profileAvatarURL: appModel.catProfile?.avatarURL,
-                    profileAvatarObjectKey: appModel.catProfile?.avatarObjectKey,
                     canContinue: photoData != nil,
                     isDisabled: isAnalyzing || isPublishing,
                     onBack: { dismiss() },
@@ -4654,8 +4652,6 @@ private enum PublishWebStyle {
 
 private struct PublishUploadScreen: View {
     let photoPreviewImage: UIImage?
-    let profileAvatarURL: URL?
-    let profileAvatarObjectKey: String?
     let canContinue: Bool
     let isDisabled: Bool
     let onBack: () -> Void
@@ -4675,7 +4671,7 @@ private struct PublishUploadScreen: View {
                             Text("记录一个瞬间")
                                 .font(.system(size: 24, weight: .light))
                                 .foregroundStyle(NekoTheme.ink)
-                            Text("上传一张照片，AI 帮你读懂它的小心思 · 不超过 10MB")
+                            Text("拍摄一张照片，AI 帮你读懂它的小心思")
                                 .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                 .foregroundStyle(NekoTheme.muted)
                                 .lineSpacing(4)
@@ -4685,9 +4681,7 @@ private struct PublishUploadScreen: View {
 
                         Button(action: onAddPhoto) {
                             PublishUploadPhotoCard(
-                                photoPreviewImage: photoPreviewImage,
-                                profileAvatarURL: profileAvatarURL,
-                                profileAvatarObjectKey: profileAvatarObjectKey
+                                photoPreviewImage: photoPreviewImage
                             )
                         }
                         .buttonStyle(.plain)
@@ -4695,30 +4689,21 @@ private struct PublishUploadScreen: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 28)
 
-                        PublishInfoCard(title: "推荐照片") {
+                        PublishInfoCard(title: "拍什么更容易读懂？") {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
                                 PublishTipItem(icon: "😺", text: "猫咪正脸")
-                                PublishTipItem(icon: "🐾", text: "有趣行为")
                                 PublishTipItem(icon: "👀", text: "明显表情")
+                                PublishTipItem(icon: "🐾", text: "有趣行为")
                                 PublishTipItem(icon: "💗", text: "与主人互动")
                             }
-                            Text("自然的瞬间，往往最能体现它当时的小心思")
+                            Text("AI 会结合这张照片和猫咪人格档案，生成属于它的猫咪心声。")
                                 .font(.system(size: NekoTypography.web(11), weight: .regular))
-                                .foregroundStyle(PublishWebStyle.step)
+                                .foregroundStyle(NekoTheme.muted)
                                 .lineSpacing(4)
-                                .padding(.top, 4)
+                                .padding(.top, 2)
                         }
                         .padding(.horizontal, 20)
-                        .padding(.top, 16)
-
-                        PublishInfoCard(title: "AI 会做什么？") {
-                            Text("AI 将结合这张照片与猫咪人格档案，来生成一条专属于它的猫咪心声。")
-                                .font(.system(size: NekoTypography.web(11.5), weight: .regular))
-                                .foregroundStyle(NekoTheme.ink.opacity(0.85))
-                                .lineSpacing(5)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
+                        .padding(.top, 14)
                     }
                     .frame(width: proxy.size.width, alignment: .leading)
                     .padding(.top, 52)
@@ -5023,8 +5008,6 @@ private struct PublishBackButton: View {
 
 private struct PublishUploadPhotoCard: View {
     let photoPreviewImage: UIImage?
-    let profileAvatarURL: URL?
-    let profileAvatarObjectKey: String?
 
     var body: some View {
         ZStack {
@@ -5061,43 +5044,29 @@ private struct PublishUploadPhotoCard: View {
                         .blur(radius: 32)
                         .offset(x: -118, y: 94)
 
-                    VStack(spacing: 16) {
+                    VStack(spacing: 10) {
                         ZStack {
                             Circle()
-                                .fill(NekoTheme.soulPink.opacity(0.42))
-                                .frame(width: 106, height: 106)
-                                .blur(radius: 24)
-                            CatAvatarView(
-                                localImage: nil,
-                                remoteURL: profileAvatarURL,
-                                objectKey: profileAvatarObjectKey,
-                                size: 80
-                            )
+                                .fill(.white.opacity(0.86))
+                                .frame(width: 44, height: 44)
+                                .shadow(color: PublishWebStyle.shadow, radius: 14, x: 0, y: 7)
+                            PublishPhotoIcon()
+                                .stroke(PublishWebStyle.photoStroke, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                                .frame(width: 21, height: 21)
                         }
-
-                        VStack(spacing: 8) {
-                            ZStack {
-                                Circle()
-                                    .fill(.white.opacity(0.86))
-                                    .frame(width: 40, height: 40)
-                                    .shadow(color: PublishWebStyle.shadow, radius: 14, x: 0, y: 7)
-                                PublishPhotoIcon()
-                                    .stroke(PublishWebStyle.photoStroke, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                                    .frame(width: 20, height: 20)
-                            }
-                            Text("添加猫咪照片")
-                                .font(.system(size: NekoTypography.web(14), weight: .medium))
-                                .foregroundStyle(NekoTheme.ink)
-                            Text("优先拍摄 · 也可从系统相册选择")
-                                .font(.system(size: NekoTypography.web(11), weight: .regular))
-                                .foregroundStyle(NekoTheme.muted)
-                        }
+                        Text("拍下它现在的样子")
+                            .font(.system(size: NekoTypography.web(15), weight: .medium))
+                            .foregroundStyle(NekoTheme.ink)
+                        Text("拍照或从相册选择")
+                            .font(.system(size: NekoTypography.web(11), weight: .regular))
+                            .foregroundStyle(NekoTheme.muted)
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 220)
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -5117,11 +5086,11 @@ private struct PublishInfoCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             PublishSectionTitle(title)
             content
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
