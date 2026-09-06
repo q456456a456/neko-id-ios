@@ -4285,9 +4285,9 @@ private struct VoicePublishSheet: View {
     @EnvironmentObject private var appModel: NekoAppModel
     @Binding var latestPublishedVoice: CatVoiceResult?
 
-    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var photoData: Data?
     @State private var photoPreviewImage: UIImage?
+    @State private var showsCamera = false
     @State private var scene = ""
     @State private var draftVoice: CatVoiceResult?
     @State private var publishedVoice: CatVoiceResult?
@@ -4308,13 +4308,13 @@ private struct VoicePublishSheet: View {
             switch step {
             case .upload:
                 PublishUploadScreen(
-                    selectedPhotoItem: $selectedPhotoItem,
                     photoPreviewImage: photoPreviewImage,
                     profileAvatarURL: appModel.catProfile?.avatarURL,
                     profileAvatarObjectKey: appModel.catProfile?.avatarObjectKey,
                     canContinue: photoData != nil,
                     isDisabled: isAnalyzing || isPublishing,
                     onBack: { dismiss() },
+                    onAddPhoto: { showsCamera = true },
                     onNext: { step = .background }
                 )
             case .background:
@@ -4358,13 +4358,21 @@ private struct VoicePublishSheet: View {
         .nekoEdgeSwipeBack(isEnabled: !isAnalyzing && !isPublishing) {
             handleEdgeSwipeBack()
         }
-        .onChange(of: selectedPhotoItem) { _, item in
-            Task { await loadPhoto(from: item) }
-        }
         .onChange(of: appModel.session?.accessToken) { _, accessToken in
             guard accessToken != nil, let stayOnPreview = pendingAnalysisAfterLogin else { return }
             pendingAnalysisAfterLogin = nil
             Task { await generatePreview(stayOnPreview: stayOnPreview) }
+        }
+        .fullScreenCover(isPresented: $showsCamera) {
+            NekoCameraView(
+                guidanceText: "拍下它现在的样子",
+                recentImage: photoPreviewImage,
+                onClose: { showsCamera = false },
+                onUsePhoto: { image in
+                    showsCamera = false
+                    Task { await loadPhoto(from: image) }
+                }
+            )
         }
     }
 
@@ -4388,16 +4396,10 @@ private struct VoicePublishSheet: View {
     }
 
     @MainActor
-    private func loadPhoto(from item: PhotosPickerItem?) async {
-        guard let item else { return }
-        defer { selectedPhotoItem = nil }
-
+    private func loadPhoto(from image: UIImage) async {
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else {
+            guard let data = image.jpegData(compressionQuality: 0.94) ?? image.pngData() else {
                 throw NekoMediaError.unsupportedImage
-            }
-            guard data.count <= AppConfig.maxVoiceImageBytes else {
-                throw NekoMediaError.imageTooLarge
             }
             let prepared = try MediaUploadProcessor.prepareVoiceImage(from: data)
             photoData = prepared.data
@@ -4536,13 +4538,13 @@ private enum PublishWebStyle {
 }
 
 private struct PublishUploadScreen: View {
-    @Binding var selectedPhotoItem: PhotosPickerItem?
     let photoPreviewImage: UIImage?
     let profileAvatarURL: URL?
     let profileAvatarObjectKey: String?
     let canContinue: Bool
     let isDisabled: Bool
     let onBack: () -> Void
+    let onAddPhoto: () -> Void
     let onNext: () -> Void
 
     var body: some View {
@@ -4566,7 +4568,7 @@ private struct PublishUploadScreen: View {
                         .padding(.horizontal, 28)
                         .padding(.top, 24)
 
-                        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Button(action: onAddPhoto) {
                             PublishUploadPhotoCard(
                                 photoPreviewImage: photoPreviewImage,
                                 profileAvatarURL: profileAvatarURL,
@@ -4968,10 +4970,10 @@ private struct PublishUploadPhotoCard: View {
                                     .stroke(PublishWebStyle.photoStroke, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                                     .frame(width: 20, height: 20)
                             }
-                            Text("点击上传照片")
+                            Text("添加猫咪照片")
                                 .font(.system(size: NekoTypography.web(14), weight: .medium))
                                 .foregroundStyle(NekoTheme.ink)
-                            Text("支持 JPG / PNG")
+                            Text("优先拍摄 · 也可从系统相册选择")
                                 .font(.system(size: NekoTypography.web(11), weight: .regular))
                                 .foregroundStyle(NekoTheme.muted)
                         }
