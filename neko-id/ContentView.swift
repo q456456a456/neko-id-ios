@@ -770,64 +770,68 @@ private struct HomeView: View {
         ZStack(alignment: .bottom) {
             NekoBackground()
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    if let profile = appModel.catProfile {
-                        HomeProfileCard(profile: profile, persona: appModel.persona) {
-                            isPersonaPresented = true
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 34)
+            GeometryReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let profile = appModel.catProfile {
+                            HomeProfileCard(profile: profile, persona: appModel.persona) {
+                                isPersonaPresented = true
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 34)
 
-                        HStack(spacing: 8) {
-                            Text("💭")
-                                .font(.system(size: 18))
-                            Text("猫咪心声")
-                                .font(.system(size: NekoTypography.web(16), weight: .medium))
-                                .foregroundStyle(NekoTheme.ink)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 26)
+                            HStack(spacing: 8) {
+                                Text("💭")
+                                    .font(.system(size: 18))
+                                Text("猫咪心声")
+                                    .font(.system(size: NekoTypography.web(16), weight: .medium))
+                                    .foregroundStyle(NekoTheme.ink)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 26)
 
-                        if !homeVoices.isEmpty {
-                            VStack(spacing: 18) {
-                                ForEach(voiceGroups) { group in
-                                    VStack(spacing: 10) {
-                                        DayDivider(label: group.label)
-                                        ForEach(group.voices, id: \.id) { voice in
-                                            TimelineVoiceRow(
-                                                voice: voice,
-                                                profile: profile,
-                                                onSelect: {
-                                                    selectedVoice = voice
-                                                    isVoiceDetailPresented = true
-                                                },
-                                                onMore: {
-                                                    actionVoice = voice
-                                                }
-                                            )
+                            if !homeVoices.isEmpty {
+                                VStack(spacing: 18) {
+                                    ForEach(voiceGroups) { group in
+                                        VStack(spacing: 10) {
+                                            DayDivider(label: group.label)
+                                            ForEach(group.voices, id: \.id) { voice in
+                                                TimelineVoiceRow(
+                                                    availableWidth: max(proxy.size.width - 40, 1),
+                                                    voice: voice,
+                                                    profile: profile,
+                                                    onSelect: {
+                                                        selectedVoice = voice
+                                                        isVoiceDetailPresented = true
+                                                    },
+                                                    onMore: {
+                                                        actionVoice = voice
+                                                    }
+                                                )
+                                            }
                                         }
                                     }
                                 }
+                                .padding(.horizontal, 20)
+                                .padding(.top, 12)
+                            } else {
+                                EmptyFeedCard(profile: profile) {
+                                    isPublishSheetPresented = true
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.top, 14)
                             }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 12)
                         } else {
-                            EmptyFeedCard(profile: profile) {
-                                isPublishSheetPresented = true
+                            MissingProfileCard {
+                                appModel.startOnboarding()
                             }
                             .padding(.horizontal, 20)
-                            .padding(.top, 14)
+                            .padding(.top, 88)
                         }
-                    } else {
-                        MissingProfileCard {
-                            appModel.startOnboarding()
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 88)
                     }
+                    .padding(.bottom, 156)
+                    .frame(width: proxy.size.width, alignment: .leading)
                 }
-                .padding(.bottom, 124)
             }
 
             HomeTabBar(
@@ -836,6 +840,7 @@ private struct HomeView: View {
                 onPublish: { isPublishSheetPresented = true },
                 onAccount: onAccount
             )
+            .zIndex(110)
 
             if let actionVoice {
                 VoiceActionSheet(
@@ -852,7 +857,7 @@ private struct HomeView: View {
                         confirmDeleteVoice = actionVoice
                     }
                 )
-                .zIndex(30)
+                .zIndex(130)
             }
 
             if let confirmDeleteVoice {
@@ -864,7 +869,7 @@ private struct HomeView: View {
                     onConfirm: { deleteVoice(confirmDeleteVoice) },
                     onCancel: { self.confirmDeleteVoice = nil }
                 )
-                .zIndex(40)
+                .zIndex(140)
             }
         }
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
@@ -1164,10 +1169,15 @@ private struct ThoughtBubbleLabel: View {
 }
 
 private struct TimelineVoiceRow: View {
+    let availableWidth: CGFloat
     let voice: CatVoiceResult
     let profile: CatProfile
     let onSelect: () -> Void
     let onMore: () -> Void
+
+    private var cardWidth: CGFloat {
+        min(max(availableWidth - 42 - 12, 1), 296)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -1190,7 +1200,9 @@ private struct TimelineVoiceRow: View {
             .frame(width: 42)
 
             VoiceFeedCard(voice: voice, profile: profile, onSelect: onSelect, onMore: onMore)
+                .frame(width: cardWidth)
         }
+        .frame(width: availableWidth, alignment: .leading)
     }
 }
 
@@ -1285,7 +1297,7 @@ private struct VoiceFeedCard: View {
                             objectKey: voice.mediaObjectKey,
                             mediaType: voice.mediaType,
                             aspect: voice.aspect,
-                            contentMode: .fit,
+                            contentMode: .fill,
                             fallbackAvatarURL: profile.avatarURL,
                             fallbackAvatarObjectKey: profile.avatarObjectKey,
                             preferNaturalAspect: true
@@ -1355,18 +1367,65 @@ private struct VoiceFeedCard: View {
     }
 }
 
+private enum VoiceMediaOrientation {
+    case portrait
+    case landscape
+    case square
+}
+
 private enum VoiceMediaMetrics {
-    static func aspectRatio(for value: String?) -> CGFloat {
-        switch value {
-        case "9:16":
-            return 9.0 / 16.0
-        case "3:4":
+    static func aspectRatio(for value: String?, image: UIImage? = nil) -> CGFloat {
+        switch orientation(for: value, image: image) {
+        case .portrait:
             return 3.0 / 4.0
-        case "1:1":
+        case .landscape:
+            return 4.0 / 3.0
+        case .square:
             return 1.0
-        default:
-            return 4.0 / 5.0
         }
+    }
+
+    static func feedHeight(for value: String?, image: UIImage? = nil) -> CGFloat {
+        switch orientation(for: value, image: image) {
+        case .portrait:
+            return 330
+        case .landscape:
+            return 224
+        case .square:
+            return 299
+        }
+    }
+
+    static func detailHeight(for value: String?, image: UIImage? = nil) -> CGFloat {
+        switch orientation(for: value, image: image) {
+        case .portrait:
+            return 442
+        case .landscape:
+            return 265
+        case .square:
+            return 354
+        }
+    }
+
+    static func manageHeight(for value: String?) -> CGFloat {
+        switch orientation(for: value) {
+        case .portrait:
+            return 206
+        case .landscape:
+            return 124
+        case .square:
+            return 164
+        }
+    }
+
+    private static func orientation(for value: String?, image: UIImage? = nil) -> VoiceMediaOrientation {
+        let ratio = NekoMediaAspect.displayRatio(for: value, image: image)
+
+        if abs(ratio - 1) <= 0.04 {
+            return .square
+        }
+
+        return ratio > 1 ? .landscape : .portrait
     }
 }
 
@@ -1461,6 +1520,40 @@ struct NekoRemoteImageView<Placeholder: View>: View {
     }
 }
 
+private struct VoiceMediaSkeletonView: View {
+    var body: some View {
+        ZStack {
+            NekoTheme.photoPlaceholderGradient
+
+            Circle()
+                .fill(Color.white.opacity(0.48))
+                .frame(width: 128, height: 128)
+                .blur(radius: 18)
+
+            VStack(spacing: 13) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.48))
+                        .frame(width: 76, height: 60)
+
+                    Image(systemName: "photo")
+                        .font(.system(size: 26, weight: .regular))
+                        .foregroundStyle(NekoTheme.soulViolet.opacity(0.48))
+                }
+
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.white.opacity(0.58))
+                    .frame(width: 112, height: 8)
+
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.white.opacity(0.38))
+                    .frame(width: 78, height: 7)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 private struct VoiceMediaImageView: View {
     @EnvironmentObject private var appModel: NekoAppModel
 
@@ -1476,32 +1569,34 @@ private struct VoiceMediaImageView: View {
     @State private var loadedImage: UIImage?
 
     var body: some View {
-        ZStack {
-            NekoTheme.photoPlaceholderGradient
+        GeometryReader { proxy in
+            ZStack {
+                NekoTheme.photoPlaceholderGradient
 
-            if mediaType == "video" {
-                fallbackContent
-            } else {
-                NekoRemoteImageView(
-                    remoteURL: url,
-                    objectKey: objectKey,
-                    contentMode: contentMode,
-                    onImageLoaded: { loadedImage = $0 }
-                ) {
+                if mediaType == "video" {
                     fallbackContent
+                } else {
+                    NekoRemoteImageView(
+                        remoteURL: url,
+                        objectKey: objectKey,
+                        contentMode: contentMode,
+                        onImageLoaded: { loadedImage = $0 }
+                    ) {
+                        VoiceMediaSkeletonView()
+                    }
+                    .frame(width: proxy.size.width, height: mediaHeight)
+                    .clipped()
                 }
             }
+            .frame(width: proxy.size.width, height: mediaHeight)
+            .clipped()
         }
-        .aspectRatio(aspectRatio, contentMode: .fit)
-        .frame(maxHeight: maxHeight)
-        .frame(maxWidth: .infinity)
+        .frame(height: mediaHeight)
+        .clipped()
     }
 
-    private var aspectRatio: CGFloat {
-        if preferNaturalAspect, let loadedImage {
-            return max(loadedImage.size.width, 1) / max(loadedImage.size.height, 1)
-        }
-        return VoiceMediaMetrics.aspectRatio(for: aspect)
+    private var mediaHeight: CGFloat {
+        return VoiceMediaMetrics.feedHeight(for: aspect, image: loadedImage)
     }
 
     @ViewBuilder
@@ -1511,12 +1606,7 @@ private struct VoiceMediaImageView: View {
                 .font(.system(size: 42, weight: .regular))
                 .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
         } else {
-            CatAvatarView(
-                localImage: nil,
-                remoteURL: fallbackAvatarURL,
-                objectKey: fallbackAvatarObjectKey,
-                size: 104
-            )
+            VoiceMediaSkeletonView()
         }
     }
 }
@@ -1527,6 +1617,7 @@ private struct VoiceDetailMediaFillView: View {
     let mediaType: String?
     let fallbackAvatarURL: URL?
     let fallbackAvatarObjectKey: String?
+    var onImageLoaded: (UIImage?) -> Void = { _ in }
 
     var body: some View {
         ZStack {
@@ -1540,14 +1631,10 @@ private struct VoiceDetailMediaFillView: View {
                 NekoRemoteImageView(
                     remoteURL: url,
                     objectKey: objectKey,
-                    contentMode: .fill
+                    contentMode: .fill,
+                    onImageLoaded: onImageLoaded
                 ) {
-                    CatAvatarView(
-                        localImage: nil,
-                        remoteURL: fallbackAvatarURL,
-                        objectKey: fallbackAvatarObjectKey,
-                        size: 112
-                    )
+                    VoiceMediaSkeletonView()
                 }
             }
         }
@@ -1875,11 +1962,10 @@ private struct VoiceDetailView: View {
     }
 
     private var photoDetailCard: some View {
-        let ratio = VoiceMediaMetrics.aspectRatio(for: detailAspect)
+        let cardHeight = VoiceMediaMetrics.detailHeight(for: detailAspect)
 
         return GeometryReader { proxy in
             let cardWidth = max(proxy.size.width, 1)
-            let cardHeight = cardWidth / ratio
 
             ZStack(alignment: .topLeading) {
                 VoiceDetailMediaFillView(
@@ -1932,7 +2018,7 @@ private struct VoiceDetailView: View {
             }
             .shadow(color: NekoTheme.ink.opacity(0.16), radius: 28, x: 0, y: 16)
         }
-        .aspectRatio(ratio, contentMode: .fit)
+        .frame(height: cardHeight)
     }
 
     private var aiAnalysisCard: some View {
@@ -2098,7 +2184,7 @@ private struct HomeTabBar: View {
         .padding(.bottom, 4)
         .background {
             RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white.opacity(0.86))
+                .fill(Color.white)
             RoundedRectangle(cornerRadius: 32, style: .continuous)
                 .stroke(Color.white.opacity(0.78), lineWidth: 1)
         }
@@ -2140,45 +2226,47 @@ private struct MeView: View {
         ZStack(alignment: .bottom) {
             NekoBackground()
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("我的")
-                            .font(.system(size: NekoTypography.web(17), weight: .light))
-                            .tracking(1)
-                            .foregroundStyle(NekoTheme.ink)
+            GeometryReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Text("我的")
+                                .font(.system(size: NekoTypography.web(17), weight: .light))
+                                .tracking(1)
+                                .foregroundStyle(NekoTheme.ink)
 
-                        Spacer()
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 52)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 52)
 
-                    if let profile = appModel.catProfile {
-                        MeSummaryCard(profile: profile, persona: appModel.persona)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 16)
-                    }
+                        if let profile = appModel.catProfile {
+                            MeSummaryCard(profile: profile, persona: appModel.persona)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 16)
+                        }
 
-                    AccountQuickPanel {
-                        isAccountPresented = true
-                    }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-
-                    VStack(spacing: 10) {
-                        MeRowButton(icon: "☁︎", title: "账号与数据", sub: "手机号登录、昵称和账号管理") {
+                        AccountQuickPanel {
                             isAccountPresented = true
                         }
-                        MeRowButton(icon: "✎", title: "修改人格档案", sub: "编辑猫咪基本信息") {
-                            isEditProfilePresented = true
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+
+                        VStack(spacing: 10) {
+                            MeRowButton(icon: "☁︎", title: "账号与数据", sub: "手机号登录、昵称和账号管理") {
+                                isAccountPresented = true
+                            }
+                            MeRowButton(icon: "✎", title: "修改人格档案", sub: "编辑猫咪基本信息") {
+                                isEditProfilePresented = true
+                            }
+                            MeRowButton(icon: "♡", title: "管理猫咪心声", sub: "查看和管理所有心声") {
+                                isManageVoicesPresented = true
+                            }
                         }
-                        MeRowButton(icon: "♡", title: "管理猫咪心声", sub: "查看和管理所有心声") {
-                            isManageVoicesPresented = true
-                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                        .padding(.bottom, 112)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, 112)
                 }
             }
 
@@ -2188,6 +2276,7 @@ private struct MeView: View {
                 onPublish: { isPublishSheetPresented = true },
                 onAccount: {}
             )
+            .zIndex(110)
         }
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
@@ -3306,17 +3395,8 @@ private struct ManageVoiceCard: View {
     let selected: Bool
     let action: () -> Void
 
-    private var aspectRatio: CGFloat {
-        switch voice.aspect {
-        case "9:16":
-            return 9.0 / 16.0
-        case "3:4":
-            return 3.0 / 4.0
-        case "1:1":
-            return 1.0
-        default:
-            return 4.0 / 5.0
-        }
+    private var mediaHeight: CGFloat {
+        VoiceMediaMetrics.manageHeight(for: voice.aspect)
     }
 
     var body: some View {
@@ -3340,7 +3420,7 @@ private struct ManageVoiceCard: View {
                                 objectKey: voice.mediaObjectKey,
                                 contentMode: .fill
                             ) {
-                                avatarFallback
+                                VoiceMediaSkeletonView()
                                     .frame(width: proxy.size.width, height: proxy.size.height)
                             }
                             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -3369,7 +3449,7 @@ private struct ManageVoiceCard: View {
                         }
                     }
                 }
-                .aspectRatio(aspectRatio, contentMode: .fit)
+                .frame(height: mediaHeight)
                 .frame(maxWidth: .infinity)
                 .clipped()
 

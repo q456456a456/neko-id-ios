@@ -404,13 +404,15 @@ final class NekoAppModel: ObservableObject {
         }
 
         let activeSession = try await authenticatedSession()
-        return try await serverAPI.generateCatVoice(
+        var generated = try await serverAPI.generateCatVoice(
             profile: profile,
             persona: persona,
             imageData: imageData,
             scene: scene,
             accessToken: activeSession.accessToken
         )
+        generated.aspect = NekoMediaAspect.storedAspect(from: imageData) ?? generated.aspect
+        return generated
     }
 
     func saveGeneratedCatVoice(
@@ -424,8 +426,11 @@ final class NekoAppModel: ObservableObject {
         }
 
         let activeSession = try await authenticatedSession()
+        var voiceToSave = generated
+        voiceToSave.aspect = NekoMediaAspect.storedAspect(from: imageData) ?? generated.aspect
+
         let saved = try await serverAPI.saveCatVoice(
-            generated,
+            voiceToSave,
             imageData: imageData,
             for: profile,
             accessToken: activeSession.accessToken

@@ -15,6 +15,67 @@ struct PreparedImageUpload {
     let fileExtension: String
 }
 
+enum NekoMediaAspect {
+    static let portrait = "3:4"
+    static let landscape = "4:3"
+    static let square = "1:1"
+
+    private static let squareTolerance: CGFloat = 0.08
+
+    static func storedAspect(from data: Data) -> String? {
+        guard let image = UIImage(data: data) else { return nil }
+        return fixedAspect(for: imageRatio(image))
+    }
+
+    static func displayRatio(for storedAspect: String?, image: UIImage? = nil) -> CGFloat {
+        if let image {
+            return ratio(for: fixedAspect(for: imageRatio(image)))
+        }
+
+        if let storedRatio = numericRatio(for: storedAspect) {
+            return ratio(for: fixedAspect(for: storedRatio))
+        }
+
+        return ratio(for: portrait)
+    }
+
+    private static func imageRatio(_ image: UIImage) -> CGFloat {
+        max(image.size.width, 1) / max(image.size.height, 1)
+    }
+
+    private static func fixedAspect(for ratio: CGFloat) -> String {
+        if abs(ratio - 1) <= squareTolerance {
+            return square
+        }
+        return ratio > 1 ? landscape : portrait
+    }
+
+    private static func ratio(for aspect: String) -> CGFloat {
+        switch aspect {
+        case landscape:
+            return 4.0 / 3.0
+        case square:
+            return 1.0
+        default:
+            return 3.0 / 4.0
+        }
+    }
+
+    private static func numericRatio(for aspect: String?) -> CGFloat? {
+        guard let aspect else { return nil }
+        let parts = aspect.split(separator: ":")
+        guard parts.count == 2,
+              let width = Double(parts[0]),
+              let height = Double(parts[1]),
+              width > 0,
+              height > 0
+        else {
+            return nil
+        }
+        return CGFloat(width / height)
+    }
+}
+
 enum NekoMediaError: LocalizedError {
     case unsupportedImage
     case unsupportedVideo
