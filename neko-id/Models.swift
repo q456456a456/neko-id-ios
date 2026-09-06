@@ -193,8 +193,33 @@ struct CatPersonaResult: Codable, Equatable {
 }
 
 struct CatVoiceAnalysis: Codable, Equatable {
-    var summary: String
+    var observation: String
     var personalityInterpretation: String
+
+    private enum CodingKeys: String, CodingKey {
+        case observation
+        case summary
+        case personalityInterpretation
+    }
+
+    init(observation: String, personalityInterpretation: String) {
+        self.observation = observation
+        self.personalityInterpretation = personalityInterpretation
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        observation = try container.decodeIfPresent(String.self, forKey: .observation)
+            ?? container.decodeIfPresent(String.self, forKey: .summary)
+            ?? ""
+        personalityInterpretation = try container.decodeIfPresent(String.self, forKey: .personalityInterpretation) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(observation, forKey: .observation)
+        try container.encode(personalityInterpretation, forKey: .personalityInterpretation)
+    }
 }
 
 struct CatVoiceShare: Codable, Equatable {
@@ -223,7 +248,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
 
     var analysisText: String? {
         guard let analysis else { return nil }
-        return [analysis.summary, analysis.personalityInterpretation]
+        return [analysis.observation, analysis.personalityInterpretation]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n\n")
             .nonEmpty
@@ -297,7 +322,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         if let structured = try? container.decode(CatVoiceAnalysis.self, forKey: .analysis) {
             analysis = structured
         } else if let legacy = try? container.decode(String.self, forKey: .analysis), !legacy.isEmpty {
-            analysis = CatVoiceAnalysis(summary: legacy, personalityInterpretation: "")
+            analysis = CatVoiceAnalysis(observation: legacy, personalityInterpretation: "")
         } else {
             analysis = nil
         }

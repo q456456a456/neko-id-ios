@@ -852,7 +852,6 @@ private struct HomeView: View {
     let onAccount: () -> Void
     @State private var isPublishSheetPresented = false
     @State private var isPersonaPresented = false
-    @State private var latestPublishedVoice: CatVoiceResult?
     @State private var selectedVoice: CatVoiceResult?
     @State private var isVoiceDetailPresented = false
     @State private var actionVoice: CatVoiceResult?
@@ -861,7 +860,7 @@ private struct HomeView: View {
     private var homeVoices: [CatVoiceResult] {
         var voices: [CatVoiceResult] = []
         var seen = Set<String>()
-        for voice in ([latestPublishedVoice].compactMap { $0 } + appModel.voices) {
+        for voice in appModel.voices {
             let key = voiceKey(voice)
             if seen.insert(key).inserted {
                 voices.append(voice)
@@ -905,8 +904,15 @@ private struct HomeView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, 26)
 
-                            if !homeVoices.isEmpty {
+                            if !homeVoices.isEmpty || !appModel.pendingVoicePublishes.isEmpty {
                                 VStack(spacing: 18) {
+                                    ForEach(appModel.pendingVoicePublishes) { pending in
+                                        PendingVoicePublishCard(
+                                            pending: pending,
+                                            catName: profile.name,
+                                            onRetry: { appModel.retryPendingVoicePublish(id: pending.id) }
+                                        )
+                                    }
                                     ForEach(voiceGroups) { group in
                                         VStack(spacing: 10) {
                                             DayDivider(label: group.label)
@@ -989,7 +995,7 @@ private struct HomeView: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
-            VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
+            VoicePublishSheet()
                 .environmentObject(appModel)
         }
         .navigationDestination(isPresented: $isPersonaPresented) {
@@ -1055,7 +1061,6 @@ private struct HomeView: View {
     private func deleteVoice(_ voice: CatVoiceResult) {
         guard let cloudId = voice.cloudId, !cloudId.isEmpty else {
             confirmDeleteVoice = nil
-            latestPublishedVoice = nil
             appModel.noticeMessage = "已移除本地心声"
             return
         }
@@ -1063,9 +1068,6 @@ private struct HomeView: View {
         Task {
             do {
                 try await appModel.deleteVoices(ids: [cloudId])
-                if latestPublishedVoice?.cloudId == cloudId {
-                    latestPublishedVoice = nil
-                }
                 confirmDeleteVoice = nil
                 appModel.noticeMessage = "心声已删除"
             } catch {
@@ -1319,6 +1321,67 @@ private struct TimelineVoiceRow: View {
                 .frame(width: cardWidth)
         }
         .frame(width: availableWidth, alignment: .leading)
+    }
+}
+
+private struct PendingVoicePublishCard: View {
+    let pending: PendingVoicePublish
+    let catName: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        NekoGlassCard(cornerRadius: 24) {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    if let image = UIImage(data: pending.imageData) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .aspectRatio(4.0 / 5.0, contentMode: .fit)
+                            .clipped()
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(catName)
+                            .font(.system(size: NekoTypography.web(8), weight: .semibold))
+                            .tracking(3)
+                            .foregroundStyle(NekoTheme.muted)
+                        Text("💭 \(pending.voice.text)")
+                            .font(.system(size: NekoTypography.web(12.5), weight: .regular))
+                            .lineSpacing(4)
+                            .foregroundStyle(NekoTheme.ink)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .padding(14)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+
+                HStack {
+                    NekoFlowLayout(spacing: 8, lineSpacing: 7) {
+                        ForEach(Array((pending.voice.share?.tags ?? pending.voice.tags).prefix(3)), id: \.self) { tag in
+                            VoiceTagChip(tag: tag.hasPrefix("#") ? tag : "#\(tag)", compact: true)
+                        }
+                    }
+                    Spacer()
+                    if pending.status == .publishing {
+                        HStack(spacing: 6) {
+                            ProgressView().scaleEffect(0.7)
+                            Text("发布中…")
+                        }
+                        .foregroundStyle(NekoTheme.muted)
+                    } else {
+                        Button("发布失败 · 点击重试", action: onRetry)
+                            .foregroundStyle(Color.red.opacity(0.78))
+                    }
+                }
+                .font(.system(size: NekoTypography.web(10.5), weight: .medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+        }
+        .padding(.leading, 54)
     }
 }
 
@@ -2138,41 +2201,20 @@ private struct VoiceDetailView: View {
     }
 
     private var aiAnalysisCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text("✨")
-                    .font(.system(size: NekoTypography.web(11)))
-                Text("AI 心 声 解 析")
-                    .font(.system(size: NekoTypography.web(10), weight: .medium))
-                    .tracking(3.6)
-                    .foregroundStyle(Color(red: 0.482, green: 0.447, blue: 0.565))
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            VoiceInsightBlock(analysis: voice.analysis, fallbackText: analysisText)
 
-            Text(analysisText)
-                .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                .foregroundStyle(NekoTheme.ink.opacity(0.85))
-                .lineSpacing(6)
-                .padding(.top, 10)
-
-            if !voice.tags.isEmpty {
+            let tags = voice.share?.tags ?? voice.tags
+            if !tags.isEmpty {
                 NekoFlowLayout(spacing: 6, lineSpacing: 6) {
-                    ForEach(voice.tags, id: \.self) { tag in
-                        VoiceTagChip(tag: "#\(tag)")
+                    ForEach(Array(tags.prefix(3)), id: \.self) { tag in
+                        VoiceTagChip(tag: tag.hasPrefix("#") ? tag : "#\(tag)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.90), lineWidth: 1)
-        }
-        .shadow(color: NekoTheme.ink.opacity(0.12), radius: 24, x: 0, y: 12)
     }
 
     private func deleteCurrentVoice() {
@@ -2345,7 +2387,6 @@ private struct MeView: View {
     @State private var isAccountPresented = false
     @State private var isEditProfilePresented = false
     @State private var isManageVoicesPresented = false
-    @State private var latestPublishedVoice: CatVoiceResult?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -2405,7 +2446,7 @@ private struct MeView: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
-            VoicePublishSheet(latestPublishedVoice: $latestPublishedVoice)
+            VoicePublishSheet()
                 .environmentObject(appModel)
         }
         .navigationDestination(isPresented: $isAccountPresented) {
@@ -4398,14 +4439,12 @@ private struct NekoTabSymbol: View {
 private struct VoicePublishSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appModel: NekoAppModel
-    @Binding var latestPublishedVoice: CatVoiceResult?
 
     @State private var photoData: Data?
     @State private var photoPreviewImage: UIImage?
     @State private var showsCamera = false
     @State private var scene = ""
     @State private var draftVoice: CatVoiceResult?
-    @State private var publishedVoice: CatVoiceResult?
     @State private var step: PublishStep = .upload
     @State private var isAnalyzing = false
     @State private var isPublishing = false
@@ -4450,13 +4489,7 @@ private struct VoicePublishSheet: View {
                     onPublish: { Task { await publishDraft() } }
                 )
             case .success:
-                PublishSuccessScreen(
-                    catName: catName,
-                    photoPreviewImage: photoPreviewImage,
-                    voice: publishedVoice ?? draftVoice,
-                    persona: appModel.persona,
-                    onReturnHome: { dismiss() }
-                )
+                EmptyView()
             }
 
             if let loadingText {
@@ -4519,7 +4552,6 @@ private struct VoicePublishSheet: View {
             photoData = prepared.data
             photoPreviewImage = UIImage(data: prepared.data)
             draftVoice = nil
-            publishedVoice = nil
             step = .upload
         } catch {
             errorMessage = userFacingMessage(error)
@@ -4573,16 +4605,8 @@ private struct VoicePublishSheet: View {
         guard !isPublishing else { return }
 
         isPublishing = true
-        defer { isPublishing = false }
-
-        do {
-            let saved = try await appModel.saveGeneratedCatVoice(draftVoice, imageData: photoData)
-            publishedVoice = saved
-            latestPublishedVoice = saved
-            step = .success
-        } catch {
-            errorMessage = userFacingMessage(error)
-        }
+        appModel.publishCatVoiceOptimistically(draftVoice, imageData: photoData)
+        dismiss()
     }
 
     private var sceneBinding: Binding<String> {
@@ -4593,9 +4617,6 @@ private struct VoicePublishSheet: View {
     }
 
     private var loadingText: (title: String, hint: String)? {
-        if isPublishing {
-            return ("正在发布猫咪心声…", "PUBLISHING")
-        }
         if isAnalyzing {
             if step == .preview {
                 return nil
@@ -4840,7 +4861,7 @@ private struct PublishPreviewScreen: View {
                     .padding(.horizontal, 28)
                     .padding(.top, 20)
 
-                    PublishPreviewStageCard(
+                    VoiceResultCard(
                         catName: catName,
                         photoPreviewImage: photoPreviewImage,
                         voice: draftVoice,
@@ -5293,95 +5314,65 @@ private struct PublishBottomCTA: View {
     }
 }
 
-private struct PublishPreviewStageCard: View {
+private struct VoiceResultCard: View {
     let catName: String
     let photoPreviewImage: UIImage?
     let voice: CatVoiceResult?
     let isLoading: Bool
+    @State private var showsFullPhoto = false
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
+        VStack(alignment: .leading, spacing: 14) {
+            ZStack(alignment: .top) {
                 PublishWebStyle.warmPhotoGradient
-
                 if let photoPreviewImage {
                     Image(uiImage: photoPreviewImage)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: proxy.size.width, height: 560)
+                        .aspectRatio(4.0 / 5.0, contentMode: .fit)
                         .clipped()
-                } else {
-                    Text("等待照片")
-                        .font(.system(size: NekoTypography.web(12), weight: .regular))
-                        .tracking(2.0)
-                        .foregroundStyle(PublishWebStyle.step)
-                        .frame(width: proxy.size.width, height: 560)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showsFullPhoto = true }
                 }
-
-                LinearGradient(
-                    colors: [Color.black.opacity(0.16), .clear],
-                    startPoint: .top,
-                    endPoint: .center
-                )
-
-                VStack(spacing: 0) {
-                    if let voiceText {
-                        PublishSpeechBubble(
-                            catName: catName,
-                            text: voiceText,
-                            centered: true
-                        )
-                        .padding(.top, 12)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    }
-
-                    if isLoading {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(0.82)
-                            Text("AI 正在听它怎么说")
-                                .font(.system(size: NekoTypography.web(10.5), weight: .medium))
-                        }
+                if let voiceText {
+                    PublishSpeechBubble(catName: catName, text: voiceText, centered: true)
+                        .padding(12)
+                }
+                if isLoading {
+                    ProgressView("AI 正在听它怎么说")
+                        .tint(.white)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .background(Color.black.opacity(0.22), in: Capsule())
-                        .padding(.top, voiceText == nil ? 22 : 10)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        PublishSectionTitle("AI 心 声 解 析")
-                        Text(analysisText)
-                            .font(.system(size: NekoTypography.web(12), weight: .regular))
-                            .foregroundStyle(NekoTheme.ink.opacity(0.86))
-                            .lineSpacing(5)
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(.white.opacity(0.70), lineWidth: 1)
-                    }
-                    .shadow(color: NekoTheme.ink.opacity(0.14), radius: 20, x: 0, y: 10)
-                    .padding(16)
+                        .padding(10)
+                        .background(Color.black.opacity(0.25), in: Capsule())
+                        .padding(.top, 100)
                 }
             }
-            .frame(width: proxy.size.width, height: 560)
-        }
-        .frame(height: 560)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(.white.opacity(0.70), lineWidth: 1)
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+
+            if !displayTags.isEmpty {
+                NekoFlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(displayTags, id: \.self) { tag in
+                        VoiceTagChip(tag: tag.hasPrefix("#") ? tag : "#\(tag)")
+                    }
+                }
+            }
+
+            VoiceInsightBlock(analysis: voice?.analysis, fallbackText: analysisText)
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 30, x: 0, y: 16)
         .animation(.easeInOut(duration: 0.22), value: isLoading)
-        .animation(.easeInOut(duration: 0.22), value: voiceText ?? "")
+        .fullScreenCover(isPresented: $showsFullPhoto) {
+            ZStack(alignment: .topLeading) {
+                Color.black.ignoresSafeArea()
+                if let photoPreviewImage {
+                    Image(uiImage: photoPreviewImage).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                Button { showsFullPhoto = false } label: {
+                    Image(systemName: "xmark").foregroundStyle(.white).frame(width: 44, height: 44).background(.black.opacity(0.35), in: Circle())
+                }
+                .padding()
+            }
+        }
     }
 
     private var voiceText: String? {
@@ -5393,6 +5384,36 @@ private struct PublishPreviewStageCard: View {
             return analysis
         }
         return isLoading ? "AI 正在结合照片、场景和猫咪人格档案生成这一刻的心声…" : "暂未获得 AI 心声解析，请点击重新识别。"
+    }
+
+    private var displayTags: [String] {
+        Array((voice?.share?.tags ?? voice?.tags ?? []).prefix(3))
+    }
+}
+
+private struct VoiceInsightBlock: View {
+    let analysis: CatVoiceAnalysis?
+    let fallbackText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            PublishSectionTitle("✦ AI 解 读")
+            if let observation = analysis?.observation.nonEmpty {
+                Text(observation)
+            }
+            if let interpretation = analysis?.personalityInterpretation.nonEmpty {
+                Text(interpretation)
+            }
+            if analysis == nil {
+                Text(fallbackText)
+            }
+        }
+        .font(.system(size: NekoTypography.web(12), weight: .regular))
+        .foregroundStyle(NekoTheme.ink.opacity(0.84))
+        .lineSpacing(5)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 

@@ -13,6 +13,18 @@ struct NekoLoginPrompt: Identifiable, Equatable {
     let message: String
 }
 
+enum PendingVoicePublishStatus: Equatable {
+    case publishing
+    case failed
+}
+
+struct PendingVoicePublish: Identifiable, Equatable {
+    let id: UUID
+    let voice: CatVoiceResult
+    let imageData: Data
+    var status: PendingVoicePublishStatus
+}
+
 @MainActor
 final class NekoAppModel: ObservableObject {
     @Published private(set) var phase: AppPhase = .launching
@@ -20,6 +32,7 @@ final class NekoAppModel: ObservableObject {
     @Published private(set) var catProfile: CatProfile?
     @Published private(set) var persona: CatPersonaResult?
     @Published private(set) var voices: [CatVoiceResult] = []
+    @Published private(set) var pendingVoicePublishes: [PendingVoicePublish] = []
     @Published var loginPrompt: NekoLoginPrompt?
     @Published var isBusy = false
     @Published var errorMessage: String?
@@ -443,12 +456,42 @@ final class NekoAppModel: ObservableObject {
         return saved
     }
 
+    func publishCatVoiceOptimistically(_ voice: CatVoiceResult, imageData: Data) {
+        let pending = PendingVoicePublish(
+            id: UUID(),
+            voice: voice,
+            imageData: imageData,
+            status: .publishing
+        )
+        pendingVoicePublishes.insert(pending, at: 0)
+        Task { await performPendingVoicePublish(id: pending.id) }
+    }
+
+    func retryPendingVoicePublish(id: UUID) {
+        guard let index = pendingVoicePublishes.firstIndex(where: { $0.id == id }) else { return }
+        pendingVoicePublishes[index].status = .publishing
+        Task { await performPendingVoicePublish(id: id) }
+    }
+
+    private func performPendingVoicePublish(id: UUID) async {
+        guard let pending = pendingVoicePublishes.first(where: { $0.id == id }) else { return }
+        do {
+            _ = try await saveGeneratedCatVoice(pending.voice, imageData: pending.imageData)
+            pendingVoicePublishes.removeAll { $0.id == id }
+            noticeMessage = "心声记下来了 ✨"
+        } catch {
+            guard let index = pendingVoicePublishes.firstIndex(where: { $0.id == id }) else { return }
+            pendingVoicePublishes[index].status = .failed
+        }
+    }
+
     func signOut() {
         deleteStoredSession()
         session = nil
         catProfile = nil
         persona = nil
         voices = []
+        pendingVoicePublishes = []
         signedMediaCache = [:]
         phase = .onboarding
     }
