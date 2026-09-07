@@ -1137,18 +1137,6 @@ private struct HomeProfileCard: View {
                     .buttonStyle(.plain)
                 }
 
-                HStack(spacing: 9) {
-                    Text("😺")
-                        .font(.system(size: NekoTypography.web(14)))
-                    Text(persona?.dailyMood ?? "今天好像有点想你")
-                        .font(.system(size: NekoTypography.web(12), weight: .regular))
-                        .foregroundStyle(NekoTheme.ink)
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
             }
             .padding(14)
         }
@@ -3024,10 +3012,13 @@ private struct EditProfileView: View {
 
     @MainActor
     private var avatarEditor: some View {
-        VStack(spacing: 12) {
+        let avatarURL = appModel.catProfile?.avatarURL
+        let avatarObjectKey = appModel.catProfile?.avatarObjectKey
+
+        return VStack(spacing: 12) {
             PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
                 ZStack(alignment: .bottomTrailing) {
-                    CatAvatarView(localImage: avatarPreview, remoteURL: appModel.catProfile?.avatarURL, objectKey: appModel.catProfile?.avatarObjectKey, size: 92)
+                    CatAvatarView(localImage: avatarPreview, remoteURL: avatarURL, objectKey: avatarObjectKey, size: 92)
 
                     Image(systemName: "pencil")
                         .font(.system(size: NekoTypography.web(11), weight: .semibold))
@@ -4899,6 +4890,7 @@ private struct PublishPreviewScreen: View {
     }
 }
 
+#if false // Legacy screen retained for reference; publishing now returns directly to Home.
 private struct PublishSuccessScreen: View {
     @EnvironmentObject private var appModel: NekoAppModel
     @State private var shareImage: UIImage?
@@ -5092,18 +5084,26 @@ private struct PublishSuccessScreen: View {
     }
 
     private func shareInsightSummary(for voice: CatVoiceResult) -> String {
-        let source = voice.share?.insight.nonEmpty
-            ?? voice.analysis?.personalityInterpretation.nonEmpty
-            ?? voice.analysis?.summary.nonEmpty
-            ?? persona?.analysis.nonEmpty
-            ?? "它正用自己的方式观察世界，也悄悄表达对你的信任。"
-        let normalized = source
+        let source: String
+        if let insight = voice.share?.insight.nonEmpty {
+            source = insight
+        } else if let interpretation = voice.analysis?.personalityInterpretation.nonEmpty {
+            source = interpretation
+        } else if let summary = voice.analysis?.observation.nonEmpty {
+            source = summary
+        } else if let personaAnalysis = persona?.analysis.nonEmpty {
+            source = personaAnalysis
+        } else {
+            source = "它正用自己的方式观察世界，也悄悄表达对你的信任。"
+        }
+        let normalized: String = source
             .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         guard normalized.count > 35 else { return normalized }
         return String(normalized.prefix(34)) + "…"
     }
 }
+#endif
 
 private struct PublishTopBar<Trailing: View>: View {
     let stepText: String

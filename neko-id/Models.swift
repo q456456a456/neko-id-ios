@@ -186,7 +186,10 @@ struct CatPersonaResult: Codable, Equatable {
         tags = try container.decode([String].self, forKey: .tags)
         traits = try container.decode([PersonaTrait].self, forKey: .traits)
         observations = try container.decode([PersonaObservation].self, forKey: .observations)
-        dailyMood = try container.decode(String.self, forKey: .dailyMood)
+        // `dailyMood` belonged to the first-generation home card and is no longer
+        // emitted by the current persona prompt. Keep decoding older records, but
+        // do not reject a valid persona result when the field is absent.
+        dailyMood = try container.decodeIfPresent(String.self, forKey: .dailyMood) ?? ""
         provider = try container.decodeIfPresent(String.self, forKey: .provider) ?? "server"
         model = try container.decodeIfPresent(String.self, forKey: .model) ?? "neko-id-server-persona"
     }
