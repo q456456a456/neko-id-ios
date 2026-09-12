@@ -248,7 +248,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JR4GGWX92B;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "喵懂";
 				INFOPLIST_KEY_NSCameraUsageDescription = "用于拍摄猫咪照片，以生成猫咪心声和行为解读";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制包含声音的猫咪视频。";
@@ -290,7 +291,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JR4GGWX92B;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "喵懂";
 				INFOPLIST_KEY_NSCameraUsageDescription = "用于拍摄猫咪照片，以生成猫咪心声和行为解读";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制包含声音的猫咪视频。";

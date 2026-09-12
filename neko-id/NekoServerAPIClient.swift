@@ -13,11 +13,18 @@ struct NekoServerAPIClient {
 
     init(
         baseURL: URL = AppConfig.productionWebURL,
-        session: URLSession = .shared
+        session: URLSession? = nil
     ) {
         self.baseURL = baseURL
-        self.session = session
+        self.session = session ?? Self.defaultSession
     }
+
+    private static let defaultSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = AppConfig.serverRequestTimeout
+        configuration.timeoutIntervalForResource = AppConfig.serverResourceTimeout
+        return URLSession(configuration: configuration)
+    }()
 
     func requestPhoneOTP(phone: String) async throws {
         let _: PhoneOTPResponse = try await perform(

@@ -8,7 +8,11 @@
 import Foundation
 
 enum AppConfig {
-    static let productionWebURL = URL(string: "https://www.neko-id.uk")!
+    // Temporary direct-IP endpoint for pre-ICP Mainland China testing.
+    // Switch back to https://api.nekoid.cn before App Store submission.
+    static let productionWebURL = URL(string: "http://14.103.91.205")!
+    static let serverRequestTimeout: TimeInterval = 90
+    static let serverResourceTimeout: TimeInterval = 120
     static let maxAvatarImageBytes = 10 * 1024 * 1024
     static let maxVoiceImageBytes = 10 * 1024 * 1024
     static let maxOnboardingVideoBytes = 100 * 1024 * 1024
