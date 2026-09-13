@@ -382,12 +382,15 @@ struct NativeOnboardingFlowView: View {
         isAnalyzing = true
         analysisProgress = 0
 
-        let personaTask = Task {
-            try await appModel.generateOnboardingPersona(
+        let personaTask = Task<CatPersonaResult, Error> {
+            let videoObservations = await analyzeUploadedVideos()
+            try Task.checkCancellation()
+            return try await appModel.generateOnboardingPersona(
                 draft: draft,
                 quizAnswers: quizAnswers,
                 avatarImageData: avatarImageData,
-                videoCount: videoClips.count
+                videoCount: videoClips.count,
+                videoObservations: videoObservations
             )
         }
 
@@ -424,6 +427,76 @@ struct NativeOnboardingFlowView: View {
                 step = .quiz
             }
         }
+    }
+
+    @MainActor
+    private func analyzeUploadedVideos() async -> [CatVideoObservation] {
+        let clips = videoClips
+        let videoCount = clips.count
+        var observations: [CatVideoObservation] = []
+
+        for clip in clips {
+            guard !Task.isCancelled else {
+                return observations
+            }
+
+            if let current = videoClips.first(where: { $0.id == clip.id }),
+               let observation = current.observation {
+                if observation.containsCat {
+                    observations.append(observation)
+                }
+                continue
+            }
+
+            guard !clip.videoFrames.isEmpty else {
+                updateVideoClip(clip.id) { next in
+                    next.analysisStatus = .failed
+                    next.analysisError = "视频抽帧失败，已跳过视频观察。"
+                }
+                continue
+            }
+
+            updateVideoClip(clip.id) { next in
+                next.analysisStatus = .analyzing
+                next.analysisError = nil
+            }
+
+            do {
+                let observation = try await appModel.analyzeOnboardingVideoClip(
+                    draft: draft,
+                    quizAnswers: quizAnswers,
+                    clip: clip,
+                    videoCount: videoCount
+                )
+                updateVideoClip(clip.id) { next in
+                    next.analysisStatus = .ready
+                    next.analysisError = nil
+                    next.observation = observation
+                }
+                if observation.containsCat {
+                    observations.append(observation)
+                }
+            } catch {
+                updateVideoClip(clip.id) { next in
+                    next.analysisStatus = .failed
+                    next.analysisError = userFacingServerMessage(
+                        error,
+                        fallback: "视频观察失败，已跳过这段视频。"
+                    )
+                }
+            }
+        }
+
+        return observations
+    }
+
+    @MainActor
+    private func updateVideoClip(
+        _ id: UUID,
+        mutate: (inout OnboardingVideoClip) -> Void
+    ) {
+        guard let index = videoClips.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&videoClips[index])
     }
 
     private func userFacingMediaMessage(_ error: Error) -> String {

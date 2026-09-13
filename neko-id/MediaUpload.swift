@@ -110,6 +110,7 @@ enum NekoMediaError: LocalizedError {
 enum MediaUploadProcessor {
     private static let maxStoredImageBytes = 500 * 1024
     private static let maxAIImageBytes = 1_500_000
+    private static let maxAIVideoFrameBytes = 750_000
     private static let storedImageMaxDimensions: [CGFloat] = [1200, 1000, 900, 800, 720, 640]
     private static let storedImageCompressionQualities: [CGFloat] = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42, 0.36, 0.3]
 
@@ -207,11 +208,21 @@ enum MediaUploadProcessor {
             throw NekoMediaError.videoTooLong(duration: seconds)
         }
 
+        let thumbnailData = makeThumbnailData(from: asset)
+        let videoFrames = makeVideoFramePayloads(from: asset, duration: seconds)
+        let fallbackFrames: [CatVideoFramePayload]
+        if videoFrames.isEmpty {
+            fallbackFrames = makeFallbackVideoFramePayload(from: thumbnailData, duration: seconds)
+        } else {
+            fallbackFrames = videoFrames
+        }
+
         return OnboardingVideoClip(
             label: label,
             durationLabel: formatDuration(seconds),
             sizeLabel: sizeLabel,
-            thumbnailData: makeThumbnailData(from: asset)
+            thumbnailData: thumbnailData,
+            videoFrames: fallbackFrames
         )
     }
 
@@ -264,6 +275,77 @@ enum MediaUploadProcessor {
         } catch {
             return nil
         }
+    }
+
+    private static func makeVideoFramePayloads(from asset: AVAsset, duration: Double) -> [CatVideoFramePayload] {
+        let frameSpecs: [(fraction: Double, position: CatVideoFramePosition)] = [
+            (0.12, .start),
+            (0.50, .middle),
+            (0.88, .end),
+        ]
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 512, height: 512)
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.25, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.25, preferredTimescale: 600)
+
+        return frameSpecs.compactMap { spec in
+            let seconds = frameTimestamp(duration: duration, fraction: spec.fraction)
+            do {
+                let image = try generator.copyCGImage(
+                    at: CMTime(seconds: seconds, preferredTimescale: 600),
+                    actualTime: nil
+                )
+                guard let imageDataUrl = makeAIVideoFrameDataURL(from: UIImage(cgImage: image)) else {
+                    return nil
+                }
+                return CatVideoFramePayload(
+                    imageDataUrl: imageDataUrl,
+                    timestampLabel: formatDuration(seconds),
+                    position: spec.position
+                )
+            } catch {
+                return nil
+            }
+        }
+    }
+
+    private static func frameTimestamp(duration: Double, fraction: Double) -> Double {
+        guard duration.isFinite, duration > 0 else { return 0.2 }
+        let inset = min(0.5, max(0.1, duration * 0.04))
+        let lowerBound = min(inset, duration)
+        let upperBound = max(lowerBound, duration - inset)
+        return min(max(duration * fraction, lowerBound), upperBound)
+    }
+
+    private static func makeAIVideoFrameDataURL(from image: UIImage) -> String? {
+        let normalized = image.resizedToFit(maxDimension: 512)
+        for quality in [0.72, 0.64, 0.56, 0.48] as [CGFloat] {
+            guard let jpeg = normalized.jpegData(compressionQuality: quality) else { continue }
+            if jpeg.count <= maxAIVideoFrameBytes {
+                return "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+            }
+        }
+
+        return nil
+    }
+
+    private static func makeFallbackVideoFramePayload(from thumbnailData: Data?, duration: Double) -> [CatVideoFramePayload] {
+        guard
+            let thumbnailData,
+            let image = UIImage(data: thumbnailData),
+            let imageDataUrl = makeAIVideoFrameDataURL(from: image)
+        else {
+            return []
+        }
+
+        return [
+            CatVideoFramePayload(
+                imageDataUrl: imageDataUrl,
+                timestampLabel: formatDuration(frameTimestamp(duration: duration, fraction: 0.5)),
+                position: .middle
+            ),
+        ]
     }
 }
 

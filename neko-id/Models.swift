@@ -120,6 +120,35 @@ struct CatDetectionResult: Decodable, Equatable {
     let reason: String?
 }
 
+enum CatVideoFramePosition: String, Codable, Equatable {
+    case start
+    case middle
+    case end
+}
+
+struct CatVideoFramePayload: Codable, Equatable {
+    let imageDataUrl: String
+    let timestampLabel: String
+    let position: CatVideoFramePosition
+}
+
+struct CatVideoEvidence: Codable, Equatable {
+    let fact: String
+    let interpretation: String
+}
+
+struct CatVideoObservation: Codable, Equatable {
+    let clipId: String?
+    let label: String?
+    let duration: String?
+    let containsCat: Bool
+    let summary: String
+    let movement: String
+    let behaviorSignals: [String]
+    let personalityEvidence: [CatVideoEvidence]
+    let confidence: String
+}
+
 struct CatPersonaResult: Codable, Equatable {
     var type: String
     var mbti: String
@@ -399,19 +428,38 @@ struct OnboardingVideoClip: Identifiable, Equatable {
     let durationLabel: String
     let sizeLabel: String
     let thumbnailData: Data?
+    let videoFrames: [CatVideoFramePayload]
+    var analysisStatus: VideoAnalysisStatus
+    var analysisError: String?
+    var observation: CatVideoObservation?
+
+    enum VideoAnalysisStatus: Equatable {
+        case pending
+        case analyzing
+        case ready
+        case failed
+    }
 
     init(
         id: UUID = UUID(),
         label: String,
         durationLabel: String,
         sizeLabel: String,
-        thumbnailData: Data?
+        thumbnailData: Data?,
+        videoFrames: [CatVideoFramePayload] = [],
+        analysisStatus: VideoAnalysisStatus = .pending,
+        analysisError: String? = nil,
+        observation: CatVideoObservation? = nil
     ) {
         self.id = id
         self.label = label
         self.durationLabel = durationLabel
         self.sizeLabel = sizeLabel
         self.thumbnailData = thumbnailData
+        self.videoFrames = videoFrames
+        self.analysisStatus = analysisStatus
+        self.analysisError = analysisError
+        self.observation = observation
     }
 }
 

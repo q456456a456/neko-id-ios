@@ -102,6 +102,7 @@ struct NekoServerAPIClient {
         quizAnswers: [Int: QuizChoice],
         avatarImageData: Data?,
         videoCount: Int,
+        videoObservations: [CatVideoObservation],
         accessToken: String? = nil
     ) async throws -> CatPersonaResult {
         let body = PersonaRequest(
@@ -117,11 +118,43 @@ struct NekoServerAPIClient {
             ),
             imageDataUrl: try avatarImageData.map {
                 try MediaUploadProcessor.makeAIImageDataURL(from: $0)
-            }
+            },
+            videoObservations: videoObservations
         )
 
         return try await perform(
             path: "/api/ios/onboarding/persona",
+            body: body,
+            accessToken: accessToken
+        )
+    }
+
+    func analyzeOnboardingVideoClip(
+        draft: CatProfileDraft,
+        quizAnswers: [Int: QuizChoice],
+        clip: OnboardingVideoClip,
+        videoCount: Int,
+        accessToken: String? = nil
+    ) async throws -> CatVideoObservation {
+        let body = VideoAnalysisRequest(
+            profile: ServerCatProfile(
+                name: draft.trimmedName,
+                gender: draft.gender.rawValue,
+                ageStage: draft.ageStage.rawValue,
+                quiz: Dictionary(uniqueKeysWithValues: quizAnswers.map { key, value in
+                    (String(key), value.rawValue)
+                }),
+                videoCount: videoCount,
+                updatedAt: Int64(Date().timeIntervalSince1970 * 1000)
+            ),
+            clipId: clip.id.uuidString,
+            label: clip.label,
+            duration: clip.durationLabel,
+            frames: clip.videoFrames
+        )
+
+        return try await perform(
+            path: "/api/ios/onboarding/video-analysis",
             body: body,
             accessToken: accessToken
         )
@@ -580,6 +613,15 @@ private struct DetectCatFaceRequest: Encodable {
 private struct PersonaRequest: Encodable {
     let profile: ServerCatProfile
     let imageDataUrl: String?
+    let videoObservations: [CatVideoObservation]
+}
+
+private struct VideoAnalysisRequest: Encodable {
+    let profile: ServerCatProfile
+    let clipId: String
+    let label: String
+    let duration: String
+    let frames: [CatVideoFramePayload]
 }
 
 private struct VoiceRequest: Encodable {
