@@ -174,6 +174,11 @@ final class NekoAppModel: ObservableObject {
                 accessToken: activeSession.accessToken
             )
             invalidateSignedMediaURL(for: saved.profile.avatarObjectKey)
+            cacheUploadedImage(
+                avatarImageData,
+                objectKey: saved.profile.avatarObjectKey,
+                url: saved.profile.avatarURL
+            )
             catProfile = saved.profile
             persona = saved.persona ?? finalPersona
             if isRetestingExistingProfile {
@@ -229,11 +234,18 @@ final class NekoAppModel: ObservableObject {
 
         await runBusy {
             let activeSession = try await authenticatedSession()
-            catProfile = try await serverAPI.uploadAvatarImage(
+            let savedProfile = try await serverAPI.uploadAvatarImage(
                 data,
                 for: profile,
                 accessToken: activeSession.accessToken
             )
+            invalidateSignedMediaURL(for: savedProfile.avatarObjectKey)
+            cacheUploadedImage(
+                data,
+                objectKey: savedProfile.avatarObjectKey,
+                url: savedProfile.avatarURL
+            )
+            catProfile = savedProfile
             noticeMessage = "头像已更新。"
         }
     }
@@ -302,6 +314,12 @@ final class NekoAppModel: ObservableObject {
     func invalidateSignedMediaURL(for objectKey: String?) {
         guard let objectKey, !objectKey.isEmpty else { return }
         signedMediaCache.removeValue(forKey: objectKey)
+        NekoRemoteImageCache.shared.remove(objectKey: objectKey)
+    }
+
+    private func cacheUploadedImage(_ data: Data?, objectKey: String?, url: URL?) {
+        guard let data else { return }
+        NekoRemoteImageCache.shared.store(data: data, objectKey: objectKey, url: url)
     }
 
     func refreshSignedMediaURLs() async {
@@ -360,6 +378,11 @@ final class NekoAppModel: ObservableObject {
         )
 
         invalidateSignedMediaURL(for: saved.profile.avatarObjectKey)
+        cacheUploadedImage(
+            avatarImageData,
+            objectKey: saved.profile.avatarObjectKey,
+            url: saved.profile.avatarURL
+        )
         catProfile = saved.profile
         if let savedPersona = saved.persona {
             persona = savedPersona
@@ -462,6 +485,11 @@ final class NekoAppModel: ObservableObject {
             accessToken: activeSession.accessToken
         )
         invalidateSignedMediaURL(for: saved.mediaObjectKey)
+        cacheUploadedImage(
+            imageData,
+            objectKey: saved.mediaObjectKey,
+            url: saved.mediaURL
+        )
         voices.insert(saved, at: 0)
         if showNotice {
             noticeMessage = "猫咪动态已发布。"
@@ -506,6 +534,7 @@ final class NekoAppModel: ObservableObject {
         voices = []
         pendingVoicePublishes = []
         signedMediaCache = [:]
+        NekoRemoteImageCache.shared.removeAll()
         phase = .onboarding
     }
 

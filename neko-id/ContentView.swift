@@ -9,6 +9,7 @@ import PhotosUI
 import SwiftUI
 import UIKit
 import Combine
+import CryptoKit
 
 struct ContentView: View {
     @EnvironmentObject private var appModel: NekoAppModel
@@ -1602,8 +1603,18 @@ struct NekoRemoteImageView<Placeholder: View>: View {
 
     @MainActor
     private func loadImage() async {
-        loadedImage = nil
         currentURL = remoteURL
+
+        if let cachedImage = NekoRemoteImageCache.shared.image(
+            objectKey: objectKey,
+            url: remoteURL
+        ) {
+            loadedImage = cachedImage
+            onImageLoaded(cachedImage)
+            return
+        }
+
+        loadedImage = nil
         onImageLoaded(nil)
 
         if let remoteURL, await load(from: remoteURL) {
@@ -1634,6 +1645,7 @@ struct NekoRemoteImageView<Placeholder: View>: View {
             guard let image = UIImage(data: data) else {
                 throw URLError(.cannotDecodeContentData)
             }
+            NekoRemoteImageCache.shared.store(data: data, objectKey: objectKey, url: url)
             loadedImage = image
             onImageLoaded(image)
             return true
@@ -1642,6 +1654,190 @@ struct NekoRemoteImageView<Placeholder: View>: View {
             onImageLoaded(nil)
             return false
         }
+    }
+}
+
+final class NekoRemoteImageCache {
+    static let shared = NekoRemoteImageCache()
+
+    private let memoryCache = NSCache<NSString, UIImage>()
+    private let fileManager = FileManager.default
+    private let ioQueue = DispatchQueue(label: "uk.nekoid.remote-image-cache", qos: .utility)
+    private let diskDirectory: URL
+    private let maxDiskBytes = 120 * 1024 * 1024
+    private let maxDiskFiles = 300
+
+    private init() {
+        let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        diskDirectory = cachesDirectory.appendingPathComponent(
+            "NekoRemoteImageCache",
+            isDirectory: true
+        )
+        memoryCache.totalCostLimit = 40 * 1024 * 1024
+        memoryCache.countLimit = 160
+        try? fileManager.createDirectory(
+            at: diskDirectory,
+            withIntermediateDirectories: true
+        )
+    }
+
+    static func cacheKey(objectKey: String?, url: URL?) -> String? {
+        if let objectKey, !objectKey.isEmpty {
+            var key = "object:\(objectKey)"
+            if let version = url?.nekoQueryValue(for: "v"), !version.isEmpty {
+                key += "|v:\(version)"
+            }
+            return key
+        }
+
+        if let url {
+            return "url:\(url.absoluteString)"
+        }
+
+        return nil
+    }
+
+    func image(objectKey: String?, url: URL?) -> UIImage? {
+        guard let key = Self.cacheKey(objectKey: objectKey, url: url) else { return nil }
+        if let image = image(forKey: key) {
+            return image
+        }
+
+        if let objectKey, !objectKey.isEmpty, key != "object:\(objectKey)" {
+            return image(forKey: "object:\(objectKey)")
+        }
+
+        return nil
+    }
+
+    func store(data: Data, objectKey: String?, url: URL?) {
+        guard let key = Self.cacheKey(objectKey: objectKey, url: url),
+              let image = UIImage(data: data) else {
+            return
+        }
+        store(data: data, image: image, key: key)
+        if let objectKey, !objectKey.isEmpty, key != "object:\(objectKey)" {
+            store(data: data, image: image, key: "object:\(objectKey)")
+        }
+    }
+
+    func remove(objectKey: String?) {
+        guard let objectKey, !objectKey.isEmpty else { return }
+        memoryCache.removeObject(forKey: "object:\(objectKey)" as NSString)
+    }
+
+    func removeAll() {
+        memoryCache.removeAllObjects()
+        ioQueue.async { [diskDirectory, fileManager] in
+            try? fileManager.removeItem(at: diskDirectory)
+            try? fileManager.createDirectory(
+                at: diskDirectory,
+                withIntermediateDirectories: true
+            )
+        }
+    }
+
+    private func image(forKey key: String) -> UIImage? {
+        let nsKey = key as NSString
+        if let cached = memoryCache.object(forKey: nsKey) {
+            return cached
+        }
+
+        let url = fileURL(forKey: key)
+        guard let data = try? Data(contentsOf: url),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+
+        memoryCache.setObject(image, forKey: nsKey, cost: data.count)
+        touch(url)
+        return image
+    }
+
+    private func store(data: Data, image: UIImage, key: String) {
+        memoryCache.setObject(image, forKey: key as NSString, cost: data.count)
+
+        let url = fileURL(forKey: key)
+        ioQueue.async { [fileManager, maxDiskBytes, maxDiskFiles, diskDirectory] in
+            try? fileManager.createDirectory(
+                at: diskDirectory,
+                withIntermediateDirectories: true
+            )
+            try? data.write(to: url, options: .atomic)
+            try? fileManager.setAttributes(
+                [.modificationDate: Date()],
+                ofItemAtPath: url.path
+            )
+            Self.pruneDiskCache(
+                fileManager: fileManager,
+                directory: diskDirectory,
+                maxBytes: maxDiskBytes,
+                maxFiles: maxDiskFiles
+            )
+        }
+    }
+
+    private func touch(_ url: URL) {
+        ioQueue.async { [fileManager] in
+            try? fileManager.setAttributes(
+                [.modificationDate: Date()],
+                ofItemAtPath: url.path
+            )
+        }
+    }
+
+    private func fileURL(forKey key: String) -> URL {
+        let digest = SHA256.hash(data: Data(key.utf8))
+        let filename = digest.map { String(format: "%02x", $0) }.joined()
+        return diskDirectory.appendingPathComponent(filename).appendingPathExtension("img")
+    }
+
+    private static func pruneDiskCache(
+        fileManager: FileManager,
+        directory: URL,
+        maxBytes: Int,
+        maxFiles: Int
+    ) {
+        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        let entries = urls.compactMap { url -> (url: URL, date: Date, size: Int)? in
+            guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
+                return nil
+            }
+            return (
+                url,
+                values.contentModificationDate ?? .distantPast,
+                values.fileSize ?? 0
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.date > rhs.date
+        }
+
+        var totalBytes = 0
+        for (index, entry) in entries.enumerated() {
+            totalBytes += entry.size
+            if index >= maxFiles || totalBytes > maxBytes {
+                try? fileManager.removeItem(at: entry.url)
+            }
+        }
+    }
+}
+
+private extension URL {
+    func nekoQueryValue(for name: String) -> String? {
+        URLComponents(url: self, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == name }?
+            .value
     }
 }
 
