@@ -317,12 +317,19 @@ private struct LovableResultHero: View {
                 onImageLoaded: onAvatarImageLoaded
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(1.03, anchor: .topTrailing)
             .clipped()
 
+            // Keep the real photograph dominant while reserving a quiet editorial
+            // column for the cover copy. The fade disappears before the cat's face.
             LinearGradient(
-                colors: [.white.opacity(0.34), .clear, .clear],
-                startPoint: .topLeading,
-                endPoint: .center
+                stops: [
+                    .init(color: Color(red: 1.0, green: 0.965, blue: 0.982).opacity(0.84), location: 0),
+                    .init(color: Color(red: 0.985, green: 0.940, blue: 1.0).opacity(0.54), location: 0.36),
+                    .init(color: .clear, location: 0.72),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
             )
 
             LinearGradient(
@@ -337,18 +344,21 @@ private struct LovableResultHero: View {
             .frame(height: 300)
             .frame(maxWidth: .infinity, alignment: .bottom)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("CAT")
-                Text("PROFILE")
+            VStack(alignment: .leading, spacing: 1) {
+                Text("CAT\nPROFILE")
+                    .lineSpacing(1)
                 Rectangle()
                     .frame(width: 26, height: 1)
-                    .padding(.top, 5)
+                    .padding(.vertical, 7)
+                Text("A Kinder\nWorld\nWith Cats")
+                    .font(.system(size: 11, weight: .regular, design: .serif))
+                    .lineSpacing(1)
             }
             .font(.system(size: 16, weight: .regular, design: .serif))
             .tracking(0.8)
             .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
             .padding(.leading, 24)
-            .padding(.top, 116)
+            .padding(.top, 112)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -362,15 +372,15 @@ private struct LovableResultHero: View {
                 .lineLimit(1)
 
                 Text(personaType)
-                    .font(.system(size: 40, weight: .regular, design: .serif))
+                    .font(.system(size: 40, weight: .medium, design: .serif))
                     .lineLimit(2)
                     .minimumScaleFactor(0.78)
                     .foregroundStyle(Color(red: 0.24, green: 0.19, blue: 0.46))
                     .padding(.top, 12)
 
                 Text(coreDescription)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineSpacing(4)
+                    .font(.system(size: 16, weight: .medium))
+                    .lineSpacing(6)
                     .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
                     .lineLimit(3)
                     .padding(.top, 10)
@@ -381,10 +391,11 @@ private struct LovableResultHero: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
                             .lineLimit(1)
-                            .padding(.horizontal, 12)
+                            .minimumScaleFactor(0.82)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 8)
                             .padding(.vertical, 6)
                             .background(.white.opacity(0.85), in: Capsule())
-                            .shadow(color: LovableResultStyle.primaryStart.opacity(0.18), radius: 10, x: 0, y: 5)
                     }
                 }
                 .padding(.top, 14)
