@@ -107,7 +107,10 @@ struct LovablePersonaResultPage: View {
 
                         LovableLittleWorldSection(
                             catName: displayName,
-                            contentWidth: proxy.size.width
+                            contentWidth: proxy.size.width,
+                            avatarImage: avatarImage ?? loadedAvatarImage,
+                            avatarURL: avatarURL,
+                            avatarObjectKey: avatarObjectKey
                         )
 
                         LovableCatInsightSection(insights: personaInsights)
@@ -299,7 +302,6 @@ private struct LovableResultInsight: Identifiable {
 
 private struct LovableResultScene: Identifiable {
     var id: String { title }
-    let assetName: String
     let title: String
     let line: String
 }
@@ -454,11 +456,14 @@ private struct LovableResultHero: View {
 private struct LovableLittleWorldSection: View {
     let catName: String
     let contentWidth: CGFloat
+    let avatarImage: UIImage?
+    let avatarURL: URL?
+    let avatarObjectKey: String?
 
     private let scenes = [
-        LovableResultScene(assetName: "neko-noble", title: "靠窗发呆", line: "我喜欢你在，但不用一直陪我。"),
-        LovableResultScene(assetName: "neko-magic", title: "偷偷陪伴", line: "你忙你的，我在旁边就好。"),
-        LovableResultScene(assetName: "neko-pink", title: "睡前守候", line: "等你睡了，我再走。"),
+        LovableResultScene(title: "靠窗发呆", line: "保留它真实的样子，换一种光线看看。"),
+        LovableResultScene(title: "偷偷陪伴", line: "还是熟悉的它，只把这一刻重新构图。"),
+        LovableResultScene(title: "心里的小王国", line: "猫咪本人不变，只添一点梦幻氛围。"),
     ]
 
     var body: some View {
@@ -472,7 +477,15 @@ private struct LovableLittleWorldSection: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(Array(scenes.enumerated()), id: \.element.id) { index, scene in
-                        LovableSceneCard(scene: scene, index: index, total: scenes.count, width: cardWidth)
+                        LovableSceneCard(
+                            scene: scene,
+                            index: index,
+                            total: scenes.count,
+                            width: cardWidth,
+                            avatarImage: avatarImage,
+                            avatarURL: avatarURL,
+                            avatarObjectKey: avatarObjectKey
+                        )
                     }
                 }
                 .padding(.leading, 24)
@@ -521,14 +534,22 @@ private struct LovableSceneCard: View {
     let index: Int
     let total: Int
     let width: CGFloat
+    let avatarImage: UIImage?
+    let avatarURL: URL?
+    let avatarObjectKey: String?
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Image(scene.assetName)
-                .resizable()
-                .scaledToFill()
+            LovableAvatarImage(
+                image: avatarImage,
+                remoteURL: avatarURL,
+                objectKey: avatarObjectKey,
+                contentMode: .fill
+            )
                 .frame(width: width, height: width * 1.25)
                 .clipped()
+
+            sceneAtmosphere
 
             LinearGradient(
                 stops: [
@@ -575,6 +596,37 @@ private struct LovableSceneCard: View {
                 .stroke(.white.opacity(0.85), lineWidth: 1)
         }
         .shadow(color: LovableResultStyle.primaryStart.opacity(0.14), radius: 18, x: 0, y: 10)
+    }
+
+    @ViewBuilder
+    private var sceneAtmosphere: some View {
+        switch index % 3 {
+        case 0:
+            LinearGradient(
+                colors: [.white.opacity(0.08), Color(red: 0.78, green: 0.70, blue: 0.96).opacity(0.22)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case 1:
+            LinearGradient(
+                colors: [Color(red: 0.12, green: 0.10, blue: 0.24).opacity(0.12), Color(red: 0.54, green: 0.42, blue: 0.76).opacity(0.26)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        default:
+            ZStack {
+                LinearGradient(
+                    colors: [Color(red: 0.96, green: 0.78, blue: 0.90).opacity(0.12), Color(red: 0.68, green: 0.58, blue: 0.92).opacity(0.25)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Circle()
+                    .fill(.white.opacity(0.20))
+                    .frame(width: width * 0.42, height: width * 0.42)
+                    .blur(radius: 20)
+                    .offset(x: width * 0.28, y: -width * 0.38)
+            }
+        }
     }
 }
 
@@ -896,7 +948,13 @@ private struct LovableResultShareImage: View {
             }
             .frame(height: 520)
 
-            LovableLittleWorldSection(catName: catName, contentWidth: width)
+            LovableLittleWorldSection(
+                catName: catName,
+                contentWidth: width,
+                avatarImage: avatarImage,
+                avatarURL: nil,
+                avatarObjectKey: nil
+            )
             LovableCatInsightSection(insights: insights)
             LovableBondSection(
                 catName: catName,
