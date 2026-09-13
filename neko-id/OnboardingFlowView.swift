@@ -916,83 +916,147 @@ private struct OnboardingQuizScreen: View {
     let onSkip: () -> Void
     let onBack: () -> Void
 
+    @State private var currentQuestionIndex = 0
+
+    private let questions = QuizQuestion.onboarding
+
+    private var currentQuestion: QuizQuestion {
+        questions[min(currentQuestionIndex, questions.count - 1)]
+    }
+
+    private var isLastQuestion: Bool {
+        currentQuestionIndex == questions.count - 1
+    }
+
+    private var hasSelectedAnswer: Bool {
+        answers[currentQuestion.id] != nil
+    }
+
     var body: some View {
-        OnboardingScrollableStep(
-            step: 3,
-            title: "行为小测试",
-            subtitle: "帮助 AI 更准确理解它（可跳过）",
-            onBack: onBack,
-            skipAction: onSkip
-        ) {
-            VStack(spacing: 12) {
-                ForEach(QuizQuestion.onboarding) { question in
-                    OnboardingCard(cornerRadius: 22, topPadding: 0) {
-                        HStack(alignment: .center, spacing: 8) {
-                            Text("\(question.id + 1)")
-                                .font(.system(size: NekoTypography.web(10), weight: .medium))
-                                .foregroundStyle(OnboardingWeb.questionNumber)
-                                .frame(width: 20, height: 20)
-                                .background(Color(red: 0.984, green: 0.904, blue: 1.0), in: Circle())
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button(action: goBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(OnboardingWeb.soulViolet)
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.78), in: Circle())
+                }
+                .buttonStyle(.plain)
 
-                            Text(question.question)
-                                .font(.system(size: NekoTypography.web(12.5), weight: .medium))
-                                .foregroundStyle(OnboardingWeb.ink)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                Spacer()
 
-                        HStack(spacing: 8) {
-                            QuizOptionButton(
-                                label: "A",
-                                text: question.optionA,
-                                active: answers[question.id] == .a
-                            ) {
-                                toggleAnswer(question.id, .a)
-                            }
+                Text("行为小测试")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(OnboardingWeb.ink)
 
-                            QuizOptionButton(
-                                label: "B",
-                                text: question.optionB,
-                                active: answers[question.id] == .b
-                            ) {
-                                toggleAnswer(question.id, .b)
-                            }
+                Spacer()
 
-                            QuizOptionButton(
-                                label: "C",
-                                text: question.optionC,
-                                active: answers[question.id] == .c
-                            ) {
-                                toggleAnswer(question.id, .c)
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
+                Button("跳过", action: onSkip)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(OnboardingWeb.questionNumber)
+                    .frame(width: 44, height: 44, alignment: .trailing)
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+
+            HStack(spacing: 5) {
+                ForEach(questions.indices, id: \.self) { index in
+                    Capsule()
+                        .fill(index <= currentQuestionIndex ? OnboardingWeb.activeBar : OnboardingWeb.border.opacity(0.60))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 3)
                 }
             }
-        } footer: {
-            VStack(spacing: 10) {
-                Button {
-                    onNext()
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("好了，开始解析")
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(currentQuestionIndex + 1) / \(questions.count)")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(OnboardingWeb.questionNumber)
+
+                    Text(currentQuestion.question)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(OnboardingWeb.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
+
+                    VStack(spacing: 12) {
+                        QuizOptionButton(
+                            label: "A",
+                            text: currentQuestion.optionA,
+                            active: answers[currentQuestion.id] == .a
+                        ) {
+                            selectAnswer(.a)
+                        }
+
+                        QuizOptionButton(
+                            label: "B",
+                            text: currentQuestion.optionB,
+                            active: answers[currentQuestion.id] == .b
+                        ) {
+                            selectAnswer(.b)
+                        }
+
+                        QuizOptionButton(
+                            label: "C",
+                            text: currentQuestion.optionC,
+                            active: answers[currentQuestion.id] == .c
+                        ) {
+                            selectAnswer(.c)
+                        }
+                    }
+                    .padding(.top, 28)
+                }
+                .id(currentQuestion.id)
+                .padding(.horizontal, 24)
+                .padding(.top, 38)
+                .padding(.bottom, 28)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+
+            Button(action: advance) {
+                HStack(spacing: 7) {
+                    Text(isLastQuestion ? "看看它的猫格" : "下一题")
+                    if isLastQuestion {
                         Text("✨")
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(OnboardingPrimaryButtonStyle())
-
-                Text("AI 将结合测试结果，\n生成更准确的人格分析")
-                    .font(.system(size: NekoTypography.web(10.5), weight: .regular))
-                    .lineSpacing(3)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(OnboardingWeb.muted)
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(OnboardingPrimaryButtonStyle())
+            .disabled(!hasSelectedAnswer)
+            .opacity(hasSelectedAnswer ? 1 : 0.48)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+            .background(OnboardingFooterFade())
+        }
+        .animation(.easeInOut(duration: 0.22), value: currentQuestionIndex)
+    }
+
+    private func selectAnswer(_ choice: QuizChoice) {
+        answers[currentQuestion.id] = choice
+    }
+
+    private func advance() {
+        guard hasSelectedAnswer else { return }
+        if isLastQuestion {
+            onNext()
+        } else {
+            currentQuestionIndex += 1
         }
     }
 
-    private func toggleAnswer(_ id: Int, _ choice: QuizChoice) {
-        answers[id] = answers[id] == choice ? nil : choice
+    private func goBack() {
+        if currentQuestionIndex > 0 {
+            currentQuestionIndex -= 1
+        } else {
+            onBack()
+        }
     }
 }
 
@@ -1317,31 +1381,45 @@ private struct QuizOptionButton: View {
         Button {
             onTap()
         } label: {
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 14) {
                 Text(label)
-                    .font(.system(size: NekoTypography.web(10), weight: .medium))
-                    .frame(width: 20, height: 20)
-                    .background(active ? .white.opacity(0.25) : Color(red: 0.95, green: 0.92, blue: 0.98), in: Circle())
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(active ? .white : OnboardingWeb.questionNumber)
+                    .frame(width: 30, height: 30)
+                    .background(active ? OnboardingWeb.soulViolet : Color(red: 0.95, green: 0.92, blue: 0.98), in: Circle())
+
                 Text(text)
-                    .font(.system(size: NekoTypography.web(12), weight: active ? .medium : .regular))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.86)
+                    .font(.system(size: 17, weight: active ? .medium : .regular))
+                    .foregroundStyle(OnboardingWeb.ink)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+
+                if active {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(OnboardingWeb.soulViolet)
+                        .accessibilityHidden(true)
+                }
             }
-            .foregroundStyle(active ? .white : OnboardingWeb.ink)
-            .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(
                 active
-                    ? AnyShapeStyle(OnboardingWeb.selectedGradient)
-                    : AnyShapeStyle(Color.white.opacity(0.70)),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    ? AnyShapeStyle(Color(red: 0.95, green: 0.91, blue: 0.98).opacity(0.92))
+                    : AnyShapeStyle(Color.white.opacity(0.72)),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(active ? .clear : OnboardingWeb.border.opacity(0.55), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(active ? OnboardingWeb.soulViolet.opacity(0.34) : OnboardingWeb.border.opacity(0.55), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(label)，\(text)")
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
