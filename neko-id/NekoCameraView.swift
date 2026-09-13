@@ -95,9 +95,9 @@ struct NekoCameraView: View {
                 },
                 onConfirm: { image in
                     recentImage = image
-                    capturedImage = image
                     camera.stop()
                     showsPhotoLibrary = false
+                    onUsePhoto(image)
                 }
             )
             .statusBarHidden(false)
@@ -117,15 +117,6 @@ struct NekoCameraView: View {
             .accessibilityLabel("关闭相机")
 
             Spacer()
-
-            Text("喵懂")
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(4.2)
-                .foregroundStyle(.white.opacity(0.88))
-
-            Spacer()
-
-            Color.clear.frame(width: 42, height: 42)
         }
     }
 

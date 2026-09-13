@@ -7,6 +7,49 @@
 
 import Foundation
 
+private struct BehaviorProfile {
+    let sociability: Int?
+    let curiosity: Int?
+    let vigilance: Int?
+    let attachment: Int?
+    let expressiveness: Int?
+    let boundary: Int?
+    let loveLanguage: String
+    let needExpression: String
+
+    static func from(_ answers: [Int: QuizChoice]) -> BehaviorProfile {
+        let keys = ["sociability", "curiosity", "vigilance", "attachment", "expressiveness", "boundary"]
+        var sums = Dictionary(uniqueKeysWithValues: keys.map { ($0, 0) })
+        var counts = sums
+        let deltas: [Int: [QuizChoice: [String: Int]]] = [
+            0: [.a: ["sociability": 2, "vigilance": -1], .b: ["sociability": 0, "vigilance": 1], .c: ["sociability": -2, "vigilance": 2]],
+            1: [.a: ["curiosity": 2, "vigilance": -1], .b: ["curiosity": 1, "vigilance": 2], .c: ["curiosity": -2, "vigilance": -1]],
+            2: [.a: ["attachment": 2, "expressiveness": 2], .b: ["attachment": 1, "expressiveness": -1], .c: ["attachment": 2, "expressiveness": -2]],
+            3: [.a: ["expressiveness": 2, "attachment": 1], .b: ["expressiveness": -2, "attachment": 1], .c: ["expressiveness": 1, "curiosity": 1]],
+            4: [.a: ["vigilance": 2], .b: ["vigilance": 0], .c: ["vigilance": -2]],
+            5: [.a: ["boundary": 2, "expressiveness": 1], .b: ["boundary": 1, "expressiveness": -1], .c: ["boundary": -2]],
+            6: [.a: ["attachment": 2, "expressiveness": 2], .b: ["attachment": 2, "expressiveness": -1], .c: ["attachment": -1, "expressiveness": -1]],
+            7: [.a: ["attachment": 2, "boundary": -1], .b: ["attachment": 1, "curiosity": 2], .c: ["attachment": 1, "boundary": 2]],
+        ]
+        for (index, answer) in answers {
+            for (key, delta) in deltas[index]?[answer] ?? [:] {
+                sums[key, default: 0] += delta
+                counts[key, default: 0] += 1
+            }
+        }
+        func score(_ key: String) -> Int? {
+            guard let count = counts[key], count > 0 else { return nil }
+            return min(82, max(18, Int((50 + Double(sums[key, default: 0]) / Double(count) * 16).rounded())))
+        }
+        return BehaviorProfile(
+            sociability: score("sociability"), curiosity: score("curiosity"), vigilance: score("vigilance"),
+            attachment: score("attachment"), expressiveness: score("expressiveness"), boundary: score("boundary"),
+            loveLanguage: answers[7] == .a ? "亲密接触" : answers[7] == .b ? "互动玩耍" : answers[7] == .c ? "安静共处" : "未知",
+            needExpression: answers[3] == .a ? "直球型" : answers[3] == .b ? "暗示型" : answers[3] == .c ? "行动型" : "未知"
+        )
+    }
+}
+
 enum PersonaGenerator {
     static func generate(
         profile draft: CatProfileDraft,
@@ -15,55 +58,15 @@ enum PersonaGenerator {
         hasAvatar: Bool
     ) -> CatPersonaResult {
         let name = draft.trimmedName.isEmpty ? "这只小猫" : draft.trimmedName
-        var affection = 56
-        var independence = 56
-        var curiosity = 56
-        var security = 58
-        var alertness = 52
-
-        for (index, choice) in quizAnswers {
-            switch (index, choice) {
-            case (0, .a):
-                security += 10
-                alertness += 6
-            case (0, .b):
-                curiosity += 10
-            case (1, .a):
-                curiosity += 12
-            case (1, .b):
-                security += 8
-                alertness += 4
-            case (2, .a):
-                affection += 12
-            case (2, .b):
-                independence += 8
-            case (3, .a):
-                affection += 10
-            case (3, .b):
-                independence += 10
-            case (4, .a):
-                alertness += 12
-                security += 4
-            case (4, .b):
-                independence += 8
-            case (5, .a):
-                curiosity += 10
-            case (5, .b):
-                independence += 6
-            case (6, .a):
-                affection += 9
-                security += 4
-            case (6, .b):
-                independence += 10
-            case (7, .a):
-                affection += 11
-                security += 5
-            case (7, .b):
-                independence += 9
-            default:
-                break
-            }
-        }
+        let behavior = BehaviorProfile.from(quizAnswers)
+        var affection = behavior.attachment ?? 50
+        var independence = 100 - (behavior.attachment ?? 50)
+        var curiosity = behavior.curiosity ?? 50
+        var security = 100 - (behavior.vigilance ?? 50)
+        var alertness = behavior.vigilance ?? 50
+        let expressiveness = behavior.expressiveness ?? 50
+        let boundary = behavior.boundary ?? 50
+        let sociability = behavior.sociability ?? 50
 
         switch draft.ageStage {
         case .kitten:
@@ -84,14 +87,26 @@ enum PersonaGenerator {
         let mbti: String
         let mood: String
 
-        if curiosity >= 78 && affection >= 70 {
-            type = "好奇贴贴家"
+        if affection >= 68 && expressiveness <= 42 {
+            type = "喜欢你但不爱黏着你"
+            mbti = "ISFJ-A"
+            mood = "在意你，但表达得很安静"
+        } else if sociability <= 42 && affection >= 68 {
+            type = "熟人限定的小黏猫"
+            mbti = "INFJ-A"
+            mood = "只对熟悉的人主动"
+        } else if curiosity >= 68 && alertness >= 68 {
+            type = "又怂又想看的好奇派"
+            mbti = "INTP-T"
+            mood = "好奇，但要先确认安全"
+        } else if curiosity >= 68 && affection >= 68 {
+            type = "爱玩也爱找你的小猫"
             mbti = "ENFP-A"
             mood = "今天也想探索新角落"
-        } else if independence >= 78 && alertness >= 65 {
-            type = "优雅观察者"
+        } else if boundary >= 68 && affection >= 68 {
+            type = "喜欢你也很有边界"
             mbti = "INTJ-A"
-            mood = "安静观察，也悄悄在意你"
+            mood = "亲近要按自己的节奏"
         } else if security >= 78 {
             type = "慢热守护者"
             mbti = "ISFJ-A"

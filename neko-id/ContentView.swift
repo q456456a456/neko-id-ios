@@ -4719,25 +4719,39 @@ private struct PublishBackgroundScreen: View {
                             PublishSectionTitle("文字描述")
                             ZStack(alignment: .topLeading) {
                                 if scene.isEmpty {
-                                    Text("例如：我刚打开猫条，它就跑过来了")
+                                    Text("例如：刚刚拿逗猫棒逗它，它一直盯着但没扑过来")
                                         .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                         .foregroundStyle(NekoTheme.mutedLight)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 13)
+                                        .padding(.top, 8)
+                                        .allowsHitTesting(false)
                                 }
                                 TextEditor(text: $scene)
                                     .font(.system(size: NekoTypography.web(12.5), weight: .regular))
                                     .foregroundStyle(NekoTheme.ink)
                                     .lineSpacing(4)
                                     .scrollContentBackground(.hidden)
-                                    .padding(8)
-                                    .frame(minHeight: 110)
-                                    .background(PublishWebStyle.textarea, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .padding(.horizontal, -5)
+                                    .padding(.bottom, 20)
+                                    .frame(minHeight: 112)
+                                    .background(.clear)
+
+                                Text("\(scene.count)/120")
+                                    .font(.system(size: NekoTypography.web(10), weight: .regular))
+                                    .foregroundStyle(PublishWebStyle.step.opacity(0.82))
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                                    .allowsHitTesting(false)
                             }
-                            Text("\(scene.count) / 120")
-                                .font(.system(size: NekoTypography.web(9.5), weight: .regular))
-                                .foregroundStyle(PublishWebStyle.step.opacity(0.82))
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+
+                            HStack(spacing: 8) {
+                                ForEach(["在玩", "刚睡醒", "在看我"], id: \.self) { prompt in
+                                    Button(prompt) { applyQuickPrompt(prompt) }
+                                        .font(.system(size: NekoTypography.web(11), weight: .medium))
+                                        .foregroundStyle(NekoTheme.soulViolet)
+                                        .padding(.horizontal, 12)
+                                        .frame(height: 32)
+                                        .background(NekoTheme.soulViolet.opacity(0.07), in: Capsule())
+                                }
+                            }
                         }
                         .padding(16)
                         .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -4758,6 +4772,10 @@ private struct PublishBackgroundScreen: View {
                     .frame(width: proxy.size.width)
             }
         }
+    }
+
+    private func applyQuickPrompt(_ prompt: String) {
+        scene = scene.isEmpty ? prompt : "\(scene)，\(prompt)"
     }
 }
 
@@ -5284,12 +5302,21 @@ private struct VoiceResultCard: View {
                         .padding(12)
                 }
                 if isLoading {
-                    ProgressView("AI 正在听它怎么说")
-                        .tint(.white)
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(Color.black.opacity(0.25), in: Capsule())
-                        .padding(.top, 100)
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 7) {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(NekoTheme.soulViolet)
+                            Text("正在读懂这一刻…")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .foregroundStyle(NekoTheme.ink.opacity(0.82))
+                        .padding(.horizontal, 13)
+                        .frame(height: 38)
+                        .background(.white.opacity(0.72), in: Capsule())
+                        .padding(.bottom, 16)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -5297,9 +5324,13 @@ private struct VoiceResultCard: View {
             if !displayTags.isEmpty {
                 NekoFlowLayout(spacing: 8, lineSpacing: 8) {
                     ForEach(displayTags, id: \.self) { tag in
-                        VoiceTagChip(tag: tag.hasPrefix("#") ? tag : "#\(tag)")
+                        VoiceTagChip(tag: tag)
                     }
                 }
+            }
+
+            if let subtext = voice?.subtext?.nonEmpty {
+                VoiceSubtextBlock(text: subtext)
             }
 
             VoiceInsightBlock(analysis: voice?.analysis, fallbackText: analysisText)
@@ -5320,7 +5351,27 @@ private struct VoiceResultCard: View {
     }
 
     private var displayTags: [String] {
-        Array((voice?.share?.tags ?? voice?.tags ?? []).prefix(3))
+        Array((voice?.share?.tags ?? voice?.tags ?? []).prefix(3)).map {
+            $0.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        }
+    }
+}
+
+private struct VoiceSubtextBlock: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("它没说出口的小心思")
+                .font(.system(size: NekoTypography.web(11), weight: .medium))
+                .foregroundStyle(NekoTheme.soulViolet)
+            Text(text)
+                .font(.system(size: NekoTypography.web(13.5), weight: .medium))
+                .foregroundStyle(NekoTheme.ink.opacity(0.88))
+                .lineSpacing(4)
+        }
+        .padding(.horizontal, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

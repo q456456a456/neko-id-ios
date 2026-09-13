@@ -76,6 +76,7 @@ struct CatProfile: Identifiable, Codable, Equatable {
 enum QuizChoice: String, Codable, Equatable {
     case a
     case b
+    case c
 }
 
 struct QuizQuestion: Identifiable, Equatable {
@@ -83,16 +84,17 @@ struct QuizQuestion: Identifiable, Equatable {
     let question: String
     let optionA: String
     let optionB: String
+    let optionC: String
 
     static let onboarding: [QuizQuestion] = [
-        QuizQuestion(id: 0, question: "陌生人来家里时，它通常会？", optionA: "立刻躲起来", optionB: "主动观察"),
-        QuizQuestion(id: 1, question: "家里出现新玩具时，它会？", optionA: "立即研究", optionB: "观察很久再靠近"),
-        QuizQuestion(id: 2, question: "你回家时，它会？", optionA: "马上出现", optionB: "假装不在意"),
-        QuizQuestion(id: 3, question: "被抚摸的时候，它更喜欢？", optionA: "蹭过来", optionB: "保持一点距离"),
-        QuizQuestion(id: 4, question: "听到突然的声响，它会？", optionA: "瞬间警觉", optionB: "懒得理你"),
-        QuizQuestion(id: 5, question: "看见镜子里的自己，它会？", optionA: "好奇靠近", optionB: "完全无视"),
-        QuizQuestion(id: 6, question: "你忙的时候，它通常？", optionA: "在你脚边", optionB: "找自己的位置"),
-        QuizQuestion(id: 7, question: "睡觉时，它喜欢？", optionA: "和你贴着", optionB: "独占一个角落"),
+        QuizQuestion(id: 0, question: "陌生人来到家里时，它通常会？", optionA: "很快靠近，主动看看是谁", optionB: "保持一点距离，先观察一阵", optionC: "先躲起来，确定安全再说"),
+        QuizQuestion(id: 1, question: "家里出现一个从没见过的东西，它通常？", optionA: "第一时间凑过去研究", optionB: "远远观察，过一会儿再靠近", optionC: "兴趣不大，基本懒得管"),
+        QuizQuestion(id: 2, question: "你回到家时，它通常？", optionA: "很快出现，主动来迎接你", optionB: "看见你了，但继续待在原来的地方", optionC: "表面没什么反应，过一会儿才靠近"),
+        QuizQuestion(id: 3, question: "它想让你做什么时，通常怎么告诉你？", optionA: "叫你、蹭你，想办法让你注意到", optionB: "待在附近看着你，等你自己发现", optionC: "直接行动，比如带你过去或扒拉东西"),
+        QuizQuestion(id: 4, question: "突然出现很大的声音或动静，它通常？", optionA: "马上警觉，先确认发生了什么", optionB: "会被吓一下，但很快恢复正常", optionC: "基本没什么反应，该干嘛干嘛"),
+        QuizQuestion(id: 5, question: "遇到自己不喜欢的互动时，它通常？", optionA: "很快明确表达：走开、挣脱或拒绝", optionB: "会忍一会儿，不舒服了才离开", optionC: "大多数时候都挺配合"),
+        QuizQuestion(id: 6, question: "你忙自己的事情时，它通常？", optionA: "会主动来找你，希望你注意它", optionB: "喜欢待在你附近，但不一定打扰你", optionC: "自己找地方待着，各忙各的"),
+        QuizQuestion(id: 7, question: "如果让它自己选，它最喜欢你怎么陪它？", optionA: "摸摸它、抱抱它，和它贴贴", optionB: "陪它玩、逗它，一起做点什么", optionC: "不用一直互动，待在它附近就好"),
     ]
 }
 
@@ -124,9 +126,12 @@ struct CatPersonaResult: Codable, Equatable {
     var matchScore: Int
     var monologue: String
     var analysis: String
+    var corePersonality: String?
     var misunderstanding: String?
     var loveLanguage: String?
+    var loveLanguageInsight: String?
     var ownerRole: String
+    var ownerRelationship: String?
     var tags: [String]
     var traits: [PersonaTrait]
     var observations: [PersonaObservation]
@@ -141,9 +146,12 @@ struct CatPersonaResult: Codable, Equatable {
         case matchScore
         case monologue
         case analysis
+        case corePersonality
         case misunderstanding
         case loveLanguage
+        case loveLanguageInsight
         case ownerRole
+        case ownerRelationship
         case tags
         case traits
         case observations
@@ -159,9 +167,12 @@ struct CatPersonaResult: Codable, Equatable {
         matchScore: Int,
         monologue: String,
         analysis: String,
+        corePersonality: String? = nil,
         misunderstanding: String? = nil,
         loveLanguage: String? = nil,
+        loveLanguageInsight: String? = nil,
         ownerRole: String,
+        ownerRelationship: String? = nil,
         tags: [String],
         traits: [PersonaTrait],
         observations: [PersonaObservation],
@@ -175,9 +186,12 @@ struct CatPersonaResult: Codable, Equatable {
         self.matchScore = matchScore
         self.monologue = monologue
         self.analysis = analysis
+        self.corePersonality = corePersonality
         self.misunderstanding = misunderstanding
         self.loveLanguage = loveLanguage
+        self.loveLanguageInsight = loveLanguageInsight
         self.ownerRole = ownerRole
+        self.ownerRelationship = ownerRelationship
         self.tags = tags
         self.traits = traits
         self.observations = observations
@@ -194,9 +208,12 @@ struct CatPersonaResult: Codable, Equatable {
         matchScore = try container.decode(Int.self, forKey: .matchScore)
         monologue = try container.decode(String.self, forKey: .monologue)
         analysis = try container.decode(String.self, forKey: .analysis)
+        corePersonality = try container.decodeIfPresent(String.self, forKey: .corePersonality)
         misunderstanding = try container.decodeIfPresent(String.self, forKey: .misunderstanding)
         loveLanguage = try container.decodeIfPresent(String.self, forKey: .loveLanguage)
+        loveLanguageInsight = try container.decodeIfPresent(String.self, forKey: .loveLanguageInsight)
         ownerRole = try container.decode(String.self, forKey: .ownerRole)
+        ownerRelationship = try container.decodeIfPresent(String.self, forKey: .ownerRelationship)
         tags = try container.decode([String].self, forKey: .tags)
         traits = try container.decode([PersonaTrait].self, forKey: .traits)
         observations = try container.decode([PersonaObservation].self, forKey: .observations)
@@ -258,6 +275,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
     var time: String
     var grad: String
     var text: String
+    var subtext: String?
     var location: String?
     var tags: [String]
     var createdAt: Int64?
@@ -284,6 +302,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         case time
         case grad
         case text
+        case subtext
         case location
         case tags
         case createdAt
@@ -301,6 +320,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         time: String,
         grad: String,
         text: String,
+        subtext: String? = nil,
         location: String? = nil,
         tags: [String] = [],
         createdAt: Int64? = nil,
@@ -316,6 +336,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         self.time = time
         self.grad = grad
         self.text = text
+        self.subtext = subtext
         self.location = location
         self.tags = tags
         self.createdAt = createdAt
@@ -335,6 +356,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         grad = try container.decodeIfPresent(String.self, forKey: .grad)
             ?? "linear-gradient(135deg, oklch(0.9 0.06 280), oklch(0.92 0.05 320))"
         text = try container.decode(String.self, forKey: .text)
+        subtext = try container.decodeIfPresent(String.self, forKey: .subtext)
         location = try container.decodeIfPresent(String.self, forKey: .location)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt)

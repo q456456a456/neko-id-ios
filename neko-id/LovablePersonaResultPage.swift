@@ -55,13 +55,13 @@ struct LovablePersonaResultPage: View {
 
     private var loveLanguage: String {
         trimmed(
-            persona.loveLanguage ?? "",
+            persona.loveLanguageInsight ?? persona.loveLanguage ?? "",
             fallback: "如果它平时也常待在你附近却不紧贴，它可能更习惯用关注你的动向、共享同一片空间来表达亲近。"
         )
     }
 
     private var ownerRole: String {
-        trimmed(persona.ownerRole, fallback: "我的安全区")
+        trimmed(persona.ownerRelationship ?? persona.ownerRole, fallback: "我的安全区")
     }
 
     private var personaKeywords: [String] {

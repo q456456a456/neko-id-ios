@@ -563,7 +563,7 @@ private struct OnboardingWelcomeScreen: View {
                     Button {
                         onStart()
                     } label: {
-                        HStack(spacing: 8) {
+                        VStack(spacing: 8) {
                             Text("开始创建猫咪人格档案")
                                 .tracking(1)
                             Text("✨")
@@ -955,6 +955,14 @@ private struct OnboardingQuizScreen: View {
                                 active: answers[question.id] == .b
                             ) {
                                 toggleAnswer(question.id, .b)
+                            }
+
+                            QuizOptionButton(
+                                label: "C",
+                                text: question.optionC,
+                                active: answers[question.id] == .c
+                            ) {
+                                toggleAnswer(question.id, .c)
                             }
                         }
                         .padding(.top, 2)
