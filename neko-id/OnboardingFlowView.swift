@@ -916,26 +916,12 @@ private struct OnboardingQuizScreen: View {
     let onSkip: () -> Void
     let onBack: () -> Void
 
-    @State private var currentQuestionIndex = 0
-
     private let questions = QuizQuestion.onboarding
-
-    private var currentQuestion: QuizQuestion {
-        questions[min(currentQuestionIndex, questions.count - 1)]
-    }
-
-    private var isLastQuestion: Bool {
-        currentQuestionIndex == questions.count - 1
-    }
-
-    private var hasSelectedAnswer: Bool {
-        answers[currentQuestion.id] != nil
-    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Button(action: goBack) {
+                Button(action: onBack) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(OnboardingWeb.soulViolet)
@@ -961,102 +947,78 @@ private struct OnboardingQuizScreen: View {
             .padding(.horizontal, 20)
             .padding(.top, 8)
 
-            HStack(spacing: 5) {
-                ForEach(questions.indices, id: \.self) { index in
-                    Capsule()
-                        .fill(index <= currentQuestionIndex ? OnboardingWeb.activeBar : OnboardingWeb.border.opacity(0.60))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 3)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("帮助 AI 更准确理解它（可跳过）")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(OnboardingWeb.muted)
+                    Spacer()
+                    Text("已完成 \(answers.count) / \(questions.count)")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(OnboardingWeb.questionNumber)
                 }
+
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(OnboardingWeb.border.opacity(0.45))
+                        .overlay(alignment: .leading) {
+                            Capsule()
+                                .fill(OnboardingWeb.activeBar)
+                                .frame(width: proxy.size.width * CGFloat(answers.count) / CGFloat(questions.count))
+                        }
+                }
+                .frame(height: 3)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 8)
+            .padding(.top, 4)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(currentQuestionIndex + 1) / \(questions.count)")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(OnboardingWeb.questionNumber)
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    ForEach(Array(questions.enumerated()), id: \.element.id) { index, question in
+                        VStack(alignment: .leading, spacing: 13) {
+                            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                                Text(String(format: "%02d", index + 1))
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(OnboardingWeb.questionNumber)
 
-                    Text(currentQuestion.question)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(OnboardingWeb.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 12)
+                                Text(question.question)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .lineSpacing(7)
+                                    .foregroundStyle(OnboardingWeb.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
 
-                    VStack(spacing: 12) {
-                        QuizOptionButton(
-                            label: "A",
-                            text: currentQuestion.optionA,
-                            active: answers[currentQuestion.id] == .a
-                        ) {
-                            selectAnswer(.a)
-                        }
-
-                        QuizOptionButton(
-                            label: "B",
-                            text: currentQuestion.optionB,
-                            active: answers[currentQuestion.id] == .b
-                        ) {
-                            selectAnswer(.b)
-                        }
-
-                        QuizOptionButton(
-                            label: "C",
-                            text: currentQuestion.optionC,
-                            active: answers[currentQuestion.id] == .c
-                        ) {
-                            selectAnswer(.c)
+                            VStack(spacing: 8) {
+                                QuizOptionButton(label: "A", text: question.optionA, active: answers[question.id] == .a) {
+                                    answers[question.id] = .a
+                                }
+                                QuizOptionButton(label: "B", text: question.optionB, active: answers[question.id] == .b) {
+                                    answers[question.id] = .b
+                                }
+                                QuizOptionButton(label: "C", text: question.optionC, active: answers[question.id] == .c) {
+                                    answers[question.id] = .c
+                                }
+                            }
                         }
                     }
-                    .padding(.top, 28)
                 }
-                .id(currentQuestion.id)
                 .padding(.horizontal, 24)
-                .padding(.top, 38)
-                .padding(.bottom, 28)
-                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                .padding(.top, 20)
+                .padding(.bottom, 104)
             }
 
-            Button(action: advance) {
-                HStack(spacing: 7) {
-                    Text(isLastQuestion ? "看看它的猫格" : "下一题")
-                    if isLastQuestion {
-                        Text("✨")
-                    }
-                }
+            Button(action: onNext) {
+                Text("好了，开始解析 ✨")
+                    .lineLimit(1)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(OnboardingPrimaryButtonStyle())
-            .disabled(!hasSelectedAnswer)
-            .opacity(hasSelectedAnswer ? 1 : 0.48)
             .padding(.horizontal, 20)
-            .padding(.top, 12)
+            .padding(.top, 8)
             .padding(.bottom, 10)
             .background(OnboardingFooterFade())
         }
-        .animation(.easeInOut(duration: 0.22), value: currentQuestionIndex)
-    }
-
-    private func selectAnswer(_ choice: QuizChoice) {
-        answers[currentQuestion.id] = choice
-    }
-
-    private func advance() {
-        guard hasSelectedAnswer else { return }
-        if isLastQuestion {
-            onNext()
-        } else {
-            currentQuestionIndex += 1
-        }
-    }
-
-    private func goBack() {
-        if currentQuestionIndex > 0 {
-            currentQuestionIndex -= 1
-        } else {
-            onBack()
-        }
+        .animation(.easeInOut(duration: 0.18), value: answers.count)
     }
 }
 
@@ -1403,9 +1365,9 @@ private struct QuizOptionButton: View {
                         .accessibilityHidden(true)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .background(
                 active
                     ? AnyShapeStyle(Color(red: 0.95, green: 0.91, blue: 0.98).opacity(0.92))

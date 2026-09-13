@@ -10,26 +10,32 @@ import Foundation
 private struct BehaviorProfile {
     let sociability: Int?
     let curiosity: Int?
-    let vigilance: Int?
-    let attachment: Int?
-    let expressiveness: Int?
+    let caution: Int?
+    let attachmentExpression: Int?
+    let independence: Int?
     let boundary: Int?
+    let environmentalSensitivity: Int?
+    let interactionPreference: Int?
     let loveLanguage: String
     let needExpression: String
 
+    var vigilance: Int? { environmentalSensitivity ?? caution }
+    var attachment: Int? { attachmentExpression }
+    var expressiveness: Int? { interactionPreference }
+
     static func from(_ answers: [Int: QuizChoice]) -> BehaviorProfile {
-        let keys = ["sociability", "curiosity", "vigilance", "attachment", "expressiveness", "boundary"]
+        let keys = ["sociability", "curiosity", "caution", "attachmentExpression", "independence", "boundary", "environmentalSensitivity", "interactionPreference"]
         var sums = Dictionary(uniqueKeysWithValues: keys.map { ($0, 0) })
         var counts = sums
         let deltas: [Int: [QuizChoice: [String: Int]]] = [
-            0: [.a: ["sociability": 2, "vigilance": -1], .b: ["sociability": 0, "vigilance": 1], .c: ["sociability": -2, "vigilance": 2]],
-            1: [.a: ["curiosity": 2, "vigilance": -1], .b: ["curiosity": 1, "vigilance": 2], .c: ["curiosity": -2, "vigilance": -1]],
-            2: [.a: ["attachment": 2, "expressiveness": 2], .b: ["attachment": 1, "expressiveness": -1], .c: ["attachment": 2, "expressiveness": -2]],
-            3: [.a: ["expressiveness": 2, "attachment": 1], .b: ["expressiveness": -2, "attachment": 1], .c: ["expressiveness": 1, "curiosity": 1]],
-            4: [.a: ["vigilance": 2], .b: ["vigilance": 0], .c: ["vigilance": -2]],
-            5: [.a: ["boundary": 2, "expressiveness": 1], .b: ["boundary": 1, "expressiveness": -1], .c: ["boundary": -2]],
-            6: [.a: ["attachment": 2, "expressiveness": 2], .b: ["attachment": 2, "expressiveness": -1], .c: ["attachment": -1, "expressiveness": -1]],
-            7: [.a: ["attachment": 2, "boundary": -1], .b: ["attachment": 1, "curiosity": 2], .c: ["attachment": 1, "boundary": 2]],
+            0: [.a: ["sociability": 2, "caution": -1], .b: ["caution": 1], .c: ["sociability": -2, "caution": 2]],
+            1: [.a: ["curiosity": 2, "caution": -1], .b: ["curiosity": 1, "caution": 2], .c: ["curiosity": -2]],
+            2: [.a: ["attachmentExpression": 2, "independence": -1], .b: ["attachmentExpression": 1, "independence": 1], .c: ["attachmentExpression": -1, "independence": 2]],
+            3: [.a: ["attachmentExpression": 2, "interactionPreference": 2], .b: ["attachmentExpression": 1, "interactionPreference": -1], .c: ["independence": 2, "interactionPreference": 1]],
+            4: [.a: ["environmentalSensitivity": 2, "caution": 1], .b: ["environmentalSensitivity": 1], .c: ["environmentalSensitivity": -2]],
+            5: [.a: ["boundary": 2], .b: ["boundary": 1], .c: ["boundary": -2]],
+            6: [.a: ["attachmentExpression": 2, "independence": -1], .b: ["independence": 2], .c: ["independence": 1, "curiosity": 1]],
+            7: [.a: ["interactionPreference": 2, "attachmentExpression": 2], .b: ["interactionPreference": 0, "independence": 1], .c: ["interactionPreference": -2, "independence": 2]],
         ]
         for (index, answer) in answers {
             for (key, delta) in deltas[index]?[answer] ?? [:] {
@@ -42,9 +48,10 @@ private struct BehaviorProfile {
             return min(82, max(18, Int((50 + Double(sums[key, default: 0]) / Double(count) * 16).rounded())))
         }
         return BehaviorProfile(
-            sociability: score("sociability"), curiosity: score("curiosity"), vigilance: score("vigilance"),
-            attachment: score("attachment"), expressiveness: score("expressiveness"), boundary: score("boundary"),
-            loveLanguage: answers[7] == .a ? "亲密接触" : answers[7] == .b ? "互动玩耍" : answers[7] == .c ? "安静共处" : "未知",
+            sociability: score("sociability"), curiosity: score("curiosity"), caution: score("caution"),
+            attachmentExpression: score("attachmentExpression"), independence: score("independence"), boundary: score("boundary"),
+            environmentalSensitivity: score("environmentalSensitivity"), interactionPreference: score("interactionPreference"),
+            loveLanguage: answers[7] == .a ? "密集互动" : answers[7] == .b ? "安静共处" : answers[7] == .c ? "按需靠近" : "未知",
             needExpression: answers[3] == .a ? "直球型" : answers[3] == .b ? "暗示型" : answers[3] == .c ? "行动型" : "未知"
         )
     }
@@ -60,7 +67,7 @@ enum PersonaGenerator {
         let name = draft.trimmedName.isEmpty ? "这只小猫" : draft.trimmedName
         let behavior = BehaviorProfile.from(quizAnswers)
         var affection = behavior.attachment ?? 50
-        var independence = 100 - (behavior.attachment ?? 50)
+        var independence = behavior.independence ?? (100 - (behavior.attachment ?? 50))
         var curiosity = behavior.curiosity ?? 50
         var security = 100 - (behavior.vigilance ?? 50)
         var alertness = behavior.vigilance ?? 50
@@ -167,8 +174,31 @@ enum PersonaGenerator {
                 PersonaObservation(label: "关系倾向", value: affection >= independence ? "更愿意靠近熟悉的人" : "保留边界，也会默默陪伴"),
                 PersonaObservation(label: "年龄阶段", value: "\(draft.ageStage.rawValue)特征已纳入分析"),
             ],
+            evidence: buildEvidence(from: quizAnswers),
             dailyMood: mood
         )
+    }
+
+    private static func buildEvidence(from answers: [Int: QuizChoice]) -> [PersonaEvidence] {
+        let answerCode: (Int) -> String? = { index in
+            answers[index].map { "Q\(index + 1):\($0.rawValue.uppercased())" }
+        }
+        let groups: [(String, String, [Int])] = [
+            ("面对变化的反应", "陌生人和新事物的回答共同描述它是直接靠近，还是先确认安全。", [0, 1]),
+            ("亲近的表达方式", "迎接方式、需求表达和日常距离共同支持它如何让主人感受到在意。", [2, 3, 6]),
+            ("边界与陪伴偏好", "拒绝互动和偏好的陪伴方式共同说明它更舒服的相处节奏。", [5, 7]),
+        ]
+
+        return groups.compactMap { fact, interpretation, indexes in
+            let supportedBy = indexes.compactMap(answerCode)
+            guard !supportedBy.isEmpty else { return nil }
+            return PersonaEvidence(
+                fact: fact,
+                interpretation: interpretation,
+                supportedBy: supportedBy,
+                confidence: min(0.92, 0.46 + Double(supportedBy.count) * 0.16)
+            )
+        }
     }
 
     private static func clamp(_ value: Int) -> Int {

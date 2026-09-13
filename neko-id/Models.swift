@@ -87,14 +87,14 @@ struct QuizQuestion: Identifiable, Equatable {
     let optionC: String
 
     static let onboarding: [QuizQuestion] = [
-        QuizQuestion(id: 0, question: "陌生人来到家里时，它通常会？", optionA: "很快靠近，主动看看是谁", optionB: "保持一点距离，先观察一阵", optionC: "先躲起来，确定安全再说"),
-        QuizQuestion(id: 1, question: "家里出现一个从没见过的东西，它通常？", optionA: "第一时间凑过去研究", optionB: "远远观察，过一会儿再靠近", optionC: "兴趣不大，基本懒得管"),
-        QuizQuestion(id: 2, question: "你回到家时，它通常？", optionA: "很快出现，主动来迎接你", optionB: "看见你了，但继续待在原来的地方", optionC: "表面没什么反应，过一会儿才靠近"),
-        QuizQuestion(id: 3, question: "它想让你做什么时，通常怎么告诉你？", optionA: "叫你、蹭你，想办法让你注意到", optionB: "待在附近看着你，等你自己发现", optionC: "直接行动，比如带你过去或扒拉东西"),
-        QuizQuestion(id: 4, question: "突然出现很大的声音或动静，它通常？", optionA: "马上警觉，先确认发生了什么", optionB: "会被吓一下，但很快恢复正常", optionC: "基本没什么反应，该干嘛干嘛"),
-        QuizQuestion(id: 5, question: "遇到自己不喜欢的互动时，它通常？", optionA: "很快明确表达：走开、挣脱或拒绝", optionB: "会忍一会儿，不舒服了才离开", optionC: "大多数时候都挺配合"),
-        QuizQuestion(id: 6, question: "你忙自己的事情时，它通常？", optionA: "会主动来找你，希望你注意它", optionB: "喜欢待在你附近，但不一定打扰你", optionC: "自己找地方待着，各忙各的"),
-        QuizQuestion(id: 7, question: "如果让它自己选，它最喜欢你怎么陪它？", optionA: "摸摸它、抱抱它，和它贴贴", optionB: "陪它玩、逗它，一起做点什么", optionC: "不用一直互动，待在它附近就好"),
+        QuizQuestion(id: 0, question: "陌生人来到家里时，它通常会？", optionA: "很快靠近，主动看看", optionB: "保持距离，先观察", optionC: "先躲起来，确认安全再说"),
+        QuizQuestion(id: 1, question: "家里出现没见过的东西时，它通常会？", optionA: "马上过去研究", optionB: "观察一会儿再靠近", optionC: "兴趣不大，懒得理"),
+        QuizQuestion(id: 2, question: "你回到家时，它更像哪一种？", optionA: "很快出现，主动迎你", optionB: "会出现，但比较淡定", optionC: "继续做自己的事"),
+        QuizQuestion(id: 3, question: "它想让你做什么时，通常怎么表达？", optionA: "叫你、蹭你，很直接", optionB: "待在附近，等你发现", optionC: "自己先行动或解决"),
+        QuizQuestion(id: 4, question: "突然有很大的声音或动静时，它通常会？", optionA: "马上警觉，去确认", optionB: "先停下来观察", optionC: "大多不太受影响"),
+        QuizQuestion(id: 5, question: "遇到不喜欢的互动时，它通常会？", optionA: "明确躲开或拒绝", optionB: "先忍一会儿，再离开", optionC: "通常都比较配合"),
+        QuizQuestion(id: 6, question: "你忙自己的事时，它通常在哪里？", optionA: "待在你附近", optionB: "自己找地方待着", optionC: "到处走走，看心情"),
+        QuizQuestion(id: 7, question: "它最喜欢哪种陪伴方式？", optionA: "和你有很多互动", optionB: "待在一起，各做各的", optionC: "有需要时再来找你"),
     ]
 }
 
@@ -230,6 +230,23 @@ struct CatPersonaResult: Codable, Equatable {
 struct PersonaEvidence: Codable, Equatable {
     var fact: String
     var interpretation: String
+    var supportedBy: [String] = []
+    var confidence: Double? = nil
+
+    init(fact: String, interpretation: String, supportedBy: [String] = [], confidence: Double? = nil) {
+        self.fact = fact
+        self.interpretation = interpretation
+        self.supportedBy = supportedBy
+        self.confidence = confidence
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fact = try container.decode(String.self, forKey: .fact)
+        interpretation = try container.decode(String.self, forKey: .interpretation)
+        supportedBy = try container.decodeIfPresent([String].self, forKey: .supportedBy) ?? []
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
+    }
 }
 
 struct CatVoiceAnalysis: Codable, Equatable {
