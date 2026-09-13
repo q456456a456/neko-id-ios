@@ -599,29 +599,31 @@ private struct LovableCatInsightSection: View {
         VStack(alignment: .leading, spacing: 0) {
             LovableResultSectionHeader(title: "原来\(catName)是这样的猫", hint: "CAT · INSIGHT")
 
-            VStack(spacing: 10) {
+            VStack(spacing: 14) {
                 ForEach(insights) { insight in
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 11) {
+                        HStack(alignment: .firstTextBaseline, spacing: 11) {
                             Text(insight.number)
-                                .font(.system(size: NekoTypography.web(11), weight: .medium))
-                                .tracking(2)
-                                .foregroundStyle(LovableResultStyle.primaryStart)
+                                .font(.system(size: 15, weight: .medium))
+                                .tracking(1.2)
+                                .foregroundStyle(LovableResultStyle.primaryStart.opacity(0.78))
 
                             Text(insight.title)
-                                .font(.system(size: NekoTypography.web(15), weight: .semibold))
+                                .font(.system(size: 19, weight: .semibold))
                                 .foregroundStyle(Color(red: 0.330, green: 0.285, blue: 0.385))
+                                .lineSpacing(7)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         Text(insight.text)
-                            .font(.system(size: NekoTypography.web(14), weight: .regular))
-                            .lineSpacing(6)
+                            .font(.system(size: 16, weight: .regular))
+                            .lineSpacing(9)
                             .foregroundStyle(Color(red: 0.485, green: 0.440, blue: 0.540))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 17)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 22)
                     .background(
                         LinearGradient(
                             colors: insight.number == "03"
