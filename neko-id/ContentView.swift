@@ -2470,59 +2470,46 @@ private struct HomeTabBar: View {
     let onAccount: () -> Void
 
     var body: some View {
-        HStack {
+        HStack(spacing: 0) {
             Button(action: onHome) {
                 HomeTabIcon(kind: .voice, label: "首页", active: active == .home)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
-
-            Spacer()
 
             Button(action: onPublish) {
-                ZStack {
-                    Circle()
-                        .fill(NekoTheme.primaryGradient)
-                        .frame(width: 60, height: 60)
-                        .blur(radius: 7)
-                        .opacity(0.66)
-
-                    Circle()
-                        .fill(NekoTheme.primaryGradient)
-                        .frame(width: 56, height: 56)
-                        .shadow(color: NekoTheme.soulViolet.opacity(0.36), radius: 22, x: 0, y: 12)
-                        .overlay {
-                            Circle().stroke(Color.white.opacity(0.65), lineWidth: 2)
-                        }
-                    Text("＋")
-                        .font(.system(size: 25, weight: .medium))
+                VStack(spacing: 3) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(.white)
-                        .offset(y: -1)
+                        .frame(width: 40, height: 32)
+                        .background(NekoTheme.primaryGradient, in: Capsule())
+
+                    Text("发布")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NekoTheme.tabInactive)
                 }
-                .offset(y: -22)
-                .zIndex(1)
+                .frame(maxWidth: .infinity, minHeight: 49)
             }
             .buttonStyle(.plain)
-
-            Spacer()
 
             Button(action: onAccount) {
                 HomeTabIcon(kind: .cat, label: "我的", active: active == .me)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 36)
-        .padding(.top, 4)
-        .padding(.bottom, 4)
-        .background {
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(Color.white.opacity(0.86))
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .stroke(Color.white.opacity(0.78), lineWidth: 1)
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 3)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.72))
+                .frame(height: 0.5)
         }
-        .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 22, x: 0, y: 10)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
-        .ignoresSafeArea(.container, edges: .bottom)
+        .background(Color.white.opacity(0.70).ignoresSafeArea(edges: .bottom))
     }
 }
 
