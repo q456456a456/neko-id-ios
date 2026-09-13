@@ -35,6 +35,7 @@ struct NativeOnboardingFlowView: View {
     @State private var isValidatingVideo = false
     @State private var didHydrateExistingProfile = false
     @State private var pendingSaveAfterLogin = false
+    @State private var showsUnsavedResultConfirmation = false
 
     var body: some View {
         ZStack {
@@ -92,7 +93,7 @@ struct NativeOnboardingFlowView: View {
                         isSaving: appModel.isBusy,
                         onSave: saveResult,
                         onRestartAnalysis: startAnalyzing,
-                        onBack: goBack
+                        onBack: requestLeaveUnsavedResult
                     )
                 }
             }
@@ -104,6 +105,24 @@ struct NativeOnboardingFlowView: View {
                     .tint(NekoTheme.soulViolet)
                     .padding(18)
                     .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+
+            if showsUnsavedResultConfirmation {
+                ConfirmSheetOverlay(
+                    title: "要离开这次识别吗？",
+                    hint: "当前结果还没有保存。",
+                    confirmText: "离开",
+                    cancelText: "继续查看",
+                    danger: true,
+                    onConfirm: {
+                        showsUnsavedResultConfirmation = false
+                        goBack()
+                    },
+                    onCancel: {
+                        showsUnsavedResultConfirmation = false
+                    }
+                )
+                .zIndex(200)
             }
         }
         .nekoEdgeSwipeBack(isEnabled: canEdgeSwipeBack) {
@@ -143,11 +162,21 @@ struct NativeOnboardingFlowView: View {
     }
 
     private func handleEdgeSwipeBack() {
+        if step == .result {
+            requestLeaveUnsavedResult()
+            return
+        }
+
         if step.rawValue > NativeOnboardingStep.welcome.rawValue {
             goBack()
         } else if appModel.catProfile != nil {
             appModel.cancelOnboardingIfPossible()
         }
+    }
+
+    private func requestLeaveUnsavedResult() {
+        guard !appModel.isBusy else { return }
+        showsUnsavedResultConfirmation = true
     }
 
     private func goForward() {

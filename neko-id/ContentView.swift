@@ -3601,10 +3601,11 @@ private struct ManageVoiceCard: View {
     }
 }
 
-private struct ConfirmSheetOverlay: View {
+struct ConfirmSheetOverlay: View {
     let title: String
     let hint: String
     let confirmText: String
+    var cancelText: String = "取消"
     let danger: Bool
     let onConfirm: () -> Void
     let onCancel: () -> Void
@@ -3634,7 +3635,7 @@ private struct ConfirmSheetOverlay: View {
                 }
 
                 HStack(spacing: 10) {
-                    Button("取消", action: onCancel)
+                    Button(cancelText, action: onCancel)
                         .font(.system(size: NekoTypography.web(13), weight: .medium))
                         .foregroundStyle(NekoTheme.ink)
                         .frame(maxWidth: .infinity)

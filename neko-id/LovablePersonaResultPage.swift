@@ -92,7 +92,7 @@ struct LovablePersonaResultPage: View {
                                 onAvatarImageLoaded: { loadedAvatarImage = $0 }
                             )
 
-                            LovableResultTopBar(
+                            SafeAreaTopBar(
                                 onBack: onBack,
                                 onShare: {
                                     withAnimation(.spring(response: 0.24, dampingFraction: 0.92)) {
@@ -101,7 +101,7 @@ struct LovablePersonaResultPage: View {
                                 }
                             )
                             .padding(.horizontal, 20)
-                            .padding(.top, 50)
+                            .padding(.top, proxy.safeAreaInsets.top + 10)
                         }
                         .frame(height: 520)
 
@@ -314,7 +314,7 @@ private struct LovableResultBackground: View {
     }
 }
 
-private struct LovableResultTopBar: View {
+private struct SafeAreaTopBar: View {
     let onBack: (() -> Void)?
     let onShare: () -> Void
 
@@ -324,14 +324,14 @@ private struct LovableResultTopBar: View {
                 Button(action: onBack) {
                     LovableChevronLeftIcon(color: LovableResultStyle.topIcon)
                         .frame(width: 18, height: 18)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .background(.white.opacity(0.80), in: Circle())
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
             } else {
                 Color.clear
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
             }
 
             Spacer()
@@ -346,7 +346,7 @@ private struct LovableResultTopBar: View {
             Button(action: onShare) {
                 LovableShare2Icon(color: .white)
                     .frame(width: 17, height: 17)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .background(LovableResultStyle.primaryGradient, in: Circle())
                     .shadow(color: LovableResultStyle.primaryStart.opacity(0.30), radius: 18, x: 0, y: 10)
                     .contentShape(Circle())
