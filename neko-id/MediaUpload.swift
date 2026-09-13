@@ -108,20 +108,27 @@ enum NekoMediaError: LocalizedError {
 }
 
 enum MediaUploadProcessor {
+    private static let maxStoredImageBytes = 500 * 1024
     private static let maxAIImageBytes = 1_500_000
+    private static let storedImageMaxDimensions: [CGFloat] = [1200, 1000, 900, 800, 720, 640]
+    private static let storedImageCompressionQualities: [CGFloat] = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42, 0.36, 0.3]
 
     static func prepareAvatarImage(from data: Data) throws -> PreparedImageUpload {
         guard data.count <= AppConfig.maxAvatarImageBytes else {
             throw NekoMediaError.imageTooLarge
         }
-        return try prepareStoredImageUpload(from: data, maxBytes: AppConfig.maxAvatarImageBytes)
+        return try prepareStoredImageUpload(from: data, maxBytes: maxStoredImageBytes)
     }
 
     static func prepareVoiceImage(from data: Data) throws -> PreparedImageUpload {
         guard data.count <= AppConfig.maxVoiceImageBytes else {
             throw NekoMediaError.imageTooLarge
         }
-        return try prepareStoredImageUpload(from: data, maxBytes: AppConfig.maxVoiceImageBytes)
+        return try prepareStoredImageUpload(from: data, maxBytes: maxStoredImageBytes)
+    }
+
+    static func prepareCachedStoredImageData(from data: Data) -> Data? {
+        try? prepareStoredImageUpload(from: data, maxBytes: maxStoredImageBytes).data
     }
 
     private static func prepareStoredImageUpload(from data: Data, maxBytes: Int) throws -> PreparedImageUpload {
@@ -129,22 +136,14 @@ enum MediaUploadProcessor {
             throw NekoMediaError.unsupportedImage
         }
 
-        let normalized = image.resizedToFit(maxDimension: 1600)
-        var fallback: Data?
+        for maxDimension in storedImageMaxDimensions {
+            let normalized = image.resizedToFit(maxDimension: maxDimension)
+            for quality in storedImageCompressionQualities {
+                guard let jpeg = normalized.jpegData(compressionQuality: quality) else { continue }
+                guard jpeg.count <= maxBytes else { continue }
 
-        for quality in [0.82, 0.74, 0.66, 0.58, 0.5, 0.42] {
-            guard let jpeg = normalized.jpegData(compressionQuality: quality) else { continue }
-            guard jpeg.count <= maxBytes else { continue }
-
-            if jpeg.count <= data.count {
                 return PreparedImageUpload(data: jpeg, mimeType: "image/jpeg", fileExtension: "jpg")
             }
-
-            fallback = fallback ?? jpeg
-        }
-
-        if let fallback {
-            return PreparedImageUpload(data: fallback, mimeType: "image/jpeg", fileExtension: "jpg")
         }
 
         throw NekoMediaError.imageTooLarge

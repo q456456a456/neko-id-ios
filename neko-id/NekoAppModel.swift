@@ -319,7 +319,11 @@ final class NekoAppModel: ObservableObject {
 
     private func cacheUploadedImage(_ data: Data?, objectKey: String?, url: URL?) {
         guard let data else { return }
-        NekoRemoteImageCache.shared.store(data: data, objectKey: objectKey, url: url)
+        NekoRemoteImageCache.shared.store(
+            data: MediaUploadProcessor.prepareCachedStoredImageData(from: data) ?? data,
+            objectKey: objectKey,
+            url: url
+        )
     }
 
     func refreshSignedMediaURLs() async {
