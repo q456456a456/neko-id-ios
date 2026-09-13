@@ -531,9 +531,9 @@ private struct OnboardingWelcomeScreen: View {
                     .padding(.top, 104)
 
                 VStack(spacing: 0) {
-                    Text("N E K O . I D")
+                    Text("喵一下")
                         .font(.system(size: NekoTypography.web(11), weight: .regular))
-                        .tracking(6.1)
+                        .tracking(4)
                         .foregroundStyle(OnboardingWeb.labelPink)
 
                     (
@@ -563,17 +563,17 @@ private struct OnboardingWelcomeScreen: View {
                     Button {
                         onStart()
                     } label: {
-                        VStack(spacing: 8) {
-                            Text("开始创建猫咪人格档案")
-                                .tracking(1)
-                            Text("✨")
-                        }
-                        .frame(maxWidth: .infinity)
+                        Text("开始创建猫咪人格档案 ✨")
+                            .font(.system(size: 16, weight: .medium))
+                            .tracking(0.4)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(OnboardingPrimaryButtonStyle())
                 }
                 .padding(.horizontal, 28)
-                .padding(.bottom, 10)
+                .safeAreaPadding(.bottom, 16)
             }
         }
     }
