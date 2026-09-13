@@ -1879,52 +1879,49 @@ private struct SavePosterIcon: View {
 }
 
 private struct VoiceBottomActionBar: View {
-    let onShare: () -> Void
+    let isSaving: Bool
+    let onSave: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onShare) {
+            Button(action: onSave) {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: NekoTypography.web(14), weight: .semibold))
-                    Text("分享")
+                    if isSaving {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    Text(isSaving ? "保存中…" : "保存图片")
                 }
-                .font(.system(size: NekoTypography.web(13), weight: .medium))
+                .font(.system(size: NekoTypography.web(14), weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .frame(height: 50)
                 .background(NekoTheme.primaryGradient, in: Capsule())
                 .shadow(color: NekoTheme.soulViolet.opacity(0.28), radius: 20, x: 0, y: 10)
             }
             .buttonStyle(.plain)
+            .disabled(isSaving)
 
             Button(action: onDelete) {
-                HStack(spacing: 8) {
-                    Image(systemName: "trash")
+                Image(systemName: "trash")
                         .font(.system(size: NekoTypography.web(14), weight: .semibold))
-                    Text("删除")
-                }
-                .font(.system(size: NekoTypography.web(13), weight: .medium))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [Color(red: 0.862, green: 0.474, blue: 0.356), Color(red: 0.842, green: 0.306, blue: 0.304)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: Capsule()
-                )
-                .shadow(color: Color(red: 0.862, green: 0.474, blue: 0.356).opacity(0.24), radius: 20, x: 0, y: 10)
+                    .foregroundStyle(Color(red: 0.84, green: 0.25, blue: 0.29))
+                    .frame(width: 50, height: 50)
+                    .background(.white.opacity(0.78), in: Circle())
+                    .overlay {
+                        Circle().stroke(Color(red: 0.84, green: 0.25, blue: 0.29).opacity(0.20), lineWidth: 1)
+                    }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("删除心声")
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 20)
         .padding(.top, 20)
-        .padding(.bottom, 10)
+        .padding(.bottom, 8)
         .background(
             LinearGradient(
                 colors: [Color.white.opacity(0.0), Color(red: 0.992, green: 0.969, blue: 1.0).opacity(0.96)],
@@ -1943,8 +1940,9 @@ private struct VoiceDetailView: View {
     let voice: CatVoiceResult
     let profile: CatProfile?
     let persona: CatPersonaResult?
-    @State private var isShareOpen = false
     @State private var confirmDelete = false
+    @State private var detailPhotoImage: UIImage?
+    @State private var isSavingImage = false
 
     private var catName: String {
         profile?.name ?? "猫咪"
@@ -1971,10 +1969,17 @@ private struct VoiceDetailView: View {
                         .padding(.horizontal, 20)
                 }
                 .padding(.top, 92)
-                .padding(.bottom, 110)
+                .padding(.bottom, 24)
                 .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VoiceBottomActionBar(
+                    isSaving: isSavingImage,
+                    onSave: saveCurrentVoiceImage,
+                    onDelete: { confirmDelete = true }
+                )
+            }
 
             VStack {
                 header
@@ -1985,32 +1990,10 @@ private struct VoiceDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(true)
 
-            VoiceBottomActionBar(
-                onShare: { isShareOpen = true },
-                onDelete: { confirmDelete = true }
-            )
-            .frame(maxWidth: .infinity)
-            .zIndex(20)
-
-            if isShareOpen {
-                VoiceActionSheet(
-                    title: "分享猫咪心声",
-                    saveText: "保存长图",
-                    showDelete: false,
-                    onClose: { isShareOpen = false },
-                    onSave: {
-                        isShareOpen = false
-                        appModel.noticeMessage = "保存长图稍后继续接相册。"
-                    },
-                    onDelete: {}
-                )
-                .zIndex(30)
-            }
-
             if confirmDelete {
                 ConfirmSheetOverlay(
-                    title: "确定删除这条心声吗？",
-                    hint: "删除后无法恢复，\(catName)的这一刻就会消失喵～",
+                    title: "删除这条心声？",
+                    hint: "删除后无法恢复。",
                     confirmText: "删除",
                     danger: true,
                     onConfirm: deleteCurrentVoice,
@@ -2024,8 +2007,6 @@ private struct VoiceDetailView: View {
         .nekoEdgeSwipeBack {
             if confirmDelete {
                 confirmDelete = false
-            } else if isShareOpen {
-                isShareOpen = false
             } else {
                 dismiss()
             }
@@ -2098,7 +2079,8 @@ private struct VoiceDetailView: View {
                     objectKey: voice.mediaObjectKey,
                     mediaType: voice.mediaType,
                     fallbackAvatarURL: profile?.avatarURL,
-                    fallbackAvatarObjectKey: profile?.avatarObjectKey
+                    fallbackAvatarObjectKey: profile?.avatarObjectKey,
+                    onImageLoaded: { detailPhotoImage = $0 }
                 )
                 .frame(width: cardWidth, height: cardHeight)
                 .clipped()
@@ -2166,6 +2148,8 @@ private struct VoiceDetailView: View {
     private func deleteCurrentVoice() {
         guard let cloudId = voice.cloudId, !cloudId.isEmpty else {
             confirmDelete = false
+            appModel.removeLocalVoice(voice)
+            appModel.noticeMessage = "已删除"
             dismiss()
             return
         }
@@ -2174,16 +2158,63 @@ private struct VoiceDetailView: View {
             do {
                 try await appModel.deleteVoices(ids: [cloudId])
                 confirmDelete = false
-                appModel.noticeMessage = "心声已删除"
+                appModel.noticeMessage = "已删除"
                 dismiss()
             } catch {
                 confirmDelete = false
-                appModel.errorMessage = NekoUserFacingError.message(
-                    for: error,
-                    fallback: "删除失败，请稍后再试。"
-                )
+                appModel.errorMessage = "删除失败，请重试"
             }
         }
+    }
+
+    private func saveCurrentVoiceImage() {
+        guard !isSavingImage else { return }
+        isSavingImage = true
+
+        Task { @MainActor in
+            defer { isSavingImage = false }
+            do {
+                let photo = try await resolvedPhotoImage()
+                let data = VoiceShareCardData(
+                    catName: catName,
+                    mbti: persona?.mbti.nonEmpty ?? "猫咪人格",
+                    personalityTitle: persona?.type.nonEmpty ?? "专属小性格",
+                    personalityTags: Array((voice.share?.tags ?? voice.tags).prefix(3)),
+                    photo: photo,
+                    generatedVoice: voice.text,
+                    shareHeadline: voice.share?.headline.nonEmpty ?? voice.text,
+                    insightSummary: voice.share?.insight.nonEmpty ?? voice.subtext?.nonEmpty ?? analysisText
+                )
+                guard let image = VoiceShareImageRenderer.render(data: data) else {
+                    throw VoiceShareError.renderFailed
+                }
+                try await VoicePhotoLibrarySaver.save(image)
+                appModel.noticeMessage = "已保存到相册"
+            } catch {
+                appModel.errorMessage = NekoUserFacingError.message(for: error, fallback: "保存失败，请重试")
+            }
+        }
+    }
+
+    @MainActor
+    private func resolvedPhotoImage() async throws -> UIImage {
+        if let detailPhotoImage { return detailPhotoImage }
+
+        let sourceURL: URL?
+        if let mediaURL = voice.mediaURL {
+            sourceURL = mediaURL
+        } else {
+            sourceURL = await appModel.signedMediaURL(for: voice.mediaObjectKey)
+        }
+        guard let sourceURL else { throw VoiceShareError.missingContent }
+        let request = await appModel.mediaImageRequest(for: sourceURL)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let response = response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        guard let image = UIImage(data: data) else { throw VoiceShareError.missingContent }
+        detailPhotoImage = image
+        return image
     }
 }
 

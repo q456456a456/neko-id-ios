@@ -414,6 +414,10 @@ final class NekoAppModel: ObservableObject {
         }
     }
 
+    func removeLocalVoice(_ voice: CatVoiceResult) {
+        voices.removeAll { $0.id == voice.id }
+    }
+
     func publishCatVoice(imageData: Data, scene: String) async throws -> CatVoiceResult {
         let generated = try await generateCatVoicePreview(imageData: imageData, scene: scene)
         return try await saveGeneratedCatVoice(generated, imageData: imageData, showNotice: true)
