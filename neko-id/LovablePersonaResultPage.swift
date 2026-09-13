@@ -30,15 +30,15 @@ struct LovablePersonaResultPage: View {
 
     private var displayName: String {
         let trimmed = catName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "丸子" : trimmed
+        return trimmed.isEmpty ? "猫咪" : trimmed
     }
 
     private var personaType: String {
-        trimmed(persona.type, fallback: "奶油小绅士")
+        trimmed(persona.type, fallback: "人格仍待了解")
     }
 
     private var personaMbti: String {
-        trimmed(persona.mbti, fallback: "ISFJ-A")
+        trimmed(persona.mbti, fallback: "待识别")
     }
 
     private var monologue: String {
@@ -49,24 +49,28 @@ struct LovablePersonaResultPage: View {
         trimmed(persona.analysis, fallback: "我不一定每次都跑向你，但如果你在家，我会睡得更安心。")
     }
 
+    private var coreDescription: String {
+        trimmed(persona.corePersonality ?? "", fallback: analysis)
+    }
+
     private var misunderstanding: String {
-        trimmed(persona.misunderstanding ?? "", fallback: analysis)
+        trimmed(persona.misunderstanding ?? "", fallback: "现有资料还不足以判断你最容易误会它的哪种行为。多记录几次真实互动后，会得到更可靠的答案。")
     }
 
     private var loveLanguage: String {
         trimmed(
             persona.loveLanguageInsight ?? persona.loveLanguage ?? "",
-            fallback: "如果它平时也常待在你附近却不紧贴，它可能更习惯用关注你的动向、共享同一片空间来表达亲近。"
+            fallback: "目前还没有足够的行为答案判断它如何表达喜欢，暂时不对它的长期亲密模式下结论。"
         )
     }
 
     private var ownerRole: String {
-        trimmed(persona.ownerRelationship ?? persona.ownerRole, fallback: "我的安全区")
+        trimmed(persona.ownerRelationship ?? persona.ownerRole, fallback: "现有资料不足以确定你在它长期关系中的位置，继续相处和记录会比一次测试更可靠。")
     }
 
     private var personaKeywords: [String] {
         let tags = persona.tags.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        return Array((tags.isEmpty ? LovableResultStyle.keywords : tags).prefix(3))
+        return Array(tags.prefix(3))
     }
 
     var body: some View {
@@ -84,31 +88,16 @@ struct LovablePersonaResultPage: View {
                                 avatarObjectKey: avatarObjectKey,
                                 personaType: personaType,
                                 personaMbti: personaMbti,
-                                monologue: monologue,
+                                coreDescription: coreDescription,
                                 keywords: personaKeywords,
                                 onAvatarImageLoaded: { loadedAvatarImage = $0 }
                             )
 
-                            SafeAreaTopBar(
-                                onBack: onBack,
-                                onShare: {
-                                    withAnimation(.spring(response: 0.24, dampingFraction: 0.92)) {
-                                        shareOpen = true
-                                    }
-                                }
-                            )
+                            SafeAreaTopBar(onBack: onBack)
                             .padding(.horizontal, 20)
                             .padding(.top, proxy.safeAreaInsets.top + 10)
                         }
-                        .frame(height: 520)
-
-                        LovableLittleWorldSection(
-                            catName: displayName,
-                            contentWidth: proxy.size.width,
-                            avatarImage: avatarImage ?? loadedAvatarImage,
-                            avatarURL: avatarURL,
-                            avatarObjectKey: avatarObjectKey
-                        )
+                        .frame(height: min(max(proxy.size.width * 1.25, 470), 570))
 
                         LovableCatInsightSection(
                             catName: displayName,
@@ -135,23 +124,6 @@ struct LovablePersonaResultPage: View {
                 )
                 .zIndex(20)
 
-                if shareOpen {
-                    LovableResultShareSheet(
-                        onClose: closeShare,
-                        onWeChat: {
-                            presentSystemShare(width: proxy.size.width)
-                        },
-                        onMoments: {
-                            presentSystemShare(width: proxy.size.width)
-                        },
-                        onSaveImage: {
-                            saveShareImage(width: proxy.size.width)
-                        },
-                        busy: isGeneratingShareImage
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .zIndex(50)
-                }
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -307,7 +279,6 @@ private struct LovableResultBackground: View {
 
 private struct SafeAreaTopBar: View {
     let onBack: (() -> Void)?
-    let onShare: () -> Void
 
     var body: some View {
         HStack {
@@ -326,23 +297,6 @@ private struct SafeAreaTopBar: View {
             }
 
             Spacer()
-
-            Text("喵一下")
-                .font(.system(size: NekoTypography.web(10), weight: .medium))
-                .tracking(5)
-                .foregroundStyle(Color(red: 0.545, green: 0.410, blue: 0.595))
-
-            Spacer()
-
-            Button(action: onShare) {
-                LovableShare2Icon(color: .white)
-                    .frame(width: 17, height: 17)
-                    .frame(width: 44, height: 44)
-                    .background(LovableResultStyle.primaryGradient, in: Circle())
-                    .shadow(color: LovableResultStyle.primaryStart.opacity(0.30), radius: 18, x: 0, y: 10)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
     }
@@ -355,7 +309,7 @@ private struct LovableResultHero: View {
     let avatarObjectKey: String?
     let personaType: String
     let personaMbti: String
-    let monologue: String
+    let coreDescription: String
     let keywords: [String]
     var onAvatarImageLoaded: (UIImage?) -> Void = { _ in }
 
@@ -372,6 +326,12 @@ private struct LovableResultHero: View {
             .clipped()
 
             LinearGradient(
+                colors: [.white.opacity(0.34), .clear, .clear],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
+            LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
                     .init(color: LovableResultStyle.bgMid.opacity(0.60), location: 0.50),
@@ -383,46 +343,48 @@ private struct LovableResultHero: View {
             .frame(height: 300)
             .frame(maxWidth: .infinity, alignment: .bottom)
 
+            VStack(alignment: .leading, spacing: 2) {
+                Text("CAT")
+                Text("PROFILE")
+                Rectangle()
+                    .frame(width: 26, height: 1)
+                    .padding(.top, 5)
+            }
+            .font(.system(size: 16, weight: .regular, design: .serif))
+            .tracking(0.8)
+            .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
+            .padding(.leading, 24)
+            .padding(.top, 116)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
             VStack(alignment: .leading, spacing: 0) {
-                Text(catName)
-                    .font(.system(size: NekoTypography.web(15), weight: .medium))
-                    .tracking(0.3)
-                    .foregroundStyle(Color(red: 0.500, green: 0.440, blue: 0.545))
-                    .lineLimit(1)
-                    .shadow(color: .white.opacity(0.90), radius: 14, x: 0, y: 2)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(personaType)
-                        .font(.system(size: 26, weight: .semibold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.82)
-                        .foregroundStyle(LovableResultStyle.heroTitleGradient)
-
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("MBTI")
-                            .font(.system(size: NekoTypography.web(11), weight: .regular))
-                            .tracking(2.6)
-                            .foregroundStyle(Color(red: 0.615, green: 0.560, blue: 0.655))
-
-                        Text(personaMbti)
-                            .font(.system(size: NekoTypography.web(15), weight: .medium))
-                            .foregroundStyle(Color(red: 0.440, green: 0.315, blue: 0.545))
-                    }
-                    .shadow(color: .white.opacity(0.90), radius: 10, x: 0, y: 2)
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Text(catName)
+                        .font(.system(size: 21, weight: .semibold))
+                    Text(personaMbti)
+                        .font(.system(size: 17, weight: .medium))
                 }
-                .padding(.top, 6)
+                .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.49))
+                .lineLimit(1)
 
-                Text("“\(monologue)”")
-                    .font(.system(size: NekoTypography.web(14), weight: .regular))
-                    .lineSpacing(6)
-                    .foregroundStyle(Color(red: 0.410, green: 0.370, blue: 0.470))
+                Text(personaType)
+                    .font(.system(size: 40, weight: .regular, design: .serif))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+                    .foregroundStyle(Color(red: 0.24, green: 0.19, blue: 0.46))
                     .padding(.top, 12)
-                    .shadow(color: .white.opacity(0.95), radius: 6, x: 0, y: 1)
+
+                Text(coreDescription)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineSpacing(4)
+                    .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
+                    .lineLimit(3)
+                    .padding(.top, 10)
 
                 HStack(spacing: 8) {
                     ForEach(keywords, id: \.self) { keyword in
                         Text(keyword)
-                            .font(.system(size: NekoTypography.web(12), weight: .regular))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
                             .lineLimit(1)
                             .padding(.horizontal, 12)
@@ -431,10 +393,10 @@ private struct LovableResultHero: View {
                             .shadow(color: LovableResultStyle.primaryStart.opacity(0.18), radius: 10, x: 0, y: 5)
                     }
                 }
-                .padding(.top, 16)
+                .padding(.top, 14)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 20)
+            .padding(.bottom, 22)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
@@ -842,7 +804,7 @@ private struct LovableResultShareImage: View {
                     avatarObjectKey: nil,
                     personaType: personaType,
                     personaMbti: personaMbti,
-                    monologue: monologue,
+                    coreDescription: monologue,
                     keywords: keywords
                 )
 
@@ -867,13 +829,6 @@ private struct LovableResultShareImage: View {
             }
             .frame(height: 520)
 
-            LovableLittleWorldSection(
-                catName: catName,
-                contentWidth: width,
-                avatarImage: avatarImage,
-                avatarURL: nil,
-                avatarObjectKey: nil
-            )
             LovableCatInsightSection(
                 catName: catName,
                 misunderstanding: misunderstanding,
@@ -968,11 +923,17 @@ private struct LovableAvatarImage: View {
                 contentMode: contentMode,
                 onImageLoaded: onImageLoaded
             ) {
-                Image("neko-hero")
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
+                ZStack {
+                    LovableResultStyle.resultBackground
+                    VStack(spacing: 10) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 26, weight: .light))
+                        Text("照片暂时无法显示")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(LovableResultStyle.muted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
