@@ -137,6 +137,12 @@ enum PersonaGenerator {
             matchScore: matchScore,
             monologue: buildMonologue(name: name, affection: affection, independence: independence, curiosity: curiosity),
             analysis: "\(name)是\(draft.ageStage.rawValue)里的\(draft.gender.rawValue)，性格里有\(dominantWords(from: Array(strongest)))。它会用自己的节奏观察环境，再通过靠近、停留或回望表达情绪。",
+            misunderstanding: independence >= affection
+                ? "它不是不需要你，只是更习惯自己决定靠近的距离。很多看似各待各的时刻，也可能是它在舒服地和你共享空间。"
+                : "它不是时时靠近才算在意。就算暂时没有贴着你，它也可能一直留意你的动向，等自己认可的时机再靠近。",
+            loveLanguage: affection >= independence
+                ? "它更可能通过主动靠近、停留和回应你的动作表达喜欢；熟悉之后，这些小动作会比对陌生人明显得多。"
+                : "它可能更习惯待在你附近、关注你的动向，却不一定长时间贴着。给它选择距离的自由，反而更容易看到它主动靠近。",
             ownerRole: "在\(name)眼里，你是它熟悉的小坐标。它不一定每次都热烈回应，但会把你的声音、脚步和日常节奏放进自己的安全地图里。",
             tags: tags,
             traits: Array(strongest),

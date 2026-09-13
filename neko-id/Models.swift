@@ -124,10 +124,13 @@ struct CatPersonaResult: Codable, Equatable {
     var matchScore: Int
     var monologue: String
     var analysis: String
+    var misunderstanding: String?
+    var loveLanguage: String?
     var ownerRole: String
     var tags: [String]
     var traits: [PersonaTrait]
     var observations: [PersonaObservation]
+    var evidence: [PersonaEvidence]
     var dailyMood: String
     var provider: String = "ios-native"
     var model: String = "native-onboarding-v1"
@@ -138,10 +141,13 @@ struct CatPersonaResult: Codable, Equatable {
         case matchScore
         case monologue
         case analysis
+        case misunderstanding
+        case loveLanguage
         case ownerRole
         case tags
         case traits
         case observations
+        case evidence
         case dailyMood
         case provider
         case model
@@ -153,10 +159,13 @@ struct CatPersonaResult: Codable, Equatable {
         matchScore: Int,
         monologue: String,
         analysis: String,
+        misunderstanding: String? = nil,
+        loveLanguage: String? = nil,
         ownerRole: String,
         tags: [String],
         traits: [PersonaTrait],
         observations: [PersonaObservation],
+        evidence: [PersonaEvidence] = [],
         dailyMood: String,
         provider: String = "ios-native",
         model: String = "native-onboarding-v1"
@@ -166,10 +175,13 @@ struct CatPersonaResult: Codable, Equatable {
         self.matchScore = matchScore
         self.monologue = monologue
         self.analysis = analysis
+        self.misunderstanding = misunderstanding
+        self.loveLanguage = loveLanguage
         self.ownerRole = ownerRole
         self.tags = tags
         self.traits = traits
         self.observations = observations
+        self.evidence = evidence
         self.dailyMood = dailyMood
         self.provider = provider
         self.model = model
@@ -182,10 +194,13 @@ struct CatPersonaResult: Codable, Equatable {
         matchScore = try container.decode(Int.self, forKey: .matchScore)
         monologue = try container.decode(String.self, forKey: .monologue)
         analysis = try container.decode(String.self, forKey: .analysis)
+        misunderstanding = try container.decodeIfPresent(String.self, forKey: .misunderstanding)
+        loveLanguage = try container.decodeIfPresent(String.self, forKey: .loveLanguage)
         ownerRole = try container.decode(String.self, forKey: .ownerRole)
         tags = try container.decode([String].self, forKey: .tags)
         traits = try container.decode([PersonaTrait].self, forKey: .traits)
         observations = try container.decode([PersonaObservation].self, forKey: .observations)
+        evidence = try container.decodeIfPresent([PersonaEvidence].self, forKey: .evidence) ?? []
         // `dailyMood` belonged to the first-generation home card and is no longer
         // emitted by the current persona prompt. Keep decoding older records, but
         // do not reject a valid persona result when the field is absent.
@@ -193,6 +208,11 @@ struct CatPersonaResult: Codable, Equatable {
         provider = try container.decodeIfPresent(String.self, forKey: .provider) ?? "server"
         model = try container.decodeIfPresent(String.self, forKey: .model) ?? "neko-id-server-persona"
     }
+}
+
+struct PersonaEvidence: Codable, Equatable {
+    var fact: String
+    var interpretation: String
 }
 
 struct CatVoiceAnalysis: Codable, Equatable {

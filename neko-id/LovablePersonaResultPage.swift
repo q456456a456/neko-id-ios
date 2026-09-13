@@ -49,6 +49,17 @@ struct LovablePersonaResultPage: View {
         trimmed(persona.analysis, fallback: "我不一定每次都跑向你，但如果你在家，我会睡得更安心。")
     }
 
+    private var misunderstanding: String {
+        trimmed(persona.misunderstanding ?? "", fallback: analysis)
+    }
+
+    private var loveLanguage: String {
+        trimmed(
+            persona.loveLanguage ?? "",
+            fallback: "如果它平时也常待在你附近却不紧贴，它可能更习惯用关注你的动向、共享同一片空间来表达亲近。"
+        )
+    }
+
     private var ownerRole: String {
         trimmed(persona.ownerRole, fallback: "我的安全区")
     }
@@ -56,20 +67,6 @@ struct LovablePersonaResultPage: View {
     private var personaKeywords: [String] {
         let tags = persona.tags.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return Array((tags.isEmpty ? LovableResultStyle.keywords : tags).prefix(3))
-    }
-
-    private var personaInsights: [LovableResultInsight] {
-        if !persona.observations.isEmpty {
-            let emojis = ["👀", "🏠", "❤️"]
-            return persona.observations.prefix(3).enumerated().map { index, item in
-                LovableResultInsight(
-                    emoji: emojis.indices.contains(index) ? emojis[index] : "✦",
-                    title: item.label,
-                    desc: item.value
-                )
-            }
-        }
-        return LovableResultStyle.insights
     }
 
     var body: some View {
@@ -113,15 +110,12 @@ struct LovablePersonaResultPage: View {
                             avatarObjectKey: avatarObjectKey
                         )
 
-                        LovableCatInsightSection(insights: personaInsights)
-
-                        LovableBondSection(
+                        LovableCatInsightSection(
                             catName: displayName,
-                            ownerRole: ownerRole,
-                            analysis: analysis,
-                            contentWidth: proxy.size.width
+                            misunderstanding: misunderstanding,
+                            loveLanguage: loveLanguage,
+                            ownerRole: ownerRole
                         )
-                        .padding(.top, 28)
 
                         Color.clear
                             .frame(height: 112 + max(proxy.safeAreaInsets.bottom, 20))
@@ -236,9 +230,9 @@ struct LovablePersonaResultPage: View {
             personaMbti: personaMbti,
             monologue: monologue,
             keywords: personaKeywords,
-            insights: personaInsights,
+            misunderstanding: misunderstanding,
+            loveLanguage: loveLanguage,
             ownerRole: ownerRole,
-            analysis: analysis,
             width: renderWidth
         )
         .frame(width: renderWidth)
@@ -286,18 +280,13 @@ private enum LovableResultStyle {
 
     static let keywords = ["温柔观察者", "慢热", "安静陪伴"]
 
-    static let insights = [
-        LovableResultInsight(emoji: "👀", title: "先观察，再靠近", desc: "不会马上亲近，但会偷偷观察你。"),
-        LovableResultInsight(emoji: "🏠", title: "很需要自己的安全区", desc: "熟悉的位置和气味会让它安心。"),
-        LovableResultInsight(emoji: "❤️", title: "喜欢你，但不一定黏着你", desc: "待在附近，就是它表达亲近的方式。"),
-    ]
 }
 
 private struct LovableResultInsight: Identifiable {
-    var id: String { "\(emoji)-\(title)-\(desc)" }
-    let emoji: String
+    var id: String { "\(number)-\(title)" }
+    let number: String
     let title: String
-    let desc: String
+    let text: String
 }
 
 private struct LovableResultScene: Identifiable {
@@ -631,35 +620,51 @@ private struct LovableSceneCard: View {
 }
 
 private struct LovableCatInsightSection: View {
-    let insights: [LovableResultInsight]
+    let catName: String
+    let misunderstanding: String
+    let loveLanguage: String
+    let ownerRole: String
+
+    private var insights: [LovableResultInsight] {
+        [
+            LovableResultInsight(number: "01", title: "你可能一直误会它的一件事", text: misunderstanding),
+            LovableResultInsight(number: "02", title: "它表达喜欢的方式", text: loveLanguage),
+            LovableResultInsight(number: "03", title: "在\(catName)眼里，你的位置", text: ownerRole),
+        ]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LovableResultSectionHeader(title: "原来它是这样的猫", hint: "CAT · INSIGHT")
+            LovableResultSectionHeader(title: "原来\(catName)是这样的猫", hint: "CAT · INSIGHT")
 
             VStack(spacing: 10) {
                 ForEach(insights) { insight in
-                    HStack(alignment: .top, spacing: 12) {
-                        Text(insight.emoji)
-                            .font(.system(size: NekoTypography.web(18)))
-                            .padding(.top, 3)
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(insight.number)
+                                .font(.system(size: NekoTypography.web(11), weight: .medium))
+                                .tracking(2)
+                                .foregroundStyle(LovableResultStyle.primaryStart)
 
-                        VStack(alignment: .leading, spacing: 4) {
                             Text(insight.title)
-                                .font(.system(size: NekoTypography.web(14), weight: .medium))
+                                .font(.system(size: NekoTypography.web(15), weight: .semibold))
                                 .foregroundStyle(Color(red: 0.330, green: 0.285, blue: 0.385))
-
-                            Text(insight.desc)
-                                .font(.system(size: NekoTypography.web(13), weight: .regular))
-                                .lineSpacing(4)
-                                .foregroundStyle(Color(red: 0.565, green: 0.515, blue: 0.610))
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text(insight.text)
+                            .font(.system(size: NekoTypography.web(14), weight: .regular))
+                            .lineSpacing(6)
+                            .foregroundStyle(Color(red: 0.485, green: 0.440, blue: 0.540))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 17)
                     .background(
                         LinearGradient(
-                            colors: [.white.opacity(0.85), Color(red: 1.0, green: 0.970, blue: 0.995).opacity(0.65)],
+                            colors: insight.number == "03"
+                                ? [Color(red: 0.992, green: 0.930, blue: 0.980).opacity(0.90), Color(red: 0.955, green: 0.910, blue: 0.995).opacity(0.90)]
+                                : [.white.opacity(0.76), Color(red: 1.0, green: 0.970, blue: 0.995).opacity(0.54)],
                             startPoint: .top,
                             endPoint: .bottom
                         ),
@@ -676,92 +681,6 @@ private struct LovableCatInsightSection: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 28)
-    }
-}
-
-private struct LovableBondSection: View {
-    let catName: String
-    let ownerRole: String
-    let analysis: String
-    let contentWidth: CGFloat
-
-    var body: some View {
-        let cardWidth = max(contentWidth - 40, 1)
-        let imageWidth = min(max(cardWidth * 0.36, 118), 150)
-        let textColumnWidth = max(cardWidth - imageWidth, 1)
-
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 8) {
-                    Text("❤️")
-                        .font(.system(size: NekoTypography.web(15)))
-                        .padding(.top, 3)
-
-                    Text("在\(catName)眼里，你是什么？")
-                        .font(.system(size: NekoTypography.web(16), weight: .semibold))
-                        .lineSpacing(4)
-                        .foregroundStyle(Color(red: 0.315, green: 0.270, blue: 0.375))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                Text(ownerRole)
-                    .font(.system(size: NekoTypography.web(13), weight: .medium))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(LovableResultStyle.primaryGradient, in: Capsule())
-                    .padding(.top, 12)
-
-                Text("“\(analysis)”")
-                    .font(.system(size: NekoTypography.web(13), weight: .regular))
-                    .lineSpacing(6)
-                    .foregroundStyle(Color(red: 0.450, green: 0.405, blue: 0.500))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 20)
-            .frame(width: textColumnWidth, alignment: .leading)
-
-            ZStack(alignment: .leading) {
-                Image("neko-bond")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: imageWidth)
-                    .clipped()
-
-                LinearGradient(
-                    colors: [Color(red: 0.992, green: 0.930, blue: 0.980).opacity(0.95), .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 28)
-            }
-            .frame(width: imageWidth)
-            .clipped()
-        }
-        .frame(width: cardWidth)
-        .frame(minHeight: 168)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.992, green: 0.930, blue: 0.980).opacity(0.95),
-                    Color(red: 0.955, green: 0.910, blue: 0.995).opacity(0.95),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(.white.opacity(0.80), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .shadow(color: LovableResultStyle.primaryStart.opacity(0.16), radius: 22, x: 0, y: 12)
-        .padding(.horizontal, 20)
     }
 }
 
@@ -908,9 +827,9 @@ private struct LovableResultShareImage: View {
     let personaMbti: String
     let monologue: String
     let keywords: [String]
-    let insights: [LovableResultInsight]
+    let misunderstanding: String
+    let loveLanguage: String
     let ownerRole: String
-    let analysis: String
     let width: CGFloat
 
     var body: some View {
@@ -955,14 +874,12 @@ private struct LovableResultShareImage: View {
                 avatarURL: nil,
                 avatarObjectKey: nil
             )
-            LovableCatInsightSection(insights: insights)
-            LovableBondSection(
+            LovableCatInsightSection(
                 catName: catName,
-                ownerRole: ownerRole,
-                analysis: analysis,
-                contentWidth: width
+                misunderstanding: misunderstanding,
+                loveLanguage: loveLanguage,
+                ownerRole: ownerRole
             )
-            .padding(.top, 28)
 
             Text("喵懂 · 读懂它的小世界")
                 .font(.system(size: NekoTypography.web(10), weight: .medium))
