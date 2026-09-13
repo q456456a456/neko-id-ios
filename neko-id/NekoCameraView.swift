@@ -70,7 +70,10 @@ struct NekoCameraView: View {
             .padding(.top, 8)
             .padding(.bottom, 14)
         }
-        .statusBarHidden()
+        // Keep the camera immersive, but restore the status bar while the system
+        // photo picker is presented so its native Cancel/Add controls always sit
+        // inside the correct safe area.
+        .statusBarHidden(!showsPhotoLibrary)
         .onAppear {
             camera.onPhotoCaptured = { image in
                 capturedImage = image
@@ -81,7 +84,11 @@ struct NekoCameraView: View {
         .onDisappear {
             camera.stop()
         }
-        .fullScreenCover(isPresented: $showsPhotoLibrary) {
+        .onChange(of: showsPhotoLibrary) { wasPresented, isPresented in
+            guard wasPresented, !isPresented, capturedImage == nil, !camera.authorizationDenied else { return }
+            camera.start()
+        }
+        .sheet(isPresented: $showsPhotoLibrary) {
             NekoPhotoLibraryPicker(
                 onCancel: {
                     showsPhotoLibrary = false
@@ -93,6 +100,7 @@ struct NekoCameraView: View {
                     showsPhotoLibrary = false
                 }
             )
+            .statusBarHidden(false)
         }
     }
 
@@ -146,7 +154,7 @@ struct NekoCameraView: View {
         } else if !camera.authorizationDenied {
             HStack {
                 Button {
-                    showsPhotoLibrary = true
+                    openPhotoLibrary()
                 } label: {
                     Group {
                         if let recentImage {
@@ -227,13 +235,18 @@ struct NekoCameraView: View {
             }
             .buttonStyle(NekoCameraPrimaryButtonStyle())
             Button("从照片图库选择") {
-                showsPhotoLibrary = true
+                openPhotoLibrary()
             }
             .foregroundStyle(NekoTheme.soulViolet)
         }
         .padding(28)
         .background(NekoTheme.backgroundGradient, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .padding(24)
+    }
+
+    private func openPhotoLibrary() {
+        camera.stop()
+        showsPhotoLibrary = true
     }
 
 }
