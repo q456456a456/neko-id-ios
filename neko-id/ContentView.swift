@@ -1626,7 +1626,8 @@ struct NekoRemoteImageView<Placeholder: View>: View {
     private func load(from url: URL) async -> Bool {
         currentURL = url
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let request = await appModel.mediaImageRequest(for: url)
+            let (data, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
                 throw URLError(.badServerResponse)
             }

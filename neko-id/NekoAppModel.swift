@@ -290,6 +290,15 @@ final class NekoAppModel: ObservableObject {
         }
     }
 
+    func mediaImageRequest(for url: URL) async -> URLRequest {
+        if serverAPI.isProtectedMediaURL(url),
+           let activeSession = try? await authenticatedSession() {
+            return serverAPI.mediaRequest(for: url, accessToken: activeSession.accessToken)
+        }
+
+        return serverAPI.mediaRequest(for: url, accessToken: nil)
+    }
+
     func invalidateSignedMediaURL(for objectKey: String?) {
         guard let objectKey, !objectKey.isEmpty else { return }
         signedMediaCache.removeValue(forKey: objectKey)

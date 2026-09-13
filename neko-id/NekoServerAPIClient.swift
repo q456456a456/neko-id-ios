@@ -19,12 +19,42 @@ struct NekoServerAPIClient {
         self.session = session ?? Self.defaultSession
     }
 
+    func isProtectedMediaURL(_ url: URL) -> Bool {
+        guard url.path == "/api/ios/cloud/media" else { return false }
+        guard let host = url.host?.lowercased(), let baseHost = baseURL.host?.lowercased(), host == baseHost else {
+            return false
+        }
+        return normalizedPort(for: url) == normalizedPort(for: baseURL)
+            && url.scheme?.lowercased() == baseURL.scheme?.lowercased()
+    }
+
+    func mediaRequest(for url: URL, accessToken: String?) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue("image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        if isProtectedMediaURL(url), let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+
     private static let defaultSession: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = AppConfig.serverRequestTimeout
         configuration.timeoutIntervalForResource = AppConfig.serverResourceTimeout
         return URLSession(configuration: configuration)
     }()
+
+    private func normalizedPort(for url: URL) -> Int? {
+        if let port = url.port { return port }
+        switch url.scheme?.lowercased() {
+        case "http":
+            return 80
+        case "https":
+            return 443
+        default:
+            return nil
+        }
+    }
 
     func requestPhoneOTP(phone: String) async throws {
         let _: PhoneOTPResponse = try await perform(
