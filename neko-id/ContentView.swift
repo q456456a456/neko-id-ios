@@ -3276,7 +3276,7 @@ private struct EditProfileView: View {
             .buttonStyle(.plain)
 
             PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
-                Text("更换照片 · ≤ 10MB")
+                Text("更换照片")
                     .font(.system(size: NekoTypography.web(11.5), weight: .medium))
                     .tracking(2.3)
                     .foregroundStyle(NekoTheme.menuIcon)
