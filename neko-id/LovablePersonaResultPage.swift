@@ -327,7 +327,7 @@ private struct SafeAreaTopBar: View {
 
             Spacer()
 
-            Text("喵懂")
+            Text("喵一下")
                 .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(5)
                 .foregroundStyle(Color(red: 0.545, green: 0.410, blue: 0.595))
@@ -852,7 +852,7 @@ private struct LovableResultShareImage: View {
 
                     Spacer()
 
-                    Text("喵懂")
+                    Text("喵一下")
                         .font(.system(size: NekoTypography.web(10), weight: .medium))
                         .tracking(5)
                         .foregroundStyle(Color(red: 0.545, green: 0.410, blue: 0.595))
@@ -881,7 +881,7 @@ private struct LovableResultShareImage: View {
                 ownerRole: ownerRole
             )
 
-            Text("喵懂 · 读懂它的小世界")
+            Text("喵一下 · 读懂它的小世界")
                 .font(.system(size: NekoTypography.web(10), weight: .medium))
                 .tracking(5)
                 .foregroundStyle(LovableResultStyle.label.opacity(0.72))

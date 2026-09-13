@@ -34,7 +34,7 @@ struct VoiceShareCard: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("喵懂")
+                            Text("喵一下")
                                 .font(.system(size: 10, weight: .semibold))
                                 .tracking(2.2)
                             Text("\(data.catName) · \(data.mbti)")
@@ -106,7 +106,7 @@ struct VoiceShareCard: View {
 
                 Spacer(minLength: 0)
 
-                Text("喵懂 · 读懂它的小世界")
+                Text("喵一下 · 读懂它的小世界")
                     .font(.system(size: 10, weight: .medium))
                     .tracking(1.5)
                     .foregroundStyle(Color(red: 0.52, green: 0.46, blue: 0.59).opacity(0.82))
