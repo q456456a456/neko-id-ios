@@ -75,55 +75,49 @@ struct LovablePersonaResultPage: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                LovableResultBackground()
-
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ZStack(alignment: .top) {
-                            LovableResultHero(
-                                catName: displayName,
-                                avatarImage: avatarImage,
-                                avatarURL: avatarURL,
-                                avatarObjectKey: avatarObjectKey,
-                                personaType: personaType,
-                                personaMbti: personaMbti,
-                                coreDescription: coreDescription,
-                                keywords: personaKeywords,
-                                onAvatarImageLoaded: { loadedAvatarImage = $0 }
-                            )
-
-                            SafeAreaTopBar(onBack: onBack)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    LovableResultHero(
+                        catName: displayName,
+                        avatarImage: avatarImage,
+                        avatarURL: avatarURL,
+                        avatarObjectKey: avatarObjectKey,
+                        personaType: personaType,
+                        personaMbti: personaMbti,
+                        coreDescription: coreDescription,
+                        keywords: personaKeywords,
+                        onAvatarImageLoaded: { loadedAvatarImage = $0 }
+                    )
+                    .aspectRatio(4.0 / 5.0, contentMode: .fit)
+                    .overlay(alignment: .top) {
+                        SafeAreaTopBar(onBack: onBack)
                             .padding(.horizontal, 20)
                             .padding(.top, proxy.safeAreaInsets.top + 10)
-                        }
-                        .frame(height: min(max(proxy.size.width * 1.25, 470), 570))
-
-                        LovableCatInsightSection(
-                            catName: displayName,
-                            misunderstanding: misunderstanding,
-                            loveLanguage: loveLanguage,
-                            ownerRole: ownerRole
-                        )
-
-                        Color.clear
-                            .frame(height: 112 + max(proxy.safeAreaInsets.bottom, 20))
                     }
-                    .frame(width: proxy.size.width, alignment: .leading)
-                }
-                .frame(width: proxy.size.width)
-                .ignoresSafeArea(edges: .top)
 
+                    LovableCatInsightSection(
+                        catName: displayName,
+                        misunderstanding: misunderstanding,
+                        loveLanguage: loveLanguage,
+                        ownerRole: ownerRole
+                    )
+
+                    Color.clear.frame(height: 28)
+                }
+                .frame(width: proxy.size.width, alignment: .leading)
+            }
+            .frame(width: proxy.size.width)
+            .background(LovableResultBackground())
+            .ignoresSafeArea(edges: .top)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 LovableResultBottomActions(
                     isSaving: isSaving,
                     saveDisabled: saveDisabled,
-                    bottomInset: max(proxy.safeAreaInsets.bottom, 20),
+                    bottomInset: 10,
                     contentWidth: proxy.size.width,
                     onRestart: onRestart,
                     onSave: onSave
                 )
-                .zIndex(20)
-
             }
         }
         .navigationBarBackButtonHidden(true)
