@@ -5267,7 +5267,6 @@ private struct VoiceResultCard: View {
     let photoPreviewImage: UIImage?
     let voice: CatVoiceResult?
     let isLoading: Bool
-    @State private var showsFullPhoto = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -5279,8 +5278,6 @@ private struct VoiceResultCard: View {
                         .scaledToFill()
                         .aspectRatio(4.0 / 5.0, contentMode: .fit)
                         .clipped()
-                        .contentShape(Rectangle())
-                        .onTapGesture { showsFullPhoto = true }
                 }
                 if let voiceText {
                     PublishSpeechBubble(catName: catName, text: voiceText, centered: true)
@@ -5309,18 +5306,6 @@ private struct VoiceResultCard: View {
         }
         .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 30, x: 0, y: 16)
         .animation(.easeInOut(duration: 0.22), value: isLoading)
-        .fullScreenCover(isPresented: $showsFullPhoto) {
-            ZStack(alignment: .topLeading) {
-                Color.black.ignoresSafeArea()
-                if let photoPreviewImage {
-                    Image(uiImage: photoPreviewImage).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                Button { showsFullPhoto = false } label: {
-                    Image(systemName: "xmark").foregroundStyle(.white).frame(width: 44, height: 44).background(.black.opacity(0.35), in: Circle())
-                }
-                .padding()
-            }
-        }
     }
 
     private var voiceText: String? {
