@@ -2551,6 +2551,8 @@ private struct MeView: View {
     @State private var isAccountPresented = false
     @State private var isEditProfilePresented = false
     @State private var isManageVoicesPresented = false
+    @State private var isPersonaPresented = false
+    @State private var isSettingsPresented = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -2571,30 +2573,34 @@ private struct MeView: View {
                         .padding(.top, 52)
 
                         if let profile = appModel.catProfile {
-                            MeSummaryCard(profile: profile, persona: appModel.persona)
+                            MeSummaryCard(profile: profile, persona: appModel.persona) {
+                                isPersonaPresented = true
+                            }
                                 .padding(.horizontal, 20)
                                 .padding(.top, 16)
                         }
 
-                        AccountQuickPanel {
-                            isAccountPresented = true
-                        }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 16)
-
-                        VStack(spacing: 10) {
-                            MeRowButton(icon: "☁︎", title: "账号与数据", sub: "手机号登录、昵称和账号管理") {
-                                isAccountPresented = true
-                            }
-                            MeRowButton(icon: "✎", title: "修改人格档案", sub: "编辑猫咪基本信息") {
+                        MeSection(title: "我的猫咪") {
+                            MeRowButton(icon: "pawprint.fill", title: "猫咪档案", sub: "基本信息与人格") {
                                 isEditProfilePresented = true
                             }
-                            MeRowButton(icon: "♡", title: "管理猫咪心声", sub: "查看和管理所有心声") {
+                            MeRowButton(icon: "quote.bubble.fill", title: "猫咪心声", sub: "查看和管理所有心声") {
                                 isManageVoicesPresented = true
                             }
                         }
                         .padding(.horizontal, 20)
                         .padding(.top, 20)
+
+                        MeSection(title: "账号与设置") {
+                            MeRowButton(icon: "person.crop.circle.fill", title: "账号与数据", sub: "手机号、账号与数据管理") {
+                                isAccountPresented = true
+                            }
+                            MeRowButton(icon: "gearshape.fill", title: "设置", sub: "隐私、协议与关于") {
+                                isSettingsPresented = true
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 22)
                         .padding(.bottom, 112)
                     }
                 }
@@ -2624,141 +2630,86 @@ private struct MeView: View {
             ManageVoicesView(isPublishSheetPresented: $isPublishSheetPresented)
                 .environmentObject(appModel)
         }
+        .navigationDestination(isPresented: $isPersonaPresented) {
+            if let profile = appModel.catProfile {
+                PersonaDetailView(profile: profile, persona: appModel.persona)
+            }
+        }
+        .navigationDestination(isPresented: $isSettingsPresented) {
+            AppSettingsView()
+        }
     }
 }
 
 private struct MeSummaryCard: View {
     let profile: CatProfile
     let persona: CatPersonaResult?
+    let onPersona: () -> Void
 
     var body: some View {
-        NekoGlassCard(cornerRadius: 26, tint: true) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 16) {
+        NekoGlassCard(cornerRadius: 24, tint: true) {
+            HStack(spacing: 14) {
                     ZStack {
                         Circle()
                             .fill(Color.white.opacity(0.60))
-                            .frame(width: 80, height: 80)
+                            .frame(width: 64, height: 64)
                             .blur(radius: 4)
-                        CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 72)
+                        CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 58)
                     }
 
-                    VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
                         Text(profile.name)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(NekoTheme.ink)
-
-                        HStack(spacing: 6) {
-                            Text("✦")
-                                .foregroundStyle(NekoTheme.soulViolet)
-                            Text("\(persona?.type ?? "\(profile.gender.rawValue) · \(profile.ageStage.rawValue)") · \(persona?.mbti ?? "INTJ-A")")
-                                .lineLimit(1)
-                        }
-                        .font(.system(size: NekoTypography.web(10), weight: .medium))
-                        .tracking(1.4)
-                        .foregroundStyle(NekoTheme.soulViolet)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.80), in: Capsule())
+                        Text(persona?.mbti ?? "INTJ-A")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(NekoTheme.soulViolet)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.78), in: Capsule())
                     }
-
-                    Spacer(minLength: 0)
-                }
-
-                Text("\"\(persona?.monologue ?? "它喜欢在窗边看世界，但只要你叫它的名字，它就会立刻回头。")\"")
-                    .font(.system(size: NekoTypography.web(11.5)))
-                    .foregroundStyle(NekoTheme.ink.opacity(0.78))
-                    .lineSpacing(4)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .padding(20)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct AccountQuickPanel: View {
-    @EnvironmentObject private var appModel: NekoAppModel
-    let onAccountCenter: () -> Void
-
-    var body: some View {
-        NekoGlassCard(cornerRadius: 22) {
-            VStack(alignment: .leading, spacing: 0) {
-                if let account = appModel.session?.user.loginIdentifier {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            CloudMemoryTitle()
-
-                            Text(account)
-                                .font(.system(size: NekoTypography.web(12), weight: .regular))
-                                .foregroundStyle(NekoTheme.ink.opacity(0.80))
-                                .lineLimit(1)
-                        }
-
-                        Spacer(minLength: 10)
-
-                        Button("退出") {
-                            appModel.signOut()
-                        }
-                        .font(.system(size: NekoTypography.web(11), weight: .regular))
+                    Text(persona?.type ?? "等待识别人格")
+                        .font(.system(size: 14, weight: .regular))
                         .foregroundStyle(NekoTheme.muted)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Color.white.opacity(0.90), in: Capsule())
-                        .buttonStyle(.plain)
-                    }
-
-                    Button("账号中心", action: onAccountCenter)
-                        .font(.system(size: NekoTypography.web(12), weight: .regular))
-                        .foregroundStyle(NekoTheme.ink)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.90), in: Capsule())
-                        .padding(.top, 12)
-                        .buttonStyle(.plain)
-                } else {
-                    CloudMemoryTitle()
-
-                    Text("登录后，猫咪档案、人格和心声会自动绑定到你的账号。现在支持手机号验证码登录。")
-                        .font(.system(size: NekoTypography.web(11.5)))
-                        .foregroundStyle(NekoTheme.ink.opacity(0.75))
-                        .lineSpacing(4)
-                        .padding(.top, 10)
-
-                    Button {
-                        appModel.noticeMessage = "你已经在 App 内使用手机号验证码登录。"
-                    } label: {
-                        Text("手机号验证码登录")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .font(.system(size: NekoTypography.web(12), weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.vertical, 11)
-                    .background(NekoTheme.primaryGradient, in: Capsule())
-                    .padding(.top, 14)
-                    .buttonStyle(.plain)
+                        .lineLimit(1)
                 }
+
+                Spacer(minLength: 8)
+
+                Button(action: onPersona) {
+                    Text("查看人格 ›")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(NekoTheme.soulViolet)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity)
     }
 }
 
-private struct CloudMemoryTitle: View {
+private struct MeSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
     var body: some View {
-        HStack(spacing: 8) {
-            Text("✦")
-                .font(.system(size: NekoTypography.web(13)))
-                .foregroundStyle(NekoTheme.soulViolet)
-            Text("账 号 同 步")
-                .font(.system(size: NekoTypography.web(10), weight: .medium))
-                .tracking(3.5)
-                .foregroundStyle(NekoTheme.muted)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(NekoTheme.ink)
+                .padding(.leading, 4)
+            VStack(spacing: 1) {
+                content
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            }
         }
     }
 }
@@ -2772,18 +2723,18 @@ private struct MeRowButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Text(icon)
-                    .font(.system(size: NekoTypography.web(16), weight: .medium))
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(NekoTheme.menuIcon)
                     .frame(width: 40, height: 40)
-                    .background(NekoTheme.menuIconGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(NekoTheme.menuIconGradient.opacity(0.65), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: NekoTypography.web(13.5), weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(NekoTheme.ink)
                     Text(sub)
-                        .font(.system(size: NekoTypography.web(10.5)))
+                        .font(.system(size: 13))
                         .foregroundStyle(NekoTheme.muted)
                 }
 
@@ -2794,13 +2745,8 @@ private struct MeRowButton: View {
                     .foregroundStyle(NekoTheme.muted)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(Color.white.opacity(0.80), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.70), lineWidth: 1)
-            }
-            .shadow(color: NekoTheme.soulViolet.opacity(0.13), radius: 18, x: 0, y: 8)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.76))
         }
         .buttonStyle(.plain)
     }
@@ -2843,7 +2789,7 @@ private struct AccountCenterView: View {
             } else {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        AccountTopBar(title: "账号中心") {
+                        AccountTopBar(title: "账号与数据") {
                             dismiss()
                         }
                         .padding(.horizontal, 20)
@@ -3040,21 +2986,123 @@ private struct AccountTopBar: View {
     }
 }
 
-private struct AccountNeedLoginView: View {
+private struct AppSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "版本 \(version) (\(build))"
+    }
+
     var body: some View {
-        VStack(spacing: 10) {
-            Text("需要先登录")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(NekoTheme.ink)
-            Text("登录后才能管理账号数据。")
-                .font(.system(size: NekoTypography.web(12), weight: .regular))
-                .foregroundStyle(NekoTheme.muted)
+        ZStack {
+            NekoBackground()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    AccountTopBar(title: "设置") { dismiss() }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 52)
+
+                    VStack(spacing: 1) {
+                        SettingsLinkRow(icon: "hand.raised.fill", title: "隐私政策") {
+                            openWebPath("privacy")
+                        }
+                        SettingsLinkRow(icon: "doc.text.fill", title: "用户服务协议") {
+                            openWebPath("terms")
+                        }
+                        SettingsLinkRow(icon: "gearshape.fill", title: "权限设置") {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            openURL(url)
+                        }
+                        SettingsLinkRow(icon: "info.circle.fill", title: "关于喵一下", detail: appVersion) {}
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 22)
+                }
+                .padding(.bottom, 34)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(22)
-        .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: NekoTheme.soulViolet.opacity(0.15), radius: 24, x: 0, y: 10)
-        .padding(28)
+        .navigationBarBackButtonHidden(true)
+        .nekoEdgeSwipeBack { dismiss() }
+    }
+
+    private func openWebPath(_ path: String) {
+        openURL(AppConfig.productionWebURL.appendingPathComponent(path))
+    }
+}
+
+private struct SettingsLinkRow: View {
+    let icon: String
+    let title: String
+    var detail: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(NekoTheme.menuIcon)
+                    .frame(width: 36, height: 36)
+                    .background(NekoTheme.menuIconGradient.opacity(0.65), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+
+                Spacer()
+
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 13))
+                        .foregroundStyle(NekoTheme.muted)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(NekoTheme.muted)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.76))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct AccountNeedLoginView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            AccountTopBar(title: "账号与数据") { dismiss() }
+                .padding(.horizontal, 20)
+                .padding(.top, 52)
+
+            VStack(spacing: 10) {
+                Text("需要先登录")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(NekoTheme.ink)
+                Text("登录后才能管理账号数据。")
+                    .font(.system(size: NekoTypography.web(12), weight: .regular))
+                    .foregroundStyle(NekoTheme.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(22)
+            .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: NekoTheme.soulViolet.opacity(0.15), radius: 24, x: 0, y: 10)
+            .padding(28)
+
+            Spacer()
+        }
     }
 }
 
@@ -3104,6 +3152,7 @@ private struct EditProfileView: View {
     @State private var selectedAvatarItem: PhotosPickerItem?
     @State private var didHydrate = false
     @State private var busyAction: String?
+    @State private var isPersonaPresented = false
 
     private var avatarPreview: UIImage? {
         avatarImageData.flatMap(UIImage.init(data:))
@@ -3115,7 +3164,7 @@ private struct EditProfileView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    AccountTopBar(title: "修改人格档案") {
+                    AccountTopBar(title: "猫咪档案") {
                         dismiss()
                     }
                     .padding(.horizontal, 24)
@@ -3182,6 +3231,11 @@ private struct EditProfileView: View {
         .onChange(of: appModel.catProfile) { _, _ in hydrateFromProfile(force: true) }
         .onChange(of: selectedAvatarItem) { _, item in
             Task { await loadAvatar(from: item) }
+        }
+        .navigationDestination(isPresented: $isPersonaPresented) {
+            if let profile = appModel.catProfile {
+                PersonaDetailView(profile: profile, persona: appModel.persona)
+            }
         }
     }
 
@@ -3253,6 +3307,14 @@ private struct EditProfileView: View {
                     .foregroundStyle(NekoTheme.muted)
                     .lineSpacing(3)
                     .padding(.top, 7)
+
+                Button("查看完整人格 ›") {
+                    isPersonaPresented = true
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(NekoTheme.soulViolet)
+                .frame(minHeight: 44)
+                .buttonStyle(.plain)
             }
         }
     }
