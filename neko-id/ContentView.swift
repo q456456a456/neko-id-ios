@@ -2840,6 +2840,14 @@ private struct AccountCenterView: View {
         }
     }
 
+    private var accountDisplayName: String {
+        summary?.profile.displayName?.nonEmpty ?? appModel.catProfile?.name.nonEmpty ?? "猫咪主人"
+    }
+
+    private var accountDisplayPlaceholder: String {
+        appModel.catProfile?.name.nonEmpty ?? "猫咪昵称"
+    }
+
     private var accountHero: some View {
         NekoGlassCard(cornerRadius: 26, tint: true) {
             VStack(alignment: .leading, spacing: 16) {
@@ -2847,7 +2855,7 @@ private struct AccountCenterView: View {
                     CatAvatarView(localImage: nil, remoteURL: appModel.catProfile?.avatarURL, objectKey: appModel.catProfile?.avatarObjectKey, size: 68)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(summary?.profile.displayName?.nonEmpty ?? "喵一下用户")
+                        Text(accountDisplayName)
                             .font(.system(size: NekoTypography.web(17), weight: .medium))
                             .foregroundStyle(NekoTheme.ink)
                             .lineLimit(1)
@@ -2878,7 +2886,7 @@ private struct AccountCenterView: View {
                     .tracking(3.2)
                     .foregroundStyle(NekoTheme.muted)
 
-                TextField("喵一下用户", text: clippedDisplayName)
+                TextField(accountDisplayPlaceholder, text: clippedDisplayName)
                     .font(.system(size: NekoTypography.web(13), weight: .regular))
                     .foregroundStyle(NekoTheme.ink)
                     .padding(.horizontal, 16)
