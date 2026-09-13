@@ -422,13 +422,11 @@ private nonisolated final class NekoCameraController: NSObject, ObservableObject
 
     private static let logger = Logger(subsystem: "uk.nekoid.app", category: "camera")
     private static let previewMaxPixelDimension = 1600
-    private static let minimumUsefulPhotoLongEdge: Int32 = 2048
     private let sessionQueue = DispatchQueue(label: "uk.nekoid.camera.session", qos: .userInitiated)
     private let photoOutput = AVCapturePhotoOutput()
     private var currentPosition: AVCaptureDevice.Position = .back
     private var isConfigured = false
     private var activeDevice: AVCaptureDevice?
-    private var configuredPhotoDimensions: CMVideoDimensions?
     private var captureViewportSize = CGSize(width: 3, height: 4)
     private var activeCaptureContext: NekoCameraCaptureContext?
 
@@ -482,9 +480,6 @@ private nonisolated final class NekoCameraController: NSObject, ObservableObject
             settings.flashMode = .off
             settings.photoQualityPrioritization = .balanced
             settings.isAutoVirtualDeviceFusionEnabled = false
-            if let configuredPhotoDimensions = self.configuredPhotoDimensions {
-                settings.maxPhotoDimensions = configuredPhotoDimensions
-            }
 
             let capturePhotoCallStartedAt = CACurrentMediaTime()
             self.activeCaptureContext = context
@@ -523,7 +518,7 @@ private nonisolated final class NekoCameraController: NSObject, ObservableObject
                 self.replaceVideoInput(commitConfiguration: false)
                 if self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
-                    self.configurePhotoOutput(for: self.activeDevice)
+                    self.configurePhotoOutput()
                 }
                 self.session.commitConfiguration()
                 self.isConfigured = true
@@ -550,7 +545,7 @@ private nonisolated final class NekoCameraController: NSObject, ObservableObject
         configureDevice(device)
         session.addInput(input)
         activeDevice = device
-        configurePhotoOutput(for: device)
+        configurePhotoOutput()
     }
 
     func photoOutput(
@@ -635,38 +630,9 @@ private nonisolated final class NekoCameraController: NSObject, ObservableObject
         }
     }
 
-    private func configurePhotoOutput(for device: AVCaptureDevice? = nil) {
+    private func configurePhotoOutput() {
         photoOutput.maxPhotoQualityPrioritization = .balanced
         photoOutput.isVirtualDeviceConstituentPhotoDeliveryEnabled = false
-
-        if photoOutput.isZeroShutterLagSupported {
-            photoOutput.isZeroShutterLagEnabled = true
-        }
-        if photoOutput.isResponsiveCaptureSupported {
-            photoOutput.isResponsiveCaptureEnabled = true
-        }
-        if photoOutput.isFastCapturePrioritizationSupported {
-            photoOutput.isFastCapturePrioritizationEnabled = true
-        }
-
-        guard let device else { return }
-        if let preferredDimensions = preferredPhotoDimensions(for: device.activeFormat) {
-            configuredPhotoDimensions = preferredDimensions
-            photoOutput.maxPhotoDimensions = preferredDimensions
-        }
-    }
-
-    private func preferredPhotoDimensions(for format: AVCaptureDevice.Format) -> CMVideoDimensions? {
-        let sortedDimensions = format.supportedMaxPhotoDimensions.sorted {
-            photoPixelCount($0) < photoPixelCount($1)
-        }
-        return sortedDimensions.first {
-            max($0.width, $0.height) >= Self.minimumUsefulPhotoLongEdge
-        } ?? sortedDimensions.first
-    }
-
-    private func photoPixelCount(_ dimensions: CMVideoDimensions) -> Int64 {
-        Int64(dimensions.width) * Int64(dimensions.height)
     }
 
     private func makeConfirmationPhoto(
