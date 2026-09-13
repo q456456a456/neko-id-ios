@@ -1053,51 +1053,71 @@ private struct HomeProfileCard: View {
 
     var body: some View {
         NekoGlassCard(cornerRadius: 24, tint: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 46)
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.62))
+                        .frame(width: 72, height: 72)
+                        .blur(radius: 5)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 7) {
-                            Text(profile.name)
-                                .font(.system(size: NekoTypography.web(14), weight: .medium))
-                                .foregroundStyle(NekoTheme.ink)
-                                .lineLimit(1)
+                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 64)
+                }
+                .frame(width: 70, height: 70)
 
-                            Text(persona?.mbti ?? "INTJ-A")
-                                .font(.system(size: NekoTypography.web(8.5), weight: .semibold))
-                                .tracking(1.3)
-                                .foregroundStyle(NekoTheme.soulViolet)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1.5)
-                                .background(Color.white.opacity(0.86), in: Capsule())
-                        }
-
-                        Text(persona?.type ?? "\(profile.gender.rawValue) · \(profile.ageStage.rawValue)")
-                            .font(.system(size: NekoTypography.web(10.5), weight: .medium))
-                            .foregroundStyle(NekoTheme.muted)
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(profile.name)
+                            .font(.system(size: NekoTypography.web(20), weight: .semibold))
+                            .foregroundStyle(NekoTheme.ink)
                             .lineLimit(1)
-                    }
+                            .minimumScaleFactor(0.86)
 
-                    Spacer(minLength: 8)
-
-                    Button {
-                        onAccount()
-                    } label: {
-                        Text("查看人格 ›")
-                            .font(.system(size: NekoTypography.web(10), weight: .semibold))
-                            .tracking(1.6)
+                        Text(persona?.mbti ?? "INTJ-A")
+                            .font(.system(size: NekoTypography.web(12), weight: .semibold))
+                            .tracking(0.8)
                             .foregroundStyle(NekoTheme.soulViolet)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 9)
                             .padding(.vertical, 4)
                             .background(Color.white.opacity(0.86), in: Capsule())
+                            .overlay {
+                                Capsule()
+                                    .stroke(NekoTheme.softLilac.opacity(0.52), lineWidth: 1)
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
                     }
-                    .buttonStyle(.plain)
+
+                    Text(persona?.type ?? "\(profile.gender.rawValue) · \(profile.ageStage.rawValue)")
+                        .font(.system(size: NekoTypography.web(14), weight: .medium))
+                        .foregroundStyle(NekoTheme.ink.opacity(0.68))
+                        .lineSpacing(2)
+                        .lineLimit(2)
                 }
+                .layoutPriority(1)
+
+                Spacer(minLength: 8)
+
+                Button {
+                    onAccount()
+                } label: {
+                    Text("查看人格")
+                        .font(.system(size: NekoTypography.web(13), weight: .semibold))
+                        .foregroundStyle(NekoTheme.soulViolet)
+                        .padding(.horizontal, 15)
+                        .frame(height: 44)
+                        .background(Color.white.opacity(0.88), in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .stroke(NekoTheme.softLilac.opacity(0.58), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
 
             }
-            .padding(14)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 18)
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
