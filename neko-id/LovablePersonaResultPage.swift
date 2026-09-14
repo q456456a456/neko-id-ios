@@ -269,46 +269,6 @@ private enum LovableResultStyle {
 
 }
 
-private enum LovableResultFonts {
-    static func ui(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        named(pingFangNames(for: weight), size: size, fallback: .system(size: size, weight: weight))
-    }
-
-    static func personaTitle(size: CGFloat) -> Font {
-        named(
-            ["Songti SC Semibold", "SongtiSC-Semibold", "Songti SC Bold", "SongtiSC-Bold", "STSong"],
-            size: size,
-            fallback: .system(size: size, weight: .semibold, design: .serif)
-        )
-    }
-
-    static func editorial(size: CGFloat) -> Font {
-        named(
-            ["Didot", "Bodoni 72", "BodoniSvtyTwoITCTT-Book", "Baskerville", "TimesNewRomanPSMT"],
-            size: size,
-            fallback: .system(size: size, weight: .regular, design: .serif)
-        )
-    }
-
-    private static func named(_ names: [String], size: CGFloat, fallback: Font) -> Font {
-        for name in names where UIFont(name: name, size: size) != nil {
-            return .custom(name, size: size)
-        }
-        return fallback
-    }
-
-    private static func pingFangNames(for weight: Font.Weight) -> [String] {
-        switch weight {
-        case .semibold, .bold, .heavy, .black:
-            return ["PingFangSC-Semibold", "PingFang SC Semibold", "PingFangSC-Medium"]
-        case .medium:
-            return ["PingFangSC-Medium", "PingFang SC Medium", "PingFangSC-Regular"]
-        default:
-            return ["PingFangSC-Regular", "PingFang SC Regular", "PingFang SC"]
-        }
-    }
-}
-
 private enum LovablePersonaCopy {
     private static let fallbackTitle = "安静观察型"
     private static let bannedTokens = [
@@ -427,13 +387,6 @@ private enum LovablePersonaCopy {
 }
 
 private enum LovablePersonaTitleLayout {
-    static func fontSize(for title: String) -> CGFloat {
-        let count = Array(title).count
-        if count <= 6 { return 42 }
-        if count <= 10 { return 38 }
-        return 34
-    }
-
     static func lines(for title: String) -> [String] {
         let chars = Array(title)
         let count = chars.count
@@ -519,7 +472,6 @@ private struct LovableResultHero: View {
 
     var body: some View {
         let titleLines = LovablePersonaTitleLayout.lines(for: personaType)
-        let titleSize = LovablePersonaTitleLayout.fontSize(for: personaType)
 
         ZStack(alignment: .bottomLeading) {
             LovableAvatarImage(
@@ -559,16 +511,13 @@ private struct LovableResultHero: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("CAT\nPROFILE")
-                    .lineSpacing(1)
                 Rectangle()
                     .frame(width: 26, height: 1)
                     .padding(.vertical, 7)
                 Text("A Kinder\nWorld\nWith Cats")
-                    .font(.system(size: 11, weight: .regular, design: .serif))
-                    .lineSpacing(1)
+                    .nekoText(.tiny)
             }
-            .font(LovableResultFonts.editorial(size: 16))
-            .tracking(0.8)
+            .nekoText(.personaEditorial)
             .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
             .padding(.leading, 24)
             .padding(.top, 112)
@@ -577,9 +526,9 @@ private struct LovableResultHero: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                     Text(catName)
-                        .font(LovableResultFonts.ui(size: 21, weight: .semibold))
+                        .nekoText(.moduleTitle)
                     Text(personaMbti)
-                        .font(LovableResultFonts.ui(size: 17, weight: .medium))
+                        .nekoText(.button)
                 }
                 .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.49))
                 .lineLimit(1)
@@ -587,7 +536,7 @@ private struct LovableResultHero: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(titleLines.enumerated()), id: \.offset) { _, line in
                         Text(line)
-                            .font(LovableResultFonts.personaTitle(size: titleSize))
+                            .nekoText(NekoTypography.personaTitleStyle(for: personaType.count))
                             .lineLimit(1)
                     }
                 }
@@ -595,8 +544,7 @@ private struct LovableResultHero: View {
                     .padding(.top, 12)
 
                 Text(coreDescription)
-                    .font(LovableResultFonts.ui(size: 16, weight: .regular))
-                    .lineSpacing(6)
+                    .nekoText(.body)
                     .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -605,7 +553,7 @@ private struct LovableResultHero: View {
                 LovableHeroTagFlowLayout(horizontalSpacing: 11, verticalSpacing: 10) {
                     ForEach(keywords, id: \.self) { keyword in
                         Text(keyword)
-                            .font(LovableResultFonts.ui(size: 14, weight: .medium))
+                            .nekoText(.badge)
                             .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
                             .lineLimit(1)
                             .padding(.horizontal, 10)
@@ -747,14 +695,13 @@ private struct LovableResultSectionHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(title)
-                .font(LovableResultFonts.ui(size: 18, weight: .semibold))
+                .nekoText(.cardTitle)
                 .foregroundStyle(Color(red: 0.315, green: 0.270, blue: 0.375))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
             Text(hint)
-                .font(LovableResultFonts.editorial(size: 11))
-                .tracking(2.2)
+                .nekoText(.personaEditorialSmall)
                 .foregroundStyle(Color(red: 0.720, green: 0.660, blue: 0.760))
                 .lineLimit(1)
         }
@@ -798,14 +745,12 @@ private struct LovableSceneCard: View {
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(scene.title)
-                        .font(.system(size: NekoTypography.web(14), weight: .medium))
-                        .tracking(0.8)
+                        .nekoText(.badge)
                         .foregroundStyle(.white.opacity(0.95))
                         .shadow(color: Color(red: 0.160, green: 0.110, blue: 0.190).opacity(0.60), radius: 8, x: 0, y: 1)
 
                     Text(scene.line)
-                        .font(.system(size: NekoTypography.web(12.5), weight: .regular))
-                        .lineSpacing(4)
+                        .nekoText(.micro)
                         .foregroundStyle(.white.opacity(0.80))
                         .shadow(color: Color(red: 0.160, green: 0.110, blue: 0.190).opacity(0.60), radius: 8, x: 0, y: 1)
                 }
@@ -813,8 +758,7 @@ private struct LovableSceneCard: View {
                 Spacer(minLength: 8)
 
                 Text("\(String(format: "%02d", index + 1))/\(String(format: "%02d", total))")
-                    .font(.system(size: NekoTypography.web(10), weight: .regular))
-                    .tracking(1.6)
+                    .nekoText(.tiny)
                     .foregroundStyle(.white.opacity(0.70))
                     .padding(.bottom, 2)
             }
@@ -885,20 +829,17 @@ private struct LovableCatInsightSection: View {
                     VStack(alignment: .leading, spacing: 11) {
                         HStack(alignment: .firstTextBaseline, spacing: 11) {
                             Text(insight.number)
-                                .font(LovableResultFonts.ui(size: 15, weight: .medium))
-                                .tracking(1.2)
+                                .nekoText(.badge)
                                 .foregroundStyle(LovableResultStyle.primaryStart.opacity(0.78))
 
                             Text(insight.title)
-                                .font(LovableResultFonts.ui(size: 19, weight: .semibold))
+                                .nekoText(.cardTitle)
                                 .foregroundStyle(Color(red: 0.330, green: 0.285, blue: 0.385))
-                                .lineSpacing(7)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
                         Text(insight.text)
-                            .font(LovableResultFonts.ui(size: 16, weight: .regular))
-                            .lineSpacing(9)
+                            .nekoText(.body)
                             .foregroundStyle(Color(red: 0.485, green: 0.440, blue: 0.540))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -941,7 +882,7 @@ private struct LovableResultBottomActions: View {
         HStack(spacing: 12) {
             Button(action: onRestart) {
                 Text("重新识别")
-                    .font(LovableResultFonts.ui(size: 15, weight: .medium))
+                    .nekoText(.button)
                     .foregroundStyle(Color(red: 0.500, green: 0.320, blue: 0.590))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
@@ -957,7 +898,7 @@ private struct LovableResultBottomActions: View {
 
             Button(action: onSave) {
                 Text(isSaving ? "保存中…" : "保存结果")
-                    .font(LovableResultFonts.ui(size: 15, weight: .medium))
+                    .nekoText(.button)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
@@ -1007,7 +948,7 @@ private struct LovableResultShareSheet: View {
                     .frame(width: 40, height: 4)
 
                 Text("分享我的猫人格")
-                    .font(.system(size: NekoTypography.web(15), weight: .medium))
+                    .nekoText(.badge)
                     .foregroundStyle(LovableResultStyle.ink)
                     .padding(.top, 16)
 
@@ -1019,7 +960,7 @@ private struct LovableResultShareSheet: View {
                 .padding(.top, 20)
 
                 Button("取消", action: onClose)
-                    .font(.system(size: NekoTypography.web(15), weight: .medium))
+                    .nekoText(.button)
                     .foregroundStyle(Color(red: 0.450, green: 0.310, blue: 0.520))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -1047,13 +988,13 @@ private struct LovableShareItem: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Text(emoji)
-                    .font(.system(size: 22))
+                    .nekoText(.moduleTitle)
                     .frame(width: 48, height: 48)
                     .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
                     .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 8)
 
                 Text(label)
-                    .font(.system(size: NekoTypography.web(13), weight: .regular))
+                    .nekoText(.button)
                     .foregroundStyle(LovableResultStyle.ink.opacity(0.80))
             }
             .frame(maxWidth: .infinity)
@@ -1098,8 +1039,7 @@ private struct LovableResultShareImage: View {
                     Spacer()
 
                     Text("喵一下")
-                        .font(.system(size: NekoTypography.web(10), weight: .medium))
-                        .tracking(5)
+                        .nekoText(.tiny)
                         .foregroundStyle(Color(red: 0.545, green: 0.410, blue: 0.595))
 
                     Spacer()
@@ -1120,8 +1060,7 @@ private struct LovableResultShareImage: View {
             )
 
             Text("喵一下 · 读懂它的小世界")
-                .font(.system(size: NekoTypography.web(10), weight: .medium))
-                .tracking(5)
+                .nekoText(.tiny)
                 .foregroundStyle(LovableResultStyle.label.opacity(0.72))
                 .frame(maxWidth: .infinity)
                 .padding(.top, 30)
@@ -1210,9 +1149,9 @@ private struct LovableAvatarImage: View {
                     LovableResultStyle.resultBackground
                     VStack(spacing: 10) {
                         Image(systemName: "photo")
-                            .font(.system(size: 26, weight: .light))
+                            .nekoText(.pageTitle)
                         Text("照片暂时无法显示")
-                            .font(.system(size: 13, weight: .medium))
+                            .nekoText(.caption)
                     }
                     .foregroundStyle(LovableResultStyle.muted)
                 }

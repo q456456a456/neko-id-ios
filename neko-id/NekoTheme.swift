@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 enum NekoTheme {
     static let creamTop = Color(red: 1.00, green: 0.985, blue: 0.935)
@@ -86,9 +87,158 @@ enum NekoTheme {
 }
 
 enum NekoTypography {
-    /// Visual-equivalent scale from the Lovable/Tailwind web px values to native iOS SF points.
-    /// The web app remains the source of truth; these offsets compensate for native rendering
-    /// so small Chinese text does not look thinner or smaller than the Lovable UI.
+    enum RelativeTextStyle {
+        case avatarSymbol
+        case mediaPlaceholderIcon
+
+        var ratio: CGFloat {
+            switch self {
+            case .avatarSymbol: 0.36
+            case .mediaPlaceholderIcon: 0.18
+            }
+        }
+
+        var weight: Font.Weight {
+            switch self {
+            case .avatarSymbol: .semibold
+            case .mediaPlaceholderIcon: .regular
+            }
+        }
+    }
+
+    enum TextStyle {
+        case pageTitle
+        case mainTitle
+        case moduleTitle
+        case cardTitle
+        case body
+        case support
+        case button
+        case tabBarLabel
+        case badge
+        case eyebrow
+        case caption
+        case micro
+        case tiny
+        case display
+        case iconSmall
+        case iconMedium
+        case iconLarge
+        case personaTitleLarge
+        case personaTitleMedium
+        case personaTitleSmall
+        case personaEditorial
+        case personaEditorialSmall
+        case monospacedCaption
+
+        var size: CGFloat {
+            switch self {
+            case .pageTitle: 28
+            case .mainTitle: 30
+            case .moduleTitle: 21
+            case .cardTitle: 18
+            case .body: 16
+            case .support: 14
+            case .button: 17
+            case .tabBarLabel: 13
+            case .badge: 15
+            case .eyebrow: 14
+            case .caption: 13
+            case .micro: 12
+            case .tiny: 11
+            case .display: 34
+            case .iconSmall: 14
+            case .iconMedium: 20
+            case .iconLarge: 28
+            case .personaTitleLarge: 42
+            case .personaTitleMedium: 38
+            case .personaTitleSmall: 34
+            case .personaEditorial: 16
+            case .personaEditorialSmall: 11
+            case .monospacedCaption: 12
+            }
+        }
+
+        var lineHeight: CGFloat {
+            switch self {
+            case .pageTitle: 34
+            case .mainTitle: 38
+            case .moduleTitle: 28
+            case .cardTitle: 24
+            case .body: 24
+            case .support: 20
+            case .button: 22
+            case .tabBarLabel: 18
+            case .badge: 20
+            case .eyebrow: 20
+            case .caption: 18
+            case .micro: 16
+            case .tiny: 15
+            case .display: 40
+            case .iconSmall: 14
+            case .iconMedium: 20
+            case .iconLarge: 28
+            case .personaTitleLarge: 46
+            case .personaTitleMedium: 42
+            case .personaTitleSmall: 38
+            case .personaEditorial: 18
+            case .personaEditorialSmall: 15
+            case .monospacedCaption: 16
+            }
+        }
+
+        var weight: Font.Weight {
+            switch self {
+            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
+                .semibold
+            case .tabBarLabel, .badge, .eyebrow, .caption, .iconSmall, .iconMedium:
+                .medium
+            case .monospacedCaption:
+                .medium
+            default:
+                .regular
+            }
+        }
+
+        var letterSpacing: CGFloat { 0 }
+
+        var lineSpacing: CGFloat {
+            max(0, lineHeight - size)
+        }
+    }
+
+    static func font(_ style: TextStyle) -> Font {
+        switch style {
+        case .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
+            return named(
+                ["Songti SC Semibold", "SongtiSC-Semibold", "Songti SC Bold", "SongtiSC-Bold", "STSong"],
+                size: style.size,
+                fallback: .system(size: style.size, weight: .semibold, design: .serif)
+            )
+        case .personaEditorial, .personaEditorialSmall:
+            return named(
+                ["Didot", "Bodoni 72", "BodoniSvtyTwoITCTT-Book", "Baskerville", "TimesNewRomanPSMT"],
+                size: style.size,
+                fallback: .system(size: style.size, weight: .regular, design: .serif)
+            )
+        case .monospacedCaption:
+            return .system(size: style.size, weight: style.weight, design: .monospaced)
+        default:
+            return .system(size: style.size, weight: style.weight)
+        }
+    }
+
+    static func personaTitleStyle(for characterCount: Int) -> TextStyle {
+        if characterCount <= 6 { return .personaTitleLarge }
+        if characterCount <= 10 { return .personaTitleMedium }
+        return .personaTitleSmall
+    }
+
+    static func relativeFont(_ style: RelativeTextStyle, for size: CGFloat) -> Font {
+        .system(size: size * style.ratio, weight: style.weight)
+    }
+
+    /// Legacy visual-equivalent scale kept only for old layout constants while views migrate to semantic tokens.
     static func web(_ px: CGFloat) -> CGFloat {
         switch px {
         case ..<10:
@@ -98,6 +248,35 @@ enum NekoTypography {
         default:
             return px
         }
+    }
+
+    private static func named(_ names: [String], size: CGFloat, fallback: Font) -> Font {
+        for name in names where UIFont(name: name, size: size) != nil {
+            return .custom(name, size: size)
+        }
+        return fallback
+    }
+}
+
+private struct NekoTextStyleModifier: ViewModifier {
+    let style: NekoTypography.TextStyle
+
+    func body(content: Content) -> some View {
+        content
+            .font(NekoTypography.font(style))
+            .lineSpacing(style.lineSpacing)
+            .tracking(style.letterSpacing)
+    }
+}
+
+extension View {
+    func nekoText(_ style: NekoTypography.TextStyle) -> some View {
+        modifier(NekoTextStyleModifier(style: style))
+    }
+
+    func nekoRelativeText(_ style: NekoTypography.RelativeTextStyle, size: CGFloat) -> some View {
+        font(NekoTypography.relativeFont(style, for: size))
+            .tracking(0)
     }
 }
 
@@ -178,7 +357,7 @@ struct NekoGlassCard<Content: View>: View {
 struct NekoPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: NekoTypography.web(15), weight: .semibold))
+            .nekoText(.button)
             .foregroundStyle(.white)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
@@ -192,7 +371,7 @@ struct NekoPrimaryButtonStyle: ButtonStyle {
 struct NekoSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: NekoTypography.web(15), weight: .semibold))
+            .nekoText(.button)
             .foregroundStyle(NekoTheme.ink)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
@@ -215,8 +394,7 @@ struct NekoSectionLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: NekoTypography.web(10), weight: .semibold))
-            .tracking(3.2)
+            .nekoText(.eyebrow)
             .foregroundStyle(NekoTheme.muted)
     }
 }

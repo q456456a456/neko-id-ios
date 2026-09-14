@@ -64,7 +64,7 @@ struct NekoCameraView: View {
                 Spacer()
                 if capturedPhoto == nil, !camera.authorizationDenied {
                     Text(guidanceText)
-                        .font(.system(size: 13, weight: .medium))
+                        .nekoText(.caption)
                         .foregroundStyle(.white.opacity(0.88))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -120,7 +120,7 @@ struct NekoCameraView: View {
         HStack {
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .semibold))
+                    .nekoText(.button)
                     .foregroundStyle(.white)
                     .frame(width: 42, height: 42)
                     .background(.black.opacity(0.30), in: Circle())
@@ -166,7 +166,7 @@ struct NekoCameraView: View {
                                 .scaledToFill()
                         } else {
                             Image(systemName: "photo.on.rectangle")
-                                .font(.system(size: 19, weight: .medium))
+                                .nekoText(.cardTitle)
                                 .foregroundStyle(.white)
                         }
                     }
@@ -207,7 +207,7 @@ struct NekoCameraView: View {
                     camera.switchCamera()
                 } label: {
                     Image(systemName: "camera.rotate.fill")
-                        .font(.system(size: 20, weight: .medium))
+                        .nekoText(.moduleTitle)
                         .foregroundStyle(.white)
                         .frame(width: 48, height: 48)
                         .background(.black.opacity(0.30), in: Circle())
@@ -223,16 +223,15 @@ struct NekoCameraView: View {
     private var cameraUnavailableView: some View {
         VStack(spacing: 14) {
             Image(systemName: "camera.fill")
-                .font(.system(size: 34, weight: .light))
+                .nekoText(.display)
                 .foregroundStyle(NekoTheme.soulViolet)
             Text("需要相机权限")
-                .font(.system(size: 20, weight: .semibold))
+                .nekoText(.moduleTitle)
                 .foregroundStyle(NekoTheme.ink)
             Text("请在系统设置中允许相机访问，或从照片图库选择猫咪照片。")
-                .font(.system(size: 13))
+                .nekoText(.caption)
                 .foregroundStyle(NekoTheme.muted)
                 .multilineTextAlignment(.center)
-                .lineSpacing(4)
             Button("打开系统设置") {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 UIApplication.shared.open(url)
@@ -754,7 +753,7 @@ private nonisolated extension CGImage {
 private struct NekoCameraPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .nekoText(.badge)
             .foregroundStyle(.white)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
@@ -766,7 +765,7 @@ private struct NekoCameraPrimaryButtonStyle: ButtonStyle {
 private struct NekoCameraSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .nekoText(.badge)
             .foregroundStyle(.white)
             .padding(.vertical, 15)
             .padding(.horizontal, 18)

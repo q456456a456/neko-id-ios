@@ -35,12 +35,11 @@ struct VoiceShareCard: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("喵一下")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(2.2)
+                                .nekoText(.tiny)
                             Text("\(data.catName) · \(data.mbti)")
-                                .font(.system(size: 15, weight: .semibold))
+                                .nekoText(.badge)
                             Text(data.personalityTitle)
-                                .font(.system(size: 12, weight: .medium))
+                                .nekoText(.micro)
                         }
                         .foregroundStyle(Color(red: 0.31, green: 0.25, blue: 0.38))
                         Spacer()
@@ -52,12 +51,11 @@ struct VoiceShareCard: View {
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text(data.shareHeadline)
-                            .font(.system(size: 22, weight: .semibold))
+                            .nekoText(.moduleTitle)
                             .lineLimit(2)
                             .minimumScaleFactor(0.80)
                         Text("“\(data.generatedVoice)”")
-                            .font(.system(size: 14, weight: .medium))
-                            .lineSpacing(3)
+                            .nekoText(.badge)
                             .lineLimit(2)
                             .minimumScaleFactor(0.84)
                             .opacity(0.84)
@@ -82,12 +80,11 @@ struct VoiceShareCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("🐾 AI 读到的小心思")
-                        .font(.system(size: 11, weight: .semibold))
+                        .nekoText(.tiny)
                         .foregroundStyle(Color(red: 0.52, green: 0.37, blue: 0.61))
                     Text(data.insightSummary)
-                        .font(.system(size: 14, weight: .medium))
+                        .nekoText(.badge)
                         .foregroundStyle(Color(red: 0.31, green: 0.27, blue: 0.37))
-                        .lineSpacing(3)
                         .lineLimit(2)
                         .minimumScaleFactor(0.88)
                 }
@@ -95,7 +92,7 @@ struct VoiceShareCard: View {
                 HStack(spacing: 7) {
                     ForEach(Array(data.personalityTags.prefix(3)), id: \.self) { tag in
                         Text(tag.hasPrefix("#") ? tag : "#\(tag)")
-                            .font(.system(size: 10, weight: .medium))
+                            .nekoText(.tiny)
                             .foregroundStyle(Color(red: 0.49, green: 0.34, blue: 0.58))
                             .lineLimit(1)
                             .padding(.horizontal, 8)
@@ -107,8 +104,7 @@ struct VoiceShareCard: View {
                 Spacer(minLength: 0)
 
                 Text("喵一下 · 读懂它的小世界")
-                    .font(.system(size: 10, weight: .medium))
-                    .tracking(1.5)
+                    .nekoText(.tiny)
                     .foregroundStyle(Color(red: 0.52, green: 0.46, blue: 0.59).opacity(0.82))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
