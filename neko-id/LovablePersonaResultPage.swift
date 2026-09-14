@@ -265,8 +265,79 @@ private enum LovableResultStyle {
         endPoint: .trailing
     )
 
-    static let keywords = ["温柔观察者", "慢热", "安静陪伴"]
+    static func chineseEditorial(_ size: CGFloat) -> Font {
+        if UIFont(name: "SongtiSC-Semibold", size: size) != nil {
+            return .custom("SongtiSC-Semibold", fixedSize: size)
+        }
+        if UIFont(name: "Songti SC", size: size) != nil {
+            return .custom("Songti SC", fixedSize: size).weight(.semibold)
+        }
+        if UIFont(name: "STSong", size: size) != nil {
+            return .custom("STSong", fixedSize: size).weight(.semibold)
+        }
+        return .system(size: size, weight: .semibold, design: .serif)
+    }
 
+    static func englishEditorial(_ size: CGFloat) -> Font {
+        if UIFont(name: "Didot", size: size) != nil {
+            return .custom("Didot", fixedSize: size)
+        }
+        if UIFont(name: "Bodoni 72", size: size) != nil {
+            return .custom("Bodoni 72", fixedSize: size)
+        }
+        if UIFont(name: "Baskerville", size: size) != nil {
+            return .custom("Baskerville", fixedSize: size)
+        }
+        if UIFont(name: "Times New Roman", size: size) != nil {
+            return .custom("Times New Roman", fixedSize: size)
+        }
+        return .system(size: size, design: .serif)
+    }
+
+    static func chineseUI(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        if UIFont(name: "PingFangSC-Regular", size: size) != nil {
+            return .custom("PingFang SC", fixedSize: size).weight(weight)
+        }
+        return .system(size: size, weight: weight)
+    }
+
+}
+
+private struct EditorialPersonaTitle {
+    let text: String
+    let fontSize: CGFloat
+
+    init(_ rawValue: String) {
+        let normalized = rawValue
+            .replacingOccurrences(of: "\n", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let characters = Array(normalized)
+
+        switch characters.count {
+        case ...6:
+            text = normalized
+            fontSize = 44
+        case 7...10:
+            text = Self.balancedTwoLines(characters)
+            fontSize = 39
+        case 11...14:
+            text = Self.balancedTwoLines(characters)
+            fontSize = 34
+        default:
+            // The generation layer is expected to keep titles within 14 Chinese
+            // characters. This visual guard prevents legacy data producing an
+            // orphaned third line while preserving the full stored value.
+            text = Self.balancedTwoLines(Array(characters.prefix(14)))
+            fontSize = 32
+        }
+    }
+
+    private static func balancedTwoLines(_ characters: [Character]) -> String {
+        guard characters.count > 6 else { return String(characters) }
+        var split = Int(ceil(Double(characters.count) / 2.0))
+        split = min(max(split, 3), characters.count - 3)
+        return String(characters[..<split]) + "\n" + String(characters[split...])
+    }
 }
 
 private enum LovablePersonaCopy {
@@ -469,6 +540,23 @@ private struct LovableResultHero: View {
     let coreDescription: String
     let keywords: [String]
     var onAvatarImageLoaded: (UIImage?) -> Void = { _ in }
+    @State private var resolvedImage: UIImage?
+
+    private var editorialTitle: EditorialPersonaTitle {
+        EditorialPersonaTitle(personaType)
+    }
+
+    /// Until the API supplies a face focal point, use the source aspect ratio to
+    /// keep portrait ears high and reserve a quiet column for cover copy.
+    private var photoOffset: CGSize {
+        guard let image = avatarImage ?? resolvedImage, image.size.width > 0, image.size.height > 0 else {
+            return CGSize(width: 7, height: -2)
+        }
+        let ratio = image.size.width / image.size.height
+        if ratio > 1.15 { return CGSize(width: 10, height: -4) }
+        if ratio < 0.82 { return CGSize(width: 5, height: 4) }
+        return CGSize(width: 7, height: -2)
+    }
 
     var body: some View {
         let titleLines = LovablePersonaTitleLayout.lines(for: personaType)
@@ -479,10 +567,14 @@ private struct LovableResultHero: View {
                 remoteURL: avatarURL,
                 objectKey: avatarObjectKey,
                 contentMode: .fill,
-                onImageLoaded: onAvatarImageLoaded
+                onImageLoaded: { image in
+                    resolvedImage = image
+                    onAvatarImageLoaded(image)
+                }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(1.012, anchor: .center)
+            .scaleEffect(1.012, anchor: .topTrailing)
+            .offset(photoOffset)
             .clipped()
 
             // Keep the real photograph dominant while reserving a quiet editorial
@@ -501,12 +593,12 @@ private struct LovableResultHero: View {
                 stops: [
                     .init(color: .clear, location: 0.0),
                     .init(color: Color(red: 1.0, green: 0.978, blue: 0.956).opacity(0.34), location: 0.42),
-                    .init(color: Color(red: 0.992, green: 0.956, blue: 0.982).opacity(0.88), location: 1.0),
+                    .init(color: LovableResultStyle.bgMid.opacity(0.78), location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 292)
+            .frame(height: 310)
             .frame(maxWidth: .infinity, alignment: .bottom)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -516,11 +608,13 @@ private struct LovableResultHero: View {
                     .padding(.vertical, 7)
                 Text("A Kinder\nWorld\nWith Cats")
                     .nekoText(.tiny)
+                    .lineSpacing(1)
             }
             .nekoText(.personaEditorial)
+            .tracking(0.8)
             .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
             .padding(.leading, 24)
-            .padding(.top, 112)
+            .padding(.top, 108)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -545,6 +639,7 @@ private struct LovableResultHero: View {
 
                 Text(coreDescription)
                     .nekoText(.body)
+                    .lineSpacing(5)
                     .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -556,9 +651,12 @@ private struct LovableResultHero: View {
                             .nekoText(.badge)
                             .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
                             .lineLimit(1)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(.white.opacity(0.85), in: Capsule())
+                            .background(.white.opacity(0.78), in: Capsule())
+                            .overlay {
+                                Capsule().stroke(.white.opacity(0.72), lineWidth: 0.7)
+                            }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -702,6 +800,7 @@ private struct LovableResultSectionHeader: View {
 
             Text(hint)
                 .nekoText(.personaEditorialSmall)
+                .tracking(2.2)
                 .foregroundStyle(Color(red: 0.720, green: 0.660, blue: 0.760))
                 .lineLimit(1)
         }
@@ -814,10 +913,25 @@ private struct LovableCatInsightSection: View {
 
     private var insights: [LovableResultInsight] {
         [
-            LovableResultInsight(number: "01", title: "你可能一直误会它的一件事", text: misunderstanding),
-            LovableResultInsight(number: "02", title: "它表达喜欢的方式", text: loveLanguage),
-            LovableResultInsight(number: "03", title: "在\(catName)眼里，你的位置", text: ownerRole),
+            LovableResultInsight(number: "01", title: "你可能一直误会它的一件事", text: concise(misunderstanding)),
+            LovableResultInsight(number: "02", title: "它表达喜欢的方式", text: concise(loveLanguage)),
+            LovableResultInsight(number: "03", title: "在\(catName)眼里，你的位置", text: concise(ownerRole)),
         ]
+    }
+
+    private func concise(_ source: String) -> String {
+        let normalized = source
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > 58 else { return normalized }
+
+        if let boundary = normalized.prefix(60).lastIndex(where: { "。！？".contains($0) }) {
+            let distance = normalized.distance(from: normalized.startIndex, to: boundary)
+            if distance >= 34 {
+                return String(normalized[...boundary])
+            }
+        }
+        return String(normalized.prefix(56)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
     var body: some View {
@@ -860,13 +974,13 @@ private struct LovableCatInsightSection: View {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .stroke(.white.opacity(0.80), lineWidth: 1)
                     }
-                    .shadow(color: LovableResultStyle.primaryStart.opacity(0.12), radius: 15, x: 0, y: 8)
+                    .shadow(color: LovableResultStyle.primaryStart.opacity(0.07), radius: 12, x: 0, y: 6)
                 }
             }
             .padding(.top, 14)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 28)
+        .padding(.top, 30)
     }
 }
 

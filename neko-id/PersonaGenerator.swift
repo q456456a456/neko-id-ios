@@ -95,31 +95,31 @@ enum PersonaGenerator {
         let mood: String
 
         if affection >= 68 && expressiveness <= 42 {
-            type = "喜欢你但不爱黏着你"
+            type = "安静亲近型"
             mbti = "ISFJ-A"
             mood = "在意你，但表达得很安静"
         } else if sociability <= 42 && affection >= 68 {
-            type = "熟人限定的小黏猫"
+            type = "熟了会更黏"
             mbti = "INFJ-A"
             mood = "只对熟悉的人主动"
         } else if curiosity >= 68 && alertness >= 68 {
-            type = "又怂又想看的好奇派"
+            type = "好奇但谨慎"
             mbti = "INTP-T"
             mood = "好奇，但要先确认安全"
         } else if curiosity >= 68 && affection >= 68 {
-            type = "爱玩也爱找你的小猫"
+            type = "爱玩也爱亲近"
             mbti = "ENFP-A"
             mood = "今天也想探索新角落"
         } else if boundary >= 68 && affection >= 68 {
-            type = "喜欢你也很有边界"
+            type = "主动亲近有边界"
             mbti = "INTJ-A"
             mood = "亲近要按自己的节奏"
         } else if security >= 78 {
-            type = "慢热守护者"
+            type = "先观察再靠近"
             mbti = "ISFJ-A"
             mood = "确认安全后才会靠近"
         } else if affection >= 76 {
-            type = "温柔陪伴者"
+            type = "喜欢待在你附近"
             mbti = "INFP-A"
             mood = "想待在你附近，假装只是路过"
         } else {
@@ -210,11 +210,11 @@ enum PersonaGenerator {
         case .kitten:
             return "小小探险家"
         case .young:
-            return "灵动观察者"
+            return "好奇观察型"
         case .adult:
-            return "从容陪伴者"
+            return "安静陪伴型"
         case .senior:
-            return "安静小智者"
+            return "慢节奏陪伴型"
         }
     }
 
@@ -253,14 +253,14 @@ enum PersonaGenerator {
         alertness: Int,
         videoCount: Int
     ) -> [String] {
-        var tags = [type]
-        if affection >= 74 { tags.append("温柔贴近") }
-        if independence >= 74 { tags.append("独立有边界") }
-        if curiosity >= 74 { tags.append("好奇心旺") }
-        if security >= 74 { tags.append("需要安全感") }
-        if alertness >= 70 { tags.append("观察细腻") }
-        if videoCount > 1 { tags.append("动态线索丰富") }
-        tags.append(contentsOf: ["慢热可爱", "小小主见", "陪伴型"])
+        var tags: [String] = []
+        if affection >= 74 { tags.append("主动靠近") }
+        if independence >= 74 { tags.append("喜欢自己决定") }
+        if curiosity >= 74 { tags.append("喜欢探索") }
+        if security >= 74 { tags.append("熟悉后更放松") }
+        if alertness >= 70 { tags.append("先观察再靠近") }
+        if videoCount > 1 { tags.append("会主动回应") }
+        tags.append(contentsOf: ["不爱强抱", "边界感强", "喜欢待在附近"])
         return Array(NSOrderedSet(array: tags).compactMap { $0 as? String }.prefix(6))
     }
 
@@ -281,5 +281,85 @@ enum PersonaGenerator {
 
     private static func dominantWords(from traits: [PersonaTrait]) -> String {
         traits.map(\.label).joined(separator: "、")
+    }
+}
+
+enum PersonaStabilityPolicy {
+    private static let forbiddenTerms = [
+        "营业", "控场", "发令", "施压", "稳态", "高质互动", "策略性靠近",
+    ]
+
+    static func stabilize(
+        _ current: CatPersonaResult,
+        previous: CatPersonaResult?,
+        currentAnswers: [Int: QuizChoice]
+    ) -> CatPersonaResult {
+        guard let previous else { return current }
+        guard !hasStrongNewEvidence(current: current, previous: previous, currentAnswers: currentAnswers) else {
+            return current
+        }
+
+        var stabilized = current
+        if isNaturalTitle(previous.type) {
+            stabilized.type = previous.type
+        }
+        stabilized.mbti = previous.mbti
+        stabilized.traits = previous.traits
+        stabilized.corePersonality = previous.corePersonality ?? current.corePersonality
+        stabilized.misunderstanding = previous.misunderstanding ?? current.misunderstanding
+        stabilized.loveLanguage = previous.loveLanguage ?? current.loveLanguage
+        stabilized.loveLanguageInsight = previous.loveLanguageInsight ?? current.loveLanguageInsight
+        stabilized.ownerRole = previous.ownerRole
+        stabilized.ownerRelationship = previous.ownerRelationship ?? current.ownerRelationship
+
+        let anchoredTags = Array(previous.tags.prefix(2)) + current.tags
+        stabilized.tags = Array(NSOrderedSet(array: anchoredTags).compactMap { $0 as? String }.prefix(4))
+        return stabilized
+    }
+
+    private static func hasStrongNewEvidence(
+        current: CatPersonaResult,
+        previous: CatPersonaResult,
+        currentAnswers: [Int: QuizChoice]
+    ) -> Bool {
+        let previousAnswers = answers(from: previous.evidence)
+        if !previousAnswers.isEmpty {
+            let changedAnswers = Set(previousAnswers.keys).union(currentAnswers.keys).reduce(into: 0) { count, key in
+                if previousAnswers[key] != currentAnswers[key] { count += 1 }
+            }
+            if changedAnswers > 1 { return true }
+        }
+
+        let previousTraits = Dictionary(uniqueKeysWithValues: previous.traits.map { ($0.label, $0.value) })
+        let sharedDifferences = current.traits.compactMap { trait -> Int? in
+            guard let prior = previousTraits[trait.label] else { return nil }
+            return abs(prior - trait.value)
+        }
+        guard sharedDifferences.count >= 2 else { return false }
+        let averageDifference = Double(sharedDifferences.reduce(0, +)) / Double(sharedDifferences.count)
+        return averageDifference >= 15
+    }
+
+    private static func answers(from evidence: [PersonaEvidence]) -> [Int: QuizChoice] {
+        var answers: [Int: QuizChoice] = [:]
+        for item in evidence {
+            for code in item.supportedBy {
+                let parts = code.split(separator: ":")
+                guard parts.count == 2,
+                      let question = Int(parts[0].dropFirst()),
+                      let choice = QuizChoice(rawValue: parts[1].lowercased()) else { continue }
+                answers[question - 1] = choice
+            }
+        }
+        return answers
+    }
+
+    private static func isNaturalTitle(_ value: String) -> Bool {
+        let title = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffixes = ["控", "王", "机"]
+        return !title.isEmpty &&
+            title.count <= 14 &&
+            !suffixes.contains(where: title.hasSuffix) &&
+            !forbiddenTerms.contains(where: title.contains)
     }
 }

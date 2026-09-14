@@ -220,7 +220,7 @@ final class NekoAppModel: ObservableObject {
         videoObservations: [CatVideoObservation] = [],
         previousPersona: CatPersonaResult? = nil
     ) async throws -> CatPersonaResult {
-        return try await serverAPI.generateOnboardingPersona(
+        let generated = try await serverAPI.generateOnboardingPersona(
             draft: draft,
             quizAnswers: quizAnswers,
             avatarImageData: avatarImageData,
@@ -241,6 +241,11 @@ final class NekoAppModel: ObservableObject {
             quizAnswers: quizAnswers,
             clip: clip,
             videoCount: videoCount
+        )
+        return PersonaStabilityPolicy.stabilize(
+            generated,
+            previous: persona,
+            currentAnswers: quizAnswers
         )
     }
 

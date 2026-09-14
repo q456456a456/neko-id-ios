@@ -806,7 +806,6 @@ private struct HomeView: View {
     @EnvironmentObject private var appModel: NekoAppModel
     let onAccount: () -> Void
     @State private var isPublishSheetPresented = false
-    @State private var isPersonaPresented = false
     @State private var selectedVoice: CatVoiceResult?
     @State private var isVoiceDetailPresented = false
     @State private var actionVoice: CatVoiceResult?
@@ -842,13 +841,9 @@ private struct HomeView: View {
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        if let profile = appModel.catProfile {
-                            HomeProfileCard(profile: profile, persona: appModel.persona) {
-                                isPersonaPresented = true
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 34)
+                        MainTabPageTitle(title: "首页")
 
+                        if let profile = appModel.catProfile {
                             HStack(spacing: 8) {
                                 Text("💭")
                                     .nekoText(.cardTitle)
@@ -857,7 +852,7 @@ private struct HomeView: View {
                                     .foregroundStyle(NekoTheme.ink)
                             }
                             .padding(.horizontal, 20)
-                            .padding(.top, 26)
+                            .padding(.top, 24)
 
                             if !homeVoices.isEmpty || !appModel.pendingVoicePublishes.isEmpty {
                                 VStack(spacing: 18) {
@@ -902,7 +897,7 @@ private struct HomeView: View {
                                 appModel.startOnboarding()
                             }
                             .padding(.horizontal, 20)
-                            .padding(.top, 88)
+                            .padding(.top, 24)
                         }
                     }
                     .padding(.bottom, 156)
@@ -951,17 +946,6 @@ private struct HomeView: View {
         .fullScreenCover(isPresented: $isPublishSheetPresented) {
             VoicePublishSheet()
                 .environmentObject(appModel)
-        }
-        .navigationDestination(isPresented: $isPersonaPresented) {
-            if let profile = appModel.catProfile {
-                PersonaDetailView(profile: profile, persona: appModel.persona)
-            } else {
-                MissingProfileCard {
-                    appModel.startOnboarding()
-                }
-                .padding(24)
-                .background { NekoBackground() }
-            }
         }
         .navigationDestination(isPresented: $isVoiceDetailPresented) {
             if let selectedVoice {
@@ -1040,79 +1024,6 @@ private struct HomeVoiceGroup: Identifiable {
     var voices: [CatVoiceResult]
 
     var id: String { label }
-}
-
-private struct HomeProfileCard: View {
-    let profile: CatProfile
-    let persona: CatPersonaResult?
-    let onAccount: () -> Void
-
-    var body: some View {
-        NekoGlassCard(cornerRadius: 24, tint: true) {
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.62))
-                        .frame(width: 72, height: 72)
-                        .blur(radius: 5)
-
-                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 64)
-                }
-                .frame(width: 70, height: 70)
-
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(profile.name)
-                            .nekoText(.moduleTitle)
-                            .foregroundStyle(NekoTheme.ink)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.86)
-
-                        Text(persona?.mbti ?? "INTJ-A")
-                            .nekoText(.badge)
-                            .foregroundStyle(NekoTheme.soulViolet)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(Color.white.opacity(0.86), in: Capsule())
-                            .overlay {
-                                Capsule()
-                                    .stroke(NekoTheme.softLilac.opacity(0.52), lineWidth: 1)
-                            }
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-
-                    Text(persona?.type ?? "\(profile.gender.rawValue) · \(profile.ageStage.rawValue)")
-                        .nekoText(.badge)
-                        .foregroundStyle(NekoTheme.ink.opacity(0.68))
-                        .lineLimit(2)
-                }
-                .layoutPriority(1)
-
-                Spacer(minLength: 8)
-
-                Button {
-                    onAccount()
-                } label: {
-                    Text("查看人格")
-                        .nekoText(.caption)
-                        .foregroundStyle(NekoTheme.soulViolet)
-                        .padding(.horizontal, 15)
-                        .frame(height: 44)
-                        .background(Color.white.opacity(0.88), in: Capsule())
-                        .overlay {
-                            Capsule()
-                                .stroke(NekoTheme.softLilac.opacity(0.58), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-                .fixedSize(horizontal: true, vertical: false)
-
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 18)
-        }
-        .frame(maxWidth: .infinity)
-    }
 }
 
 private struct EmptyFeedCard: View {
@@ -2548,7 +2459,6 @@ private struct MeView: View {
     @EnvironmentObject private var appModel: NekoAppModel
     let onHome: () -> Void
     @State private var isPublishSheetPresented = false
-    @State private var isAccountPresented = false
     @State private var isEditProfilePresented = false
     @State private var isManageVoicesPresented = false
     @State private var isPersonaPresented = false
@@ -2561,22 +2471,14 @@ private struct MeView: View {
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text("我的")
-                                .nekoText(.button)
-                                .foregroundStyle(NekoTheme.ink)
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.top, 52)
+                        MainTabPageTitle(title: "我的")
 
                         if let profile = appModel.catProfile {
                             MeSummaryCard(profile: profile, persona: appModel.persona) {
                                 isPersonaPresented = true
                             }
                                 .padding(.horizontal, 20)
-                                .padding(.top, 16)
+                                .padding(.top, 24)
                         }
 
                         MeSection(title: "我的猫咪") {
@@ -2590,11 +2492,8 @@ private struct MeView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 20)
 
-                        MeSection(title: "账号与设置") {
-                            MeRowButton(icon: "person.crop.circle.fill", title: "账号与数据", sub: "手机号、账号与数据管理") {
-                                isAccountPresented = true
-                            }
-                            MeRowButton(icon: "gearshape.fill", title: "设置", sub: "隐私、协议与关于") {
+                        MeSection(title: "设置") {
+                            MeRowButton(icon: "gearshape.fill", title: "设置", sub: "账号、隐私、协议与关于") {
                                 isSettingsPresented = true
                             }
                         }
@@ -2617,10 +2516,6 @@ private struct MeView: View {
             VoicePublishSheet()
                 .environmentObject(appModel)
         }
-        .navigationDestination(isPresented: $isAccountPresented) {
-            AccountCenterView()
-                .environmentObject(appModel)
-        }
         .navigationDestination(isPresented: $isEditProfilePresented) {
             EditProfileView()
                 .environmentObject(appModel)
@@ -2637,6 +2532,19 @@ private struct MeView: View {
         .navigationDestination(isPresented: $isSettingsPresented) {
             AppSettingsView()
         }
+    }
+}
+
+private struct MainTabPageTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 29, weight: .semibold))
+            .foregroundStyle(NekoTheme.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 52)
     }
 }
 
@@ -2806,24 +2714,6 @@ private struct AccountCenterView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, 16)
 
-                        Button {
-                            runAccountAction("signout") {
-                                appModel.signOut()
-                                dismiss()
-                            }
-                        } label: {
-                            Text(busyAction == "signout" ? "退出中…" : "退出登录")
-                                .nekoText(.button)
-                                .foregroundStyle(NekoTheme.muted)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.white.opacity(0.85), in: Capsule())
-                                .shadow(color: NekoTheme.soulViolet.opacity(0.12), radius: 18, x: 0, y: 8)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 20)
-
                         Spacer(minLength: 40)
                     }
                     .padding(.bottom, 34)
@@ -2831,7 +2721,7 @@ private struct AccountCenterView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .nekoEdgeSwipeBack(isEnabled: busyAction != "signout") {
+        .nekoEdgeSwipeBack {
             dismiss()
         }
         .task {
@@ -2993,6 +2883,9 @@ private struct AccountTopBar: View {
 private struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var appModel: NekoAppModel
+    @State private var isAccountPresented = false
+    @State private var confirmsSignOut = false
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
@@ -3010,6 +2903,31 @@ private struct AppSettingsView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 52)
 
+                    SettingsSectionTitle("账号")
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
+
+                    VStack(spacing: 1) {
+                        SettingsLinkRow(
+                            icon: "person.crop.circle.fill",
+                            title: appModel.session == nil ? "账号与数据" : "当前登录账号",
+                            detail: appModel.session?.user.loginIdentifier ?? "未登录"
+                        ) {
+                            isAccountPresented = true
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+
+                    SettingsSectionTitle("隐私与协议")
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
+
                     VStack(spacing: 1) {
                         SettingsLinkRow(icon: "hand.raised.fill", title: "隐私政策") {
                             openWebPath("privacy")
@@ -3021,7 +2939,6 @@ private struct AppSettingsView: View {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                             openURL(url)
                         }
-                        SettingsLinkRow(icon: "info.circle.fill", title: "关于喵一下", detail: appVersion) {}
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .overlay {
@@ -3029,13 +2946,67 @@ private struct AppSettingsView: View {
                             .stroke(Color.white.opacity(0.72), lineWidth: 1)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.top, 10)
+
+                    SettingsSectionTitle("关于")
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
+
+                    VStack(spacing: 1) {
+                        SettingsLinkRow(icon: "info.circle.fill", title: "关于喵一下", detail: appVersion, showsChevron: false) {}
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+
+                    if appModel.session != nil {
+                        Button {
+                            confirmsSignOut = true
+                        } label: {
+                            Text("退出登录")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(Color(red: 0.72, green: 0.31, blue: 0.34))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .stroke(Color(red: 0.86, green: 0.56, blue: 0.58).opacity(0.62), lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 32)
+                    }
                 }
-                .padding(.bottom, 34)
+                .padding(.bottom, 46)
+            }
+
+            if confirmsSignOut {
+                ConfirmSheetOverlay(
+                    title: "确定退出登录吗？",
+                    hint: "",
+                    confirmText: "退出登录",
+                    danger: true,
+                    onConfirm: {
+                        confirmsSignOut = false
+                        appModel.signOut()
+                    },
+                    onCancel: { confirmsSignOut = false }
+                )
+                .zIndex(100)
             }
         }
         .navigationBarBackButtonHidden(true)
-        .nekoEdgeSwipeBack { dismiss() }
+        .nekoEdgeSwipeBack(isEnabled: !confirmsSignOut) { dismiss() }
+        .navigationDestination(isPresented: $isAccountPresented) {
+            AccountCenterView()
+                .environmentObject(appModel)
+        }
     }
 
     private func openWebPath(_ path: String) {
@@ -3043,10 +3014,26 @@ private struct AppSettingsView: View {
     }
 }
 
+private struct SettingsSectionTitle: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(NekoTheme.ink)
+            .padding(.leading, 4)
+    }
+}
+
 private struct SettingsLinkRow: View {
     let icon: String
     let title: String
     var detail: String? = nil
+    var showsChevron = true
     let action: () -> Void
 
     var body: some View {
@@ -3068,7 +3055,13 @@ private struct SettingsLinkRow: View {
                     Text(detail)
                         .nekoText(.caption)
                         .foregroundStyle(NekoTheme.muted)
-                } else {
+                        .lineLimit(1)
+                    if showsChevron {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(NekoTheme.muted)
+                    }
+                } else if showsChevron {
                     Image(systemName: "chevron.right")
                         .nekoText(.micro)
                         .foregroundStyle(NekoTheme.muted)
@@ -3539,10 +3532,6 @@ private struct ManageVoicesView: View {
             }
             .padding(.bottom, editMode ? 0 : 16)
 
-            if editMode {
-                deleteActionBar
-            }
-
             if confirmDelete {
                 ConfirmSheetOverlay(
                     title: "确定删除 \(selectedIDs.count) 条心声吗？",
@@ -3552,6 +3541,11 @@ private struct ManageVoicesView: View {
                     onConfirm: deleteSelected,
                     onCancel: { confirmDelete = false }
                 )
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if editMode {
+                deleteActionBar
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -3630,40 +3624,34 @@ private struct ManageVoicesView: View {
     }
 
     private var deleteActionBar: some View {
-        VStack {
-            Spacer()
-            Button {
-                if selectedIDs.isEmpty {
-                    appModel.noticeMessage = "先选择要删除的心声哦"
-                } else {
-                    confirmDelete = true
+        Button {
+            if selectedIDs.isEmpty {
+                appModel.noticeMessage = "先选择要删除的心声哦"
+            } else {
+                confirmDelete = true
+            }
+        } label: {
+            Text("删除所选 (\(selectedIDs.count))")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color(red: 0.72, green: 0.31, blue: 0.34))
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(Color(red: 1.0, green: 0.985, blue: 0.975).opacity(0.96), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color(red: 0.86, green: 0.56, blue: 0.58).opacity(0.68), lineWidth: 1)
                 }
-            } label: {
-                Text("删除所选 (\(selectedIDs.count))")
-                    .nekoText(.button)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(red: 0.92, green: 0.43, blue: 0.36), Color(red: 0.91, green: 0.50, blue: 0.62)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule()
-                    )
             }
-            .opacity(selectedIDs.isEmpty ? 0.50 : 1)
-            .buttonStyle(.plain)
-            .padding(8)
-            .background(Color.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            }
-            .shadow(color: NekoTheme.soulViolet.opacity(0.16), radius: 24, x: 0, y: 10)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 20)
+        .opacity(selectedIDs.isEmpty ? 0.48 : 1)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.62))
+                .frame(height: 0.5)
         }
         .allowsHitTesting(true)
     }
@@ -5113,33 +5101,44 @@ private struct PublishPreviewScreen: View {
                     )
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
-
-                    HStack(spacing: 10) {
-                        Button("重新识别", action: onReanalyze)
-                            .buttonStyle(PublishSecondaryPillStyle())
-                            .disabled(isPublishing)
-
-                        Button(action: onPublish) {
-                            HStack(spacing: 8) {
-                                if isPublishing {
-                                    ProgressView()
-                                        .tint(.white)
-                                }
-                                Text(isPublishing ? "发布中…" : "发布心声")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PublishPrimaryPillStyle())
-                        .opacity(canPublish ? 1 : 0.58)
-                        .disabled(!canPublish)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
                 }
                 .frame(width: proxy.size.width, alignment: .leading)
                 .padding(.top, 52)
-                .padding(.bottom, 38)
+                .padding(.bottom, 24)
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                actionBar
+            }
+        }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            Button("重新识别", action: onReanalyze)
+                .buttonStyle(PublishSecondaryPillStyle())
+                .disabled(isReanalyzing || isPublishing)
+
+            Button(action: onPublish) {
+                HStack(spacing: 8) {
+                    if isPublishing {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(isPublishing ? "发布中…" : "发布心声")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PublishPrimaryPillStyle())
+            .disabled(isReanalyzing || isPublishing || draftVoice == nil)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.62))
+                .frame(height: 0.5)
         }
     }
 }
@@ -5623,8 +5622,11 @@ private struct VoiceResultCard: View {
         .animation(.easeInOut(duration: 0.22), value: isLoading)
     }
 
-    private var voiceText: String? {
-        voice?.text.nonEmpty
+    private var bubbleText: String {
+        if let voiceText = voice?.text.nonEmpty {
+            return voiceText
+        }
+        return isLoading ? "AI 正在听它怎么说" : "这条心声还在路上"
     }
 
     private var speechBubbleText: String {
