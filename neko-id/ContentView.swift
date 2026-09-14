@@ -4940,11 +4940,13 @@ private struct PublishUploadScreen: View {
                     }
                     .frame(width: proxy.size.width, alignment: .leading)
                     .padding(.top, 52)
-                    .padding(.bottom, 124)
+                    .padding(.bottom, canContinue ? 124 : 40)
                 }
 
-                PublishBottomCTA(title: "下一步", isEnabled: canContinue, isBusy: false, action: onNext)
-                    .frame(width: proxy.size.width)
+                if canContinue {
+                    PublishBottomCTA(title: "下一步", isEnabled: true, isBusy: false, action: onNext)
+                        .frame(width: proxy.size.width)
+                }
             }
         }
     }
