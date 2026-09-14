@@ -390,7 +390,8 @@ struct NativeOnboardingFlowView: View {
                 quizAnswers: quizAnswers,
                 avatarImageData: avatarImageData,
                 videoCount: videoClips.count,
-                videoObservations: videoObservations
+                videoObservations: videoObservations,
+                previousPersona: appModel.persona
             )
         }
 

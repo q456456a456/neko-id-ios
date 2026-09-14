@@ -34,7 +34,7 @@ struct LovablePersonaResultPage: View {
     }
 
     private var personaType: String {
-        trimmed(persona.type, fallback: "人格仍待了解")
+        LovablePersonaCopy.title(trimmed(persona.type, fallback: "安静观察型"))
     }
 
     private var personaMbti: String {
@@ -42,35 +42,52 @@ struct LovablePersonaResultPage: View {
     }
 
     private var monologue: String {
-        trimmed(persona.monologue, fallback: "不黏人，但永远会待在离你不远的地方。")
+        LovablePersonaCopy.description(
+            trimmed(persona.monologue, fallback: "不黏人，但永远会待在离你不远的地方。"),
+            fallback: "不黏人，但永远会待在离你不远的地方。"
+        )
     }
 
     private var analysis: String {
-        trimmed(persona.analysis, fallback: "我不一定每次都跑向你，但如果你在家，我会睡得更安心。")
+        LovablePersonaCopy.description(
+            trimmed(persona.analysis, fallback: "我不一定每次都跑向你，但如果你在家，我会睡得更安心。"),
+            fallback: "我不一定每次都跑向你，但如果你在家，我会睡得更安心。"
+        )
     }
 
     private var coreDescription: String {
-        trimmed(persona.corePersonality ?? "", fallback: analysis)
+        LovablePersonaCopy.description(
+            trimmed(persona.corePersonality ?? "", fallback: analysis),
+            fallback: analysis
+        )
     }
 
     private var misunderstanding: String {
-        trimmed(persona.misunderstanding ?? "", fallback: "现有资料还不足以判断你最容易误会它的哪种行为。多记录几次真实互动后，会得到更可靠的答案。")
+        LovablePersonaCopy.insight(
+            trimmed(persona.misunderstanding ?? "", fallback: "现有资料还不足以判断你最容易误会它的哪种行为。多记录几次真实互动后，会得到更可靠的答案。"),
+            fallback: "现有资料还不足以判断你最容易误会它的哪种行为。多记录几次真实互动后，会得到更可靠的答案。"
+        )
     }
 
     private var loveLanguage: String {
-        trimmed(
-            persona.loveLanguageInsight ?? persona.loveLanguage ?? "",
+        LovablePersonaCopy.insight(
+            trimmed(
+                persona.loveLanguageInsight ?? persona.loveLanguage ?? "",
+                fallback: "目前还没有足够的行为答案判断它如何表达喜欢，暂时不对它的长期亲密模式下结论。"
+            ),
             fallback: "目前还没有足够的行为答案判断它如何表达喜欢，暂时不对它的长期亲密模式下结论。"
         )
     }
 
     private var ownerRole: String {
-        trimmed(persona.ownerRelationship ?? persona.ownerRole, fallback: "现有资料不足以确定你在它长期关系中的位置，继续相处和记录会比一次测试更可靠。")
+        LovablePersonaCopy.insight(
+            trimmed(persona.ownerRelationship ?? persona.ownerRole, fallback: "现有资料不足以确定你在它长期关系中的位置，继续相处和记录会比一次测试更可靠。"),
+            fallback: "现有资料不足以确定你在它长期关系中的位置，继续相处和记录会比一次测试更可靠。"
+        )
     }
 
     private var personaKeywords: [String] {
-        let tags = persona.tags.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        return Array(tags.prefix(3))
+        LovablePersonaCopy.tags(persona.tags)
     }
 
     var body: some View {
@@ -88,7 +105,7 @@ struct LovablePersonaResultPage: View {
                         keywords: personaKeywords,
                         onAvatarImageLoaded: { loadedAvatarImage = $0 }
                     )
-                    .aspectRatio(4.0 / 5.0, contentMode: .fit)
+                    .frame(height: heroHeight(for: proxy))
                     .overlay(alignment: .top) {
                         SafeAreaTopBar(onBack: onBack)
                             .padding(.horizontal, 20)
@@ -102,7 +119,7 @@ struct LovablePersonaResultPage: View {
                         ownerRole: ownerRole
                     )
 
-                    Color.clear.frame(height: 28)
+                    Color.clear.frame(height: proxy.safeAreaInsets.bottom + 108)
                 }
                 .frame(width: proxy.size.width, alignment: .leading)
             }
@@ -113,7 +130,7 @@ struct LovablePersonaResultPage: View {
                 LovableResultBottomActions(
                     isSaving: isSaving,
                     saveDisabled: saveDisabled,
-                    bottomInset: 10,
+                    bottomInset: max(proxy.safeAreaInsets.bottom, 10),
                     contentWidth: proxy.size.width,
                     onRestart: onRestart,
                     onSave: onSave
@@ -139,6 +156,10 @@ struct LovablePersonaResultPage: View {
     private func trimmed(_ value: String, fallback: String) -> String {
         let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? fallback : text
+    }
+
+    private func heroHeight(for proxy: GeometryProxy) -> CGFloat {
+        min(max(proxy.size.width * 1.38, 548), 650)
     }
 
     @MainActor
@@ -248,6 +269,195 @@ private enum LovableResultStyle {
 
 }
 
+private enum LovableResultFonts {
+    static func ui(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        named(pingFangNames(for: weight), size: size, fallback: .system(size: size, weight: weight))
+    }
+
+    static func personaTitle(size: CGFloat) -> Font {
+        named(
+            ["Songti SC Semibold", "SongtiSC-Semibold", "Songti SC Bold", "SongtiSC-Bold", "STSong"],
+            size: size,
+            fallback: .system(size: size, weight: .semibold, design: .serif)
+        )
+    }
+
+    static func editorial(size: CGFloat) -> Font {
+        named(
+            ["Didot", "Bodoni 72", "BodoniSvtyTwoITCTT-Book", "Baskerville", "TimesNewRomanPSMT"],
+            size: size,
+            fallback: .system(size: size, weight: .regular, design: .serif)
+        )
+    }
+
+    private static func named(_ names: [String], size: CGFloat, fallback: Font) -> Font {
+        for name in names where UIFont(name: name, size: size) != nil {
+            return .custom(name, size: size)
+        }
+        return fallback
+    }
+
+    private static func pingFangNames(for weight: Font.Weight) -> [String] {
+        switch weight {
+        case .semibold, .bold, .heavy, .black:
+            return ["PingFangSC-Semibold", "PingFang SC Semibold", "PingFangSC-Medium"]
+        case .medium:
+            return ["PingFangSC-Medium", "PingFang SC Medium", "PingFangSC-Regular"]
+        default:
+            return ["PingFangSC-Regular", "PingFang SC Regular", "PingFang SC"]
+        }
+    }
+}
+
+private enum LovablePersonaCopy {
+    private static let fallbackTitle = "安静观察型"
+    private static let bannedTokens = [
+        "营业", "控场", "发令", "施压", "稳态", "高质", "策略性", "仪式感极强",
+        "端庄定点", "克制讨关注", "精准互动", "节奏掌控", "掌控节奏", "眼神催促"
+    ]
+    private static let titleReplacements: [(String, String)] = [
+        ("亲近有边界", "边界感亲近派"),
+        ("好奇但谨慎", "好奇谨慎型"),
+        ("热情有分寸", "热情有分寸型"),
+        ("不黏但在旁", "不黏人陪伴型"),
+        ("先观察再靠近", "慢热观察型"),
+        ("会先看清楚", "先看再行动"),
+        ("先看再动", "先看再行动")
+    ]
+    private static let labelReplacements: [(String, String)] = [
+        ("观察优先", "先观察再靠近"),
+        ("保留距离", "不急着靠近"),
+        ("心动不动", "想靠近又犹豫"),
+        ("小小探长", "会先看清楚"),
+        ("小探长", "会先看清楚"),
+        ("互动控场王", "喜欢互动"),
+        ("眼神发令机", "会用眼神表达"),
+        ("眼神施压", "会用眼神表达"),
+        ("克制讨关注", "安静等你发现"),
+        ("稳态陪伴", "喜欢待在附近"),
+        ("精准互动", "表达得很清楚")
+    ]
+
+    static func title(_ value: String) -> String {
+        var clean = compact(value)
+        for (source, replacement) in titleReplacements where clean == source {
+            clean = replacement
+        }
+        clean = clean.filter { !$0.isWhitespace }
+        let count = charCount(clean)
+        if count < 4 || count > 14 || hasBannedToken(clean) || endsWithJargonSuffix(clean) {
+            return fallbackTitle
+        }
+        return clean
+    }
+
+    static func description(_ value: String, fallback: String) -> String {
+        boundedSentence(value, fallback: fallback, max: 50)
+    }
+
+    static func insight(_ value: String, fallback: String) -> String {
+        boundedSentence(value, fallback: fallback, max: 60)
+    }
+
+    static func tags(_ values: [String]) -> [String] {
+        var output: [String] = []
+        for value in values {
+            guard let tag = naturalTag(value), !output.contains(tag) else { continue }
+            output.append(tag)
+            if output.count == 4 { break }
+        }
+        for fallback in ["先观察再靠近", "喜欢待在附近", "边界感强", "会用眼神表达"] {
+            guard output.count < 4, !output.contains(fallback) else { continue }
+            output.append(fallback)
+        }
+        return output
+    }
+
+    private static func naturalTag(_ value: String) -> String? {
+        var clean = compact(value)
+        for (source, replacement) in labelReplacements where clean.contains(source) {
+            clean = clean.replacingOccurrences(of: source, with: replacement)
+        }
+        clean = clean.replacingOccurrences(of: #"[^一-龥A-Za-z0-9]"#, with: "", options: .regularExpression)
+        let count = charCount(clean)
+        guard count >= 2, count <= 8, !hasBannedToken(clean), !endsWithJargonSuffix(clean) else {
+            return nil
+        }
+        return clean
+    }
+
+    private static func boundedSentence(_ value: String, fallback: String, max: Int) -> String {
+        let normalized = compact(value).trimmingCharacters(in: CharacterSet(charactersIn: "“”\"'「」『』"))
+        let selected = charCount(normalized) >= 8 ? normalized : compact(fallback)
+        let chars = Array(selected)
+        guard chars.count > max else { return selected }
+        let punctuation = Set(["。", "！", "？", "；", "，", ",", ";", "!", "?"])
+        let minIndex = max / 2
+        var cutIndex = max
+        for index in stride(from: max - 1, through: minIndex, by: -1) where punctuation.contains(String(chars[index])) {
+            cutIndex = index + 1
+            break
+        }
+        var sliced = String(chars.prefix(cutIndex))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "，,；;：:"))
+        if !sliced.hasSuffix("。") && !sliced.hasSuffix("！") && !sliced.hasSuffix("？") {
+            sliced.append("。")
+        }
+        return sliced
+    }
+
+    private static func compact(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func charCount(_ value: String) -> Int {
+        Array(value).count
+    }
+
+    private static func hasBannedToken(_ value: String) -> Bool {
+        bannedTokens.contains { value.contains($0) }
+    }
+
+    private static func endsWithJargonSuffix(_ value: String) -> Bool {
+        value.range(of: #"[一-龥A-Za-z0-9]{1,8}[控王机]$"#, options: .regularExpression) != nil
+    }
+}
+
+private enum LovablePersonaTitleLayout {
+    static func fontSize(for title: String) -> CGFloat {
+        let count = Array(title).count
+        if count <= 6 { return 42 }
+        if count <= 10 { return 38 }
+        return 34
+    }
+
+    static func lines(for title: String) -> [String] {
+        let chars = Array(title)
+        let count = chars.count
+        guard count > 6 else { return [title] }
+        let splitIndex = bestSplitIndex(chars)
+        return [String(chars[..<splitIndex]), String(chars[splitIndex...])]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func bestSplitIndex(_ chars: [Character]) -> Int {
+        let count = chars.count
+        let validRange = 3...max(3, count - 3)
+        if let possessive = chars.firstIndex(of: "的"),
+           validRange.contains(possessive + 1) {
+            return possessive + 1
+        }
+        let middle = Double(count) / 2
+        return validRange.min { left, right in
+            abs(Double(left) - middle) < abs(Double(right) - middle)
+        } ?? max(3, count - 3)
+    }
+}
+
 private struct LovableResultInsight: Identifiable {
     var id: String { "\(number)-\(title)" }
     let number: String
@@ -308,6 +518,9 @@ private struct LovableResultHero: View {
     var onAvatarImageLoaded: (UIImage?) -> Void = { _ in }
 
     var body: some View {
+        let titleLines = LovablePersonaTitleLayout.lines(for: personaType)
+        let titleSize = LovablePersonaTitleLayout.fontSize(for: personaType)
+
         ZStack(alignment: .bottomLeading) {
             LovableAvatarImage(
                 image: avatarImage,
@@ -317,16 +530,16 @@ private struct LovableResultHero: View {
                 onImageLoaded: onAvatarImageLoaded
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(1.03, anchor: .topTrailing)
+            .scaleEffect(1.012, anchor: .center)
             .clipped()
 
             // Keep the real photograph dominant while reserving a quiet editorial
             // column for the cover copy. The fade disappears before the cat's face.
             LinearGradient(
                 stops: [
-                    .init(color: Color(red: 1.0, green: 0.965, blue: 0.982).opacity(0.84), location: 0),
-                    .init(color: Color(red: 0.985, green: 0.940, blue: 1.0).opacity(0.54), location: 0.36),
-                    .init(color: .clear, location: 0.72),
+                    .init(color: Color(red: 1.0, green: 0.982, blue: 0.965).opacity(0.42), location: 0),
+                    .init(color: Color(red: 1.0, green: 0.982, blue: 0.965).opacity(0.22), location: 0.28),
+                    .init(color: .clear, location: 0.52),
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
@@ -335,13 +548,13 @@ private struct LovableResultHero: View {
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0.0),
-                    .init(color: LovableResultStyle.bgMid.opacity(0.60), location: 0.50),
-                    .init(color: LovableResultStyle.bgMid, location: 1.0),
+                    .init(color: Color(red: 1.0, green: 0.978, blue: 0.956).opacity(0.34), location: 0.42),
+                    .init(color: Color(red: 0.992, green: 0.956, blue: 0.982).opacity(0.88), location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 300)
+            .frame(height: 292)
             .frame(maxWidth: .infinity, alignment: .bottom)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -354,7 +567,7 @@ private struct LovableResultHero: View {
                     .font(.system(size: 11, weight: .regular, design: .serif))
                     .lineSpacing(1)
             }
-            .font(.system(size: 16, weight: .regular, design: .serif))
+            .font(LovableResultFonts.editorial(size: 16))
             .tracking(0.8)
             .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
             .padding(.leading, 24)
@@ -364,48 +577,111 @@ private struct LovableResultHero: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                     Text(catName)
-                        .font(.system(size: 21, weight: .semibold))
+                        .font(LovableResultFonts.ui(size: 21, weight: .semibold))
                     Text(personaMbti)
-                        .font(.system(size: 17, weight: .medium))
+                        .font(LovableResultFonts.ui(size: 17, weight: .medium))
                 }
                 .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.49))
                 .lineLimit(1)
 
-                Text(personaType)
-                    .font(.system(size: 40, weight: .medium, design: .serif))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.78)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(titleLines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(LovableResultFonts.personaTitle(size: titleSize))
+                            .lineLimit(1)
+                    }
+                }
                     .foregroundStyle(Color(red: 0.24, green: 0.19, blue: 0.46))
                     .padding(.top, 12)
 
                 Text(coreDescription)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(LovableResultFonts.ui(size: 16, weight: .regular))
                     .lineSpacing(6)
                     .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
                     .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 10)
 
-                HStack(spacing: 8) {
+                LovableHeroTagFlowLayout(horizontalSpacing: 11, verticalSpacing: 10) {
                     ForEach(keywords, id: \.self) { keyword in
                         Text(keyword)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(LovableResultFonts.ui(size: 14, weight: .medium))
                             .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(.white.opacity(0.85), in: Capsule())
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 14)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 22)
+            .padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
         .clipped()
+    }
+}
+
+private struct LovableHeroTagFlowLayout: Layout {
+    var horizontalSpacing: CGFloat
+    var verticalSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = max(proposal.width ?? 0, 1)
+        let rows = arrangedRows(maxWidth: maxWidth, subviews: subviews)
+        let height = rows.reduce(CGFloat.zero) { partial, row in
+            partial + row.height + (partial > 0 ? verticalSpacing : 0)
+        }
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = arrangedRows(maxWidth: max(bounds.width, 1), subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
+                    proposal: ProposedViewSize(width: size.width, height: size.height)
+                )
+                x += size.width + horizontalSpacing
+            }
+            y += row.height + verticalSpacing
+        }
+    }
+
+    private func arrangedRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row(indices: [], width: 0, height: 0)
+
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let spacing = current.indices.isEmpty ? 0 : horizontalSpacing
+            if !current.indices.isEmpty && current.width + spacing + size.width > maxWidth {
+                rows.append(current)
+                current = Row(indices: [index], width: size.width, height: size.height)
+            } else {
+                current.indices.append(index)
+                current.width += spacing + size.width
+                current.height = max(current.height, size.height)
+            }
+        }
+
+        if !current.indices.isEmpty {
+            rows.append(current)
+        }
+        return rows
+    }
+
+    private struct Row {
+        var indices: [Subviews.Index]
+        var width: CGFloat
+        var height: CGFloat
     }
 }
 
@@ -471,13 +747,13 @@ private struct LovableResultSectionHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(title)
-                .font(.system(size: NekoTypography.web(16), weight: .semibold))
+                .font(LovableResultFonts.ui(size: 18, weight: .semibold))
                 .foregroundStyle(Color(red: 0.315, green: 0.270, blue: 0.375))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
             Text(hint)
-                .font(.system(size: NekoTypography.web(10), weight: .regular))
+                .font(LovableResultFonts.editorial(size: 11))
                 .tracking(2.2)
                 .foregroundStyle(Color(red: 0.720, green: 0.660, blue: 0.760))
                 .lineLimit(1)
@@ -609,26 +885,26 @@ private struct LovableCatInsightSection: View {
                     VStack(alignment: .leading, spacing: 11) {
                         HStack(alignment: .firstTextBaseline, spacing: 11) {
                             Text(insight.number)
-                                .font(.system(size: 15, weight: .medium))
+                                .font(LovableResultFonts.ui(size: 15, weight: .medium))
                                 .tracking(1.2)
                                 .foregroundStyle(LovableResultStyle.primaryStart.opacity(0.78))
 
                             Text(insight.title)
-                                .font(.system(size: 19, weight: .semibold))
+                                .font(LovableResultFonts.ui(size: 19, weight: .semibold))
                                 .foregroundStyle(Color(red: 0.330, green: 0.285, blue: 0.385))
                                 .lineSpacing(7)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
                         Text(insight.text)
-                            .font(.system(size: 16, weight: .regular))
+                            .font(LovableResultFonts.ui(size: 16, weight: .regular))
                             .lineSpacing(9)
                             .foregroundStyle(Color(red: 0.485, green: 0.440, blue: 0.540))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 22)
+                    .padding(.horizontal, 21)
+                    .padding(.vertical, 21)
                     .background(
                         LinearGradient(
                             colors: insight.number == "03"
@@ -637,10 +913,10 @@ private struct LovableCatInsightSection: View {
                             startPoint: .top,
                             endPoint: .bottom
                         ),
-                        in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 22, style: .continuous)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .stroke(.white.opacity(0.80), lineWidth: 1)
                     }
                     .shadow(color: LovableResultStyle.primaryStart.opacity(0.12), radius: 15, x: 0, y: 8)
@@ -665,11 +941,11 @@ private struct LovableResultBottomActions: View {
         HStack(spacing: 12) {
             Button(action: onRestart) {
                 Text("重新识别")
-                    .font(.system(size: NekoTypography.web(14), weight: .medium))
+                    .font(LovableResultFonts.ui(size: 15, weight: .medium))
                     .foregroundStyle(Color(red: 0.500, green: 0.320, blue: 0.590))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .frame(height: 52)
                     .background(.white, in: Capsule())
                     .overlay {
                         Capsule()
@@ -681,11 +957,11 @@ private struct LovableResultBottomActions: View {
 
             Button(action: onSave) {
                 Text(isSaving ? "保存中…" : "保存结果")
-                    .font(.system(size: NekoTypography.web(14), weight: .medium))
+                    .font(LovableResultFonts.ui(size: 15, weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .frame(height: 52)
                     .background(LovableResultStyle.primaryGradient, in: Capsule())
                     .shadow(color: LovableResultStyle.primaryStart.opacity(0.26), radius: 14, x: 0, y: 8)
             }

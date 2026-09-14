@@ -103,6 +103,7 @@ struct NekoServerAPIClient {
         avatarImageData: Data?,
         videoCount: Int,
         videoObservations: [CatVideoObservation],
+        previousPersona: CatPersonaResult? = nil,
         accessToken: String? = nil
     ) async throws -> CatPersonaResult {
         let body = PersonaRequest(
@@ -119,7 +120,8 @@ struct NekoServerAPIClient {
             imageDataUrl: try avatarImageData.map {
                 try MediaUploadProcessor.makeAIImageDataURL(from: $0)
             },
-            videoObservations: videoObservations
+            videoObservations: videoObservations,
+            previousPersona: previousPersona
         )
 
         return try await perform(
@@ -614,6 +616,7 @@ private struct PersonaRequest: Encodable {
     let profile: ServerCatProfile
     let imageDataUrl: String?
     let videoObservations: [CatVideoObservation]
+    let previousPersona: CatPersonaResult?
 }
 
 private struct VideoAnalysisRequest: Encodable {

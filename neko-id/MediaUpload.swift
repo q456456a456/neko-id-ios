@@ -16,11 +16,20 @@ struct PreparedImageUpload {
 }
 
 enum NekoMediaAspect {
+    static let tallPortrait = "9:16"
+    static let socialPortrait = "4:5"
     static let portrait = "3:4"
     static let landscape = "4:3"
     static let square = "1:1"
 
     private static let squareTolerance: CGFloat = 0.08
+    private static let supportedAspects: [(value: String, ratio: CGFloat)] = [
+        (tallPortrait, 9.0 / 16.0),
+        (portrait, 3.0 / 4.0),
+        (socialPortrait, 4.0 / 5.0),
+        (square, 1.0),
+        (landscape, 4.0 / 3.0),
+    ]
 
     static func storedAspect(from data: Data) -> String? {
         guard let image = UIImage(data: data) else { return nil }
@@ -33,7 +42,7 @@ enum NekoMediaAspect {
         }
 
         if let storedRatio = numericRatio(for: storedAspect) {
-            return ratio(for: fixedAspect(for: storedRatio))
+            return storedRatio
         }
 
         return ratio(for: portrait)
@@ -47,11 +56,18 @@ enum NekoMediaAspect {
         if abs(ratio - 1) <= squareTolerance {
             return square
         }
-        return ratio > 1 ? landscape : portrait
+
+        return supportedAspects.min { left, right in
+            abs(left.ratio - ratio) < abs(right.ratio - ratio)
+        }?.value ?? portrait
     }
 
     private static func ratio(for aspect: String) -> CGFloat {
         switch aspect {
+        case tallPortrait:
+            return 9.0 / 16.0
+        case socialPortrait:
+            return 4.0 / 5.0
         case landscape:
             return 4.0 / 3.0
         case square:

@@ -1296,15 +1296,22 @@ private struct PendingVoicePublishCard: View {
     let onRetry: () -> Void
 
     var body: some View {
+        let previewImage = UIImage(data: pending.imageData)
+        let mediaRatio = NekoMediaAspect.displayRatio(
+            for: pending.voice.aspect,
+            image: previewImage
+        )
+
         NekoGlassCard(cornerRadius: 24) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
-                    if let image = UIImage(data: pending.imageData) {
+                    PublishWebStyle.warmPhotoGradient
+
+                    if let image = previewImage {
                         Image(uiImage: image)
                             .resizable()
-                            .scaledToFill()
-                            .aspectRatio(4.0 / 5.0, contentMode: .fit)
-                            .clipped()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -1322,6 +1329,7 @@ private struct PendingVoicePublishCard: View {
                     .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(14)
                 }
+                .aspectRatio(mediaRatio, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                 HStack {
@@ -1442,7 +1450,7 @@ private struct VoiceFeedCard: View {
                             objectKey: voice.mediaObjectKey,
                             mediaType: voice.mediaType,
                             aspect: voice.aspect,
-                            contentMode: .fill,
+                            contentMode: .fit,
                             fallbackAvatarURL: profile.avatarURL,
                             fallbackAvatarObjectKey: profile.avatarObjectKey,
                             preferNaturalAspect: true
@@ -1972,7 +1980,7 @@ private struct VoiceDetailMediaFillView: View {
                 NekoRemoteImageView(
                     remoteURL: url,
                     objectKey: objectKey,
-                    contentMode: .fill,
+                    contentMode: .fit,
                     onImageLoaded: onImageLoaded
                 ) {
                     VoiceMediaSkeletonView()
@@ -3828,7 +3836,7 @@ private struct ManageVoiceCard: View {
                             NekoRemoteImageView(
                                 remoteURL: voice.mediaURL,
                                 objectKey: voice.mediaObjectKey,
-                                contentMode: .fill
+                                contentMode: .fit
                             ) {
                                 VoiceMediaSkeletonView()
                                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -5423,17 +5431,28 @@ private struct PublishUploadPhotoCard: View {
     let photoPreviewImage: UIImage?
 
     var body: some View {
+        let mediaRatio = NekoMediaAspect.displayRatio(
+            for: nil,
+            image: photoPreviewImage
+        )
+
         ZStack {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(PublishWebStyle.uploadGradient)
 
             if let photoPreviewImage {
                 VStack(spacing: 12) {
-                    Image(uiImage: photoPreviewImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(height: 188)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    ZStack {
+                        NekoTheme.photoPlaceholderGradient
+
+                        Image(uiImage: photoPreviewImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .aspectRatio(mediaRatio, contentMode: .fit)
+                    .frame(maxHeight: 188)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                     HStack(spacing: 6) {
                         Text("✓ 已上传")
@@ -5592,15 +5611,19 @@ private struct VoiceResultCard: View {
     let isLoading: Bool
 
     var body: some View {
+        let mediaRatio = NekoMediaAspect.displayRatio(
+            for: voice?.aspect,
+            image: photoPreviewImage
+        )
+
         VStack(alignment: .leading, spacing: 14) {
             ZStack(alignment: .top) {
                 PublishWebStyle.warmPhotoGradient
                 if let photoPreviewImage {
                     Image(uiImage: photoPreviewImage)
                         .resizable()
-                        .scaledToFill()
-                        .aspectRatio(4.0 / 5.0, contentMode: .fit)
-                        .clipped()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if let voiceText {
                     PublishSpeechBubble(catName: catName, text: voiceText, centered: true)
@@ -5624,6 +5647,7 @@ private struct VoiceResultCard: View {
                     }
                 }
             }
+            .aspectRatio(mediaRatio, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
 
             if !displayTags.isEmpty {

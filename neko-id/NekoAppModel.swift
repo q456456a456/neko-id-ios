@@ -217,14 +217,16 @@ final class NekoAppModel: ObservableObject {
         quizAnswers: [Int: QuizChoice],
         avatarImageData: Data?,
         videoCount: Int,
-        videoObservations: [CatVideoObservation] = []
+        videoObservations: [CatVideoObservation] = [],
+        previousPersona: CatPersonaResult? = nil
     ) async throws -> CatPersonaResult {
         return try await serverAPI.generateOnboardingPersona(
             draft: draft,
             quizAnswers: quizAnswers,
             avatarImageData: avatarImageData,
             videoCount: videoCount,
-            videoObservations: videoObservations
+            videoObservations: videoObservations,
+            previousPersona: previousPersona
         )
     }
 
