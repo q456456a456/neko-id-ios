@@ -228,6 +228,11 @@ final class NekoAppModel: ObservableObject {
             videoObservations: videoObservations,
             previousPersona: previousPersona
         )
+        return PersonaStabilityPolicy.stabilize(
+            generated,
+            previous: previousPersona,
+            currentAnswers: quizAnswers
+        )
     }
 
     func analyzeOnboardingVideoClip(
@@ -241,11 +246,6 @@ final class NekoAppModel: ObservableObject {
             quizAnswers: quizAnswers,
             clip: clip,
             videoCount: videoCount
-        )
-        return PersonaStabilityPolicy.stabilize(
-            generated,
-            previous: persona,
-            currentAnswers: quizAnswers
         )
     }
 

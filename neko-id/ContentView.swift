@@ -5633,7 +5633,7 @@ private struct VoiceResultCard: View {
         if isLoading {
             return "正在读懂它这一刻的心声…"
         }
-        return voiceText ?? "识别结果还没有回来，请重新识别。"
+        return voice?.text.nonEmpty ?? "识别结果还没有回来，请重新识别。"
     }
 
     private var analysisText: String {
