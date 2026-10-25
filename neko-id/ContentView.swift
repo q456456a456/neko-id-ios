@@ -3830,7 +3830,7 @@ struct ConfirmSheetOverlay: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, 24)
                 .padding(.top, 18)
-                .padding(.bottom, 24)
+                .padding(.bottom, 112)
             }
             .frame(maxWidth: .infinity)
             .background(Color.white.opacity(0.95), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous))
@@ -5017,6 +5017,8 @@ private struct PublishPreviewScreen: View {
         HStack(spacing: 10) {
             Button("重新识别", action: onReanalyze)
                 .buttonStyle(PublishSecondaryPillStyle())
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
                 .disabled(isReanalyzing || isPublishing)
 
             Button(action: onPublish) {
@@ -5028,14 +5030,16 @@ private struct PublishPreviewScreen: View {
                     Text(isPublishing ? "发布中…" : "发布心声")
                 }
                 .frame(maxWidth: .infinity)
+                .frame(height: 54)
             }
             .buttonStyle(PublishPrimaryPillStyle())
+            .frame(maxWidth: .infinity)
             .disabled(isReanalyzing || isPublishing || draftVoice == nil)
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 10)
-        .background(.ultraThinMaterial)
+        .background(NekoTheme.cardWhite.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.white.opacity(0.62))
@@ -5478,49 +5482,33 @@ private struct VoiceResultCard: View {
     let voice: CatVoiceResult?
     let isLoading: Bool
 
+    @State private var detectedSubject: HeartVoiceSubject?
+    @State private var detectionFinished = false
+
     var body: some View {
-        let mediaRatio = NekoMediaAspect.displayRatio(
-            for: nil,
-            image: photoPreviewImage
-        )
-
-        VStack(alignment: .leading, spacing: 14) {
-            ZStack(alignment: .top) {
-                PublishWebStyle.warmPhotoGradient
-                if let photoPreviewImage {
-                    Image(uiImage: photoPreviewImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                PublishSpeechBubble(
-                    catName: catName,
-                    text: speechBubbleText,
-                    centered: true,
-                    showsLoadingIndicator: isLoading,
-                    messageTextStyle: .body
-                )
-                .padding(12)
-            }
-            .aspectRatio(mediaRatio, contentMode: .fit)
+        VStack(alignment: .leading, spacing: 20) {
+            VoiceResultPhotoStage(
+                image: photoPreviewImage,
+                text: speechBubbleText,
+                subject: detectionFinished ? detectedSubject : nil,
+                showsLoadingIndicator: isLoading
+            )
+            .aspectRatio(1, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-
-            if !isLoading && !displayTags.isEmpty {
-                NekoFlowLayout(spacing: 8, lineSpacing: 8) {
-                    ForEach(displayTags, id: \.self) { tag in
-                        VoiceTagChip(tag: tag)
-                    }
-                }
-            }
-
-            if !isLoading, let subtext = voice?.subtext?.nonEmpty {
-                VoiceSubtextBlock(text: subtext)
-            }
 
             VoiceInsightBlock(analysis: isLoading ? nil : voice?.analysis, fallbackText: analysisText, isLoading: isLoading)
         }
-        .shadow(color: NekoTheme.soulViolet.opacity(0.22), radius: 30, x: 0, y: 16)
         .animation(.easeInOut(duration: 0.22), value: isLoading)
+        .task(id: photoPreviewImage) {
+            guard let photoPreviewImage else {
+                detectedSubject = nil
+                detectionFinished = true
+                return
+            }
+            detectionFinished = false
+            detectedSubject = await HeartVoiceSubjectDetector.detect(in: photoPreviewImage)
+            detectionFinished = true
+        }
     }
 
     private var bubbleText: String {
@@ -5544,10 +5532,88 @@ private struct VoiceResultCard: View {
         return "暂未获得 AI 心声解析，请点击重新识别。"
     }
 
-    private var displayTags: [String] {
-        Array((voice?.share?.tags ?? voice?.tags ?? []).prefix(3)).map {
-            $0.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+}
+
+private struct VoiceResultPhotoStage: View {
+    let image: UIImage?
+    let text: String
+    let subject: HeartVoiceSubject?
+    let showsLoadingIndicator: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let bubbleSize = CGSize(width: min(264, proxy.size.width * 0.68), height: 78)
+            let layout = SubjectLayoutEngine.layout(
+                image: image,
+                stageSize: proxy.size,
+                subject: subject,
+                bubbleSize: bubbleSize
+            )
+
+            ZStack(alignment: .topLeading) {
+                NekoTheme.photoPlaceholderGradient
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
+                        .offset(x: layout.imageFrame.minX, y: layout.imageFrame.minY)
+                }
+
+                VoiceResultSpeechBubble(text: text, showsLoadingIndicator: showsLoadingIndicator)
+                    .frame(width: layout.bubbleFrame.width, height: layout.bubbleFrame.height)
+                    .offset(x: layout.bubbleFrame.minX, y: layout.bubbleFrame.minY)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
+    }
+}
+
+private struct VoiceResultSpeechBubble: View {
+    let text: String
+    let showsLoadingIndicator: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            HStack(spacing: 8) {
+                if showsLoadingIndicator {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(NekoTheme.soulViolet)
+                }
+                Text(text)
+                    .font(.system(size: 16, weight: .medium, design: .default))
+                    .foregroundStyle(NekoTheme.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, maxHeight: 66, alignment: .leading)
+            .background(NekoTheme.cardWhite.opacity(0.96), in: Capsule())
+            .overlay {
+                Capsule().stroke(NekoTheme.softLilac, lineWidth: 1)
+            }
+
+            BubbleTail()
+                .fill(NekoTheme.cardWhite.opacity(0.96))
+                .frame(width: 18, height: 13)
+                .offset(x: 28, y: 8)
+        }
+    }
+}
+
+private struct BubbleTail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.28, y: rect.maxY),
+            control: CGPoint(x: rect.midX, y: rect.maxY * 0.72)
+        )
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -5574,27 +5640,35 @@ private struct VoiceInsightBlock: View {
     var isLoading = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            PublishSectionTitle("✦ AI 解读")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("AI 解读")
+                .font(.system(size: 16, weight: .semibold, design: .default))
+                .foregroundStyle(NekoTheme.ink)
             if isLoading {
                 VoiceInsightSkeleton()
             } else {
-                if let observation = analysis?.observation.nonEmpty {
-                    Text(observation)
-                }
-                if let interpretation = analysis?.personalityInterpretation.nonEmpty {
-                    Text(interpretation)
-                }
-                if analysis == nil {
-                    Text(fallbackText)
-                }
+                Text(compactAnalysis)
+                    .font(.system(size: 15, weight: .regular, design: .default))
+                    .lineSpacing(5)
+                    .lineLimit(4)
             }
         }
-        .nekoText(.body)
         .foregroundStyle(NekoTheme.ink.opacity(0.84))
-        .padding(16)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(NekoTheme.cardWhite.opacity(0.88), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(NekoTheme.softLilac.opacity(0.55), lineWidth: 1)
+        }
+    }
+
+    private var compactAnalysis: String {
+        guard let analysis else { return fallbackText }
+        return [analysis.observation.nonEmpty, analysis.personalityInterpretation.nonEmpty]
+            .compactMap { $0 }
+            .prefix(2)
+            .joined(separator: " ")
     }
 }
 
@@ -5816,8 +5890,8 @@ private struct PublishPrimaryPillStyle: ButtonStyle {
         configuration.label
             .nekoText(.button)
             .foregroundStyle(.white)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
             .background(NekoTheme.primaryGradient, in: Capsule())
             .shadow(color: NekoTheme.soulViolet.opacity(0.26), radius: 18, x: 0, y: 9)
             .opacity(configuration.isPressed ? 0.86 : 1)
@@ -5831,8 +5905,7 @@ private struct PublishSecondaryPillStyle: ButtonStyle {
             .nekoText(.button)
             .foregroundStyle(NekoTheme.ink)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 16)
+            .frame(height: 54)
             .background(.white.opacity(configuration.isPressed ? 0.95 : 0.85), in: Capsule())
             .shadow(color: PublishWebStyle.shadow, radius: 18, x: 0, y: 9)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)

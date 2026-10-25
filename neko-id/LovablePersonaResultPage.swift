@@ -61,6 +61,7 @@ struct LovablePersonaResultPage: View {
                         personaMbti: personaMbti,
                         coreDescription: coreDescription,
                         contentWidth: proxy.size.width,
+                        viewportHeight: proxy.size.height,
                         onAvatarImageLoaded: { loadedAvatarImage = $0 }
                     )
                     .overlay(alignment: .top) {
@@ -84,7 +85,7 @@ struct LovablePersonaResultPage: View {
                         quote: persona.bondSummary.quote
                     )
 
-                    Color.clear.frame(height: proxy.safeAreaInsets.bottom + 108)
+                    Color.clear.frame(height: 24)
                 }
                 .frame(width: proxy.size.width, alignment: .leading)
             }
@@ -202,6 +203,8 @@ private enum LovableResultStyle {
     static let muted = Color(red: 0.570, green: 0.515, blue: 0.640)
     static let label = Color(red: 0.550, green: 0.410, blue: 0.610)
     static let topIcon = Color(red: 0.520, green: 0.315, blue: 0.620)
+    static let heroCopyInk = Color(red: 0.205, green: 0.170, blue: 0.355)
+    static let heroCopyShadow = Color.black.opacity(0.20)
     static let primaryStart = Color(red: 0.714, green: 0.604, blue: 0.937) // #B69AEF
     static let primaryEnd = Color(red: 0.902, green: 0.722, blue: 0.812)   // #E6B8CF
     static let heroTitleStart = Color(red: 0.659, green: 0.545, blue: 0.918) // #A88BEA
@@ -460,11 +463,12 @@ struct LovableResultHero: View {
     let personaMbti: String
     let coreDescription: String
     let contentWidth: CGFloat
+    let viewportHeight: CGFloat
     var onAvatarImageLoaded: (UIImage?) -> Void = { _ in }
     @State private var resolvedImage: UIImage?
 
-    private var photoHeight: CGFloat {
-        min(max(contentWidth * 0.82, 260), 380)
+    private var heroHeight: CGFloat {
+        min(max(viewportHeight * 0.58, 460), 560)
     }
 
     /// Until the API supplies a face focal point, use the source aspect ratio to
@@ -480,21 +484,11 @@ struct LovableResultHero: View {
     }
 
     var body: some View {
-        // Only the copy participates in vertical measurement. A fill-mode photo
-        // in the sizing ZStack can exceed its proposal and overlap the next section.
-        VStack(alignment: .leading, spacing: 0) {
-            Color.clear.frame(height: photoHeight)
+        ZStack(alignment: .bottomLeading) {
+            photograph
             coverCopy
         }
-        .frame(width: contentWidth, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .background {
-            GeometryReader { proxy in
-                photograph
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .clipped()
-            }
-        }
+        .frame(width: contentWidth, height: heroHeight, alignment: .bottomLeading)
         .clipped()
     }
 
@@ -513,27 +507,8 @@ struct LovableResultHero: View {
             .scaleEffect(1.012, anchor: .topTrailing)
             .offset(photoOffset)
 
-            LinearGradient(
-                stops: [
-                    .init(color: Color(red: 1.0, green: 0.982, blue: 0.965).opacity(0.42), location: 0),
-                    .init(color: Color(red: 1.0, green: 0.982, blue: 0.965).opacity(0.22), location: 0.28),
-                    .init(color: .clear, location: 0.52),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.0),
-                    .init(color: Color(red: 1.0, green: 0.978, blue: 0.956).opacity(0.34), location: 0.42),
-                    .init(color: LovableResultStyle.bgMid.opacity(0.78), location: 1.0),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 310)
         }
+        .frame(width: contentWidth, height: heroHeight)
     }
 
     private var coverCopy: some View {
@@ -546,7 +521,8 @@ struct LovableResultHero: View {
                 Text(personaMbti)
                     .nekoText(.button)
             }
-            .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.49))
+            .foregroundStyle(LovableResultStyle.heroCopyInk)
+            .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
             .lineLimit(1)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -556,20 +532,32 @@ struct LovableResultHero: View {
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(Color(red: 0.24, green: 0.19, blue: 0.46))
+            .foregroundStyle(LovableResultStyle.heroCopyInk)
+            .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
             .padding(.top, 12)
 
             Text(coreDescription)
-                .nekoText(.body)
-                .lineSpacing(5)
-                .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(LovableResultStyle.chineseUI(16))
+                .lineSpacing(4)
+                .foregroundStyle(LovableResultStyle.heroCopyInk)
+                .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
+                .lineLimit(2)
                 .padding(.top, 10)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .bottom) {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Color(red: 0.972, green: 0.958, blue: 0.990).opacity(0.18), location: 0.44),
+                    .init(color: Color(red: 0.972, green: 0.958, blue: 0.990).opacity(0.42), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 }
 
@@ -758,31 +746,26 @@ private struct LovablePersonaDimensionsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("\(catName)的四个行为维度")
                 .nekoText(.moduleTitle)
                 .foregroundStyle(LovableResultStyle.ink)
 
             VStack(spacing: 0) {
-                ForEach(Array(orderedDimensions.enumerated()), id: \.element.id) { index, dimension in
+                ForEach(orderedDimensions) { dimension in
                     LovablePersonaDimensionRow(dimension: dimension)
-
-                    if index < orderedDimensions.count - 1 {
-                        Divider()
-                            .overlay(LovableResultStyle.primaryStart.opacity(0.10))
-                    }
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .padding(.vertical, 8)
+            .background(.white.opacity(0.50), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.86), lineWidth: 1)
+                    .stroke(LovableResultStyle.primaryStart.opacity(0.10), lineWidth: 1)
             }
         }
         .padding(.horizontal, 24)
-        .padding(.top, 28)
+        .padding(.top, 24)
     }
 }
 
@@ -846,7 +829,7 @@ private struct LovablePersonaDimensionRow: View {
                     .frame(width: 64, alignment: .trailing)
             }
         }
-        .frame(height: 72, alignment: .center)
+        .frame(height: 64, alignment: .center)
     }
 }
 
@@ -980,18 +963,7 @@ private struct LovableResultBottomActions: View {
         .padding(.top, 12)
         .padding(.bottom, bottomInset)
         .frame(width: contentWidth, alignment: .center)
-        .background(
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0.0),
-                    .init(color: Color(red: 0.944, green: 0.912, blue: 1.000).opacity(0.92), location: 0.35),
-                    .init(color: LovableResultStyle.bgBottom.opacity(0.98), location: 1.0),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .bottom)
-        )
+        .background(LovableResultStyle.bgBottom.ignoresSafeArea(edges: .bottom))
     }
 }
 
@@ -1093,7 +1065,8 @@ struct LovableResultShareImage: View {
                 personaType: personaType,
                 personaMbti: personaMbti,
                 coreDescription: coreDescription,
-                contentWidth: width
+                contentWidth: width,
+                viewportHeight: 560
             )
             .overlay(alignment: .top) {
                 HStack {
