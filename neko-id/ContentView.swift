@@ -1164,17 +1164,20 @@ private struct TimelineVoiceRow: View {
     let onSelect: () -> Void
     let onMore: () -> Void
 
+    private let timestampWidth: CGFloat = 52
+
     private var cardWidth: CGFloat {
-        min(max(availableWidth - 42 - 12, 1), 296)
+        min(max(availableWidth - timestampWidth - 12, 1), 296)
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 6) {
-                Text(voice.time)
+                VoiceTimestampText(voice: voice, stackedYear: true)
                     .nekoText(.tiny)
                     .foregroundStyle(NekoTheme.soulViolet)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                 Circle()
                     .fill(NekoTheme.primaryGradient)
                     .frame(width: 7, height: 7)
@@ -1186,7 +1189,7 @@ private struct TimelineVoiceRow: View {
                     .frame(width: 1)
                     .frame(maxHeight: .infinity)
             }
-            .frame(width: 42)
+            .frame(width: timestampWidth)
 
             VoiceFeedCard(voice: voice, profile: profile, onSelect: onSelect, onMore: onMore)
                 .frame(width: cardWidth)
@@ -2177,7 +2180,7 @@ private struct VoiceDetailView: View {
 
             Spacer()
 
-            Text("心声 · \(voice.time)")
+            VoiceTimestampText(voice: voice, prefix: "心声 · ")
                 .nekoText(.tiny)
                 .foregroundStyle(Color(red: 0.43, green: 0.38, blue: 0.52))
                 .padding(.horizontal, 14)
@@ -3830,7 +3833,7 @@ private struct ManageVoiceCard: View {
                 .frame(maxWidth: .infinity)
                 .clipped()
 
-                Text(voice.time)
+                VoiceTimestampText(voice: voice)
                     .nekoText(.tiny)
                     .foregroundStyle(Color(red: 0.604, green: 0.569, blue: 0.682))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -5992,7 +5995,7 @@ private struct VoicePreviewCard: View {
                     .nekoText(.tiny)
                     .foregroundStyle(NekoTheme.soulViolet)
                 Spacer()
-                Text(voice.time)
+                VoiceTimestampText(voice: voice)
                     .nekoText(.micro)
                     .foregroundStyle(NekoTheme.muted)
             }

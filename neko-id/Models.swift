@@ -333,6 +333,13 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
     var share: CatVoiceShare?
     var mediaURL: URL?
 
+    func displayTime(at now: Date, timeZone: TimeZone = .current, stackedYear: Bool = false) -> String {
+        VoiceTimestampFormatter.timeLabel(
+            createdAt: createdAt, legacyTime: time, now: now,
+            timeZone: timeZone, stackedYear: stackedYear
+        )
+    }
+
     var analysisText: String? {
         guard let analysis else { return nil }
         return [analysis.observation, analysis.personalityInterpretation]

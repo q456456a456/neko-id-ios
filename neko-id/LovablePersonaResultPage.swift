@@ -41,13 +41,6 @@ struct LovablePersonaResultPage: View {
         trimmed(persona.mbti, fallback: "待识别")
     }
 
-    private var monologue: String {
-        LovablePersonaCopy.description(
-            trimmed(persona.monologue, fallback: "不黏人，但永远会待在离你不远的地方。"),
-            fallback: "不黏人，但永远会待在离你不远的地方。"
-        )
-    }
-
     private var analysis: String {
         LovablePersonaCopy.description(
             trimmed(persona.analysis, fallback: "我不一定每次都跑向你，但如果你在家，我会睡得更安心。"),
@@ -103,9 +96,9 @@ struct LovablePersonaResultPage: View {
                         personaMbti: personaMbti,
                         coreDescription: coreDescription,
                         keywords: personaKeywords,
+                        contentWidth: proxy.size.width,
                         onAvatarImageLoaded: { loadedAvatarImage = $0 }
                     )
-                    .frame(height: heroHeight(for: proxy))
                     .overlay(alignment: .top) {
                         SafeAreaTopBar(onBack: onBack)
                             .padding(.horizontal, 20)
@@ -156,10 +149,6 @@ struct LovablePersonaResultPage: View {
     private func trimmed(_ value: String, fallback: String) -> String {
         let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? fallback : text
-    }
-
-    private func heroHeight(for proxy: GeometryProxy) -> CGFloat {
-        min(max(proxy.size.width * 1.38, 548), 650)
     }
 
     @MainActor
@@ -215,7 +204,7 @@ struct LovablePersonaResultPage: View {
             avatarImage: image,
             personaType: personaType,
             personaMbti: personaMbti,
-            monologue: monologue,
+            coreDescription: coreDescription,
             keywords: personaKeywords,
             misunderstanding: misunderstanding,
             loveLanguage: loveLanguage,
@@ -226,6 +215,7 @@ struct LovablePersonaResultPage: View {
         .environmentObject(appModel)
 
         let renderer = ImageRenderer(content: content)
+        renderer.proposedSize = ProposedViewSize(width: renderWidth, height: nil)
         renderer.scale = UIScreen.main.scale
         renderer.isOpaque = true
         return renderer.uiImage
@@ -530,7 +520,7 @@ private struct SafeAreaTopBar: View {
     }
 }
 
-private struct LovableResultHero: View {
+struct LovableResultHero: View {
     let catName: String
     let avatarImage: UIImage?
     let avatarURL: URL?
@@ -539,11 +529,12 @@ private struct LovableResultHero: View {
     let personaMbti: String
     let coreDescription: String
     let keywords: [String]
+    let contentWidth: CGFloat
     var onAvatarImageLoaded: (UIImage?) -> Void = { _ in }
     @State private var resolvedImage: UIImage?
 
-    private var editorialTitle: EditorialPersonaTitle {
-        EditorialPersonaTitle(personaType)
+    private var photoHeight: CGFloat {
+        min(max(contentWidth * 0.82, 260), 380)
     }
 
     /// Until the API supplies a face focal point, use the source aspect ratio to
@@ -559,8 +550,29 @@ private struct LovableResultHero: View {
     }
 
     var body: some View {
-        let titleLines = LovablePersonaTitleLayout.lines(for: personaType)
+        // Only the copy participates in vertical measurement. A fill-mode photo
+        // in the sizing ZStack can exceed its proposal and overlap the next section.
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: photoHeight)
+            coverCopy
+        }
+        .frame(width: contentWidth, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background {
+            GeometryReader { proxy in
+                photograph
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            editorialMark
+                .allowsHitTesting(false)
+        }
+        .clipped()
+    }
 
+    private var photograph: some View {
         ZStack(alignment: .bottomLeading) {
             LovableAvatarImage(
                 image: avatarImage,
@@ -572,13 +584,9 @@ private struct LovableResultHero: View {
                     onAvatarImageLoaded(image)
                 }
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .scaleEffect(1.012, anchor: .topTrailing)
             .offset(photoOffset)
-            .clipped()
 
-            // Keep the real photograph dominant while reserving a quiet editorial
-            // column for the cover copy. The fade disappears before the cat's face.
             LinearGradient(
                 stops: [
                     .init(color: Color(red: 1.0, green: 0.982, blue: 0.965).opacity(0.42), location: 0),
@@ -599,75 +607,76 @@ private struct LovableResultHero: View {
                 endPoint: .bottom
             )
             .frame(height: 310)
-            .frame(maxWidth: .infinity, alignment: .bottom)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("CAT\nPROFILE")
-                Rectangle()
-                    .frame(width: 26, height: 1)
-                    .padding(.vertical, 7)
-                Text("A Kinder\nWorld\nWith Cats")
-                    .nekoText(.tiny)
-                    .lineSpacing(1)
-            }
-            .nekoText(.personaEditorial)
-            .tracking(0.8)
-            .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
-            .padding(.leading, 24)
-            .padding(.top, 108)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 9) {
-                    Text(catName)
-                        .nekoText(.moduleTitle)
-                    Text(personaMbti)
-                        .nekoText(.button)
-                }
-                .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.49))
-                .lineLimit(1)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(titleLines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .nekoText(NekoTypography.personaTitleStyle(for: personaType.count))
-                            .lineLimit(1)
-                    }
-                }
-                    .foregroundStyle(Color(red: 0.24, green: 0.19, blue: 0.46))
-                    .padding(.top, 12)
-
-                Text(coreDescription)
-                    .nekoText(.body)
-                    .lineSpacing(5)
-                    .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
-
-                LovableHeroTagFlowLayout(horizontalSpacing: 11, verticalSpacing: 10) {
-                    ForEach(keywords, id: \.self) { keyword in
-                        Text(keyword)
-                            .nekoText(.badge)
-                            .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
-                            .lineLimit(1)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.white.opacity(0.78), in: Capsule())
-                            .overlay {
-                                Capsule().stroke(.white.opacity(0.72), lineWidth: 0.7)
-                            }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 14)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity)
-        .clipped()
+    }
+
+    private var editorialMark: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("CAT\nPROFILE")
+            Rectangle()
+                .frame(width: 26, height: 1)
+                .padding(.vertical, 7)
+            Text("A Kinder\nWorld\nWith Cats")
+                .nekoText(.tiny)
+                .lineSpacing(1)
+        }
+        .nekoText(.personaEditorial)
+        .tracking(0.8)
+        .foregroundStyle(Color(red: 0.40, green: 0.36, blue: 0.58).opacity(0.72))
+        .padding(.leading, 24)
+        .padding(.top, 108)
+    }
+
+    private var coverCopy: some View {
+        let titleLines = LovablePersonaTitleLayout.lines(for: personaType)
+
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Text(catName)
+                    .nekoText(.moduleTitle)
+                Text(personaMbti)
+                    .nekoText(.button)
+            }
+            .foregroundStyle(Color(red: 0.28, green: 0.23, blue: 0.49))
+            .lineLimit(1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(titleLines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .nekoText(NekoTypography.personaTitleStyle(for: personaType.count))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(Color(red: 0.24, green: 0.19, blue: 0.46))
+            .padding(.top, 12)
+
+            Text(coreDescription)
+                .nekoText(.body)
+                .lineSpacing(5)
+                .foregroundStyle(Color(red: 0.34, green: 0.31, blue: 0.50))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 10)
+
+            LovableHeroTagFlowLayout(horizontalSpacing: 11, verticalSpacing: 10) {
+                ForEach(keywords, id: \.self) { keyword in
+                    Text(keyword)
+                        .nekoText(.badge)
+                        .foregroundStyle(Color(red: 0.500, green: 0.345, blue: 0.595))
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.white.opacity(0.78), in: Capsule())
+                        .overlay {
+                            Capsule().stroke(.white.opacity(0.72), lineWidth: 0.7)
+                        }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 14)
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1120,12 +1129,12 @@ private struct LovableShareItem: View {
     }
 }
 
-private struct LovableResultShareImage: View {
+struct LovableResultShareImage: View {
     let catName: String
     let avatarImage: UIImage?
     let personaType: String
     let personaMbti: String
-    let monologue: String
+    let coreDescription: String
     let keywords: [String]
     let misunderstanding: String
     let loveLanguage: String
@@ -1134,18 +1143,18 @@ private struct LovableResultShareImage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .top) {
-                LovableResultHero(
-                    catName: catName,
-                    avatarImage: avatarImage,
-                    avatarURL: nil,
-                    avatarObjectKey: nil,
-                    personaType: personaType,
-                    personaMbti: personaMbti,
-                    coreDescription: monologue,
-                    keywords: keywords
-                )
-
+            LovableResultHero(
+                catName: catName,
+                avatarImage: avatarImage,
+                avatarURL: nil,
+                avatarObjectKey: nil,
+                personaType: personaType,
+                personaMbti: personaMbti,
+                coreDescription: coreDescription,
+                keywords: keywords,
+                contentWidth: width
+            )
+            .overlay(alignment: .top) {
                 HStack {
                     Color.clear
                         .frame(width: 36, height: 36)
@@ -1164,7 +1173,6 @@ private struct LovableResultShareImage: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 50)
             }
-            .frame(height: 520)
 
             LovableCatInsightSection(
                 catName: catName,
@@ -1181,6 +1189,7 @@ private struct LovableResultShareImage: View {
                 .padding(.bottom, 28)
         }
         .frame(width: width, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .background(LovableResultStyle.resultBackground)
         .overlay {
             NekoSparkles(count: 14)

@@ -30,7 +30,6 @@ struct NativeOnboardingFlowView: View {
     @State private var quizAnswers: [Int: QuizChoice] = [:]
     @State private var personaPreview: CatPersonaResult?
     @State private var analysisProgress = 0.0
-    @State private var isAnalyzing = false
     @State private var isValidatingProfile = false
     @State private var isValidatingVideo = false
     @State private var didHydrateExistingProfile = false
@@ -134,9 +133,9 @@ struct NativeOnboardingFlowView: View {
         .onChange(of: selectedVideoItems) { _, items in
             Task { await loadVideos(from: items) }
         }
-        .onChange(of: step) { _, newStep in
-            guard newStep == .analyzing else { return }
-            Task { await runAnalysis() }
+        .task(id: step) {
+            guard step == .analyzing else { return }
+            await runAnalysis()
         }
         .onChange(of: appModel.session?.accessToken) { _, accessToken in
             guard accessToken != nil, pendingSaveAfterLogin else { return }
@@ -155,7 +154,7 @@ struct NativeOnboardingFlowView: View {
     }
 
     private var canEdgeSwipeBack: Bool {
-        guard !appModel.isBusy, !isAnalyzing, !isValidatingProfile, !isValidatingVideo else {
+        guard !appModel.isBusy, step != .analyzing, !isValidatingProfile, !isValidatingVideo else {
             return false
         }
         return step.rawValue > NativeOnboardingStep.welcome.rawValue || appModel.catProfile != nil
@@ -378,55 +377,66 @@ struct NativeOnboardingFlowView: View {
 
     @MainActor
     private func runAnalysis() async {
-        guard !isAnalyzing else { return }
-        isAnalyzing = true
+        guard !Task.isCancelled, step == .analyzing else { return }
         analysisProgress = 0
 
-        let personaTask = Task<CatPersonaResult, Error> {
-            let videoObservations = await analyzeUploadedVideos()
-            try Task.checkCancellation()
-            return try await appModel.generateOnboardingPersona(
-                draft: draft,
-                quizAnswers: quizAnswers,
-                avatarImageData: avatarImageData,
-                videoCount: videoClips.count,
-                videoObservations: videoObservations,
-                previousPersona: appModel.persona
-            )
-        }
-
-        for tick in 1...82 {
-            try? await Task.sleep(nanoseconds: 36_000_000)
-            guard step == .analyzing else {
-                personaTask.cancel()
-                isAnalyzing = false
-                return
+        let pendingVideoCount = videoClips.filter {
+            $0.observation == nil && !$0.videoFrames.isEmpty
+        }.count
+        let estimate = OnboardingAnalysisProgress(pendingVideoCount: pendingVideoCount)
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let progressTask = Task { @MainActor in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, step == .analyzing else { return }
+                let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+                analysisProgress = estimate.value(after: elapsed)
             }
-            analysisProgress = Double(tick) / 100
         }
+        defer { progressTask.cancel() }
 
-        do {
-            let generated = try await personaTask.value
-            for tick in 83...100 {
-                try? await Task.sleep(nanoseconds: 16_000_000)
-                analysisProgress = Double(tick) / 100
-            }
+        await withTaskCancellationHandler {
+            do {
+                let videoObservations = await analyzeUploadedVideos()
+                try Task.checkCancellation()
+                let generated = try await appModel.generateOnboardingPersona(
+                    draft: draft,
+                    quizAnswers: quizAnswers,
+                    avatarImageData: avatarImageData,
+                    videoCount: videoClips.count,
+                    videoObservations: videoObservations,
+                    previousPersona: appModel.persona
+                )
+                try Task.checkCancellation()
+                guard step == .analyzing else { return }
 
-            personaPreview = generated
-            isAnalyzing = false
-            try? await Task.sleep(nanoseconds: 260_000_000)
-            if step == .analyzing {
+                progressTask.cancel()
+                let completionStart = analysisProgress
+                // Fast responses needn't wait for the estimated duration to elapse.
+                for tick in 1...20 {
+                    try await Task.sleep(nanoseconds: 20_000_000)
+                    guard step == .analyzing else { return }
+                    analysisProgress = completionStart + (1 - completionStart) * Double(tick) / 20
+                }
+
+                personaPreview = generated
+                try await Task.sleep(nanoseconds: 260_000_000)
+                guard step == .analyzing else { return }
                 step = .result
-            }
-        } catch {
-            isAnalyzing = false
-            appModel.errorMessage = userFacingServerMessage(
-                error,
-                fallback: "AI 分析暂时失败，请稍后再试。"
-            )
-            if step == .analyzing {
+            } catch {
+                guard !Task.isCancelled, step == .analyzing else { return }
+                appModel.errorMessage = userFacingServerMessage(
+                    error,
+                    fallback: "AI 分析暂时失败，请稍后再试。"
+                )
                 step = .quiz
             }
+        } onCancel: {
+            progressTask.cancel()
         }
     }
 
@@ -469,6 +479,7 @@ struct NativeOnboardingFlowView: View {
                     clip: clip,
                     videoCount: videoCount
                 )
+                try Task.checkCancellation()
                 updateVideoClip(clip.id) { next in
                     next.analysisStatus = .ready
                     next.analysisError = nil
@@ -478,6 +489,7 @@ struct NativeOnboardingFlowView: View {
                     observations.append(observation)
                 }
             } catch {
+                guard !Task.isCancelled else { return observations }
                 updateVideoClip(clip.id) { next in
                     next.analysisStatus = .failed
                     next.analysisError = userFacingServerMessage(
@@ -1139,6 +1151,11 @@ private struct OnboardingAnalyzingScreen: View {
                 AnalysisRing(progress: progress, avatarImage: avatarImage)
                     .padding(.top, 28)
 
+                Text("进度为预估，完成后自动展示报告")
+                    .nekoText(.tiny)
+                    .foregroundStyle(OnboardingWeb.muted)
+                    .padding(.top, 8)
+
                 VStack(spacing: 8) {
                     ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
                         let activeIndex = min(steps.count - 1, Int(progress * Double(steps.count)))
@@ -1650,6 +1667,7 @@ private struct AnalysisRing: View {
                 .stroke(OnboardingWeb.selectedGradient, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 184, height: 184)
+                .animation(.linear(duration: 0.1), value: progress)
 
             FlowAvatarView(image: avatarImage, size: 154, placeholderTitle: "等待头像", placeholderIcon: "cat")
 
