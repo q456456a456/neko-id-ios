@@ -1015,7 +1015,7 @@ private struct OnboardingQuizScreen: View {
                 Spacer()
 
                 Text("行为小测试")
-                    .nekoText(.cardTitle)
+                    .nekoText(.moduleTitle)
                     .foregroundStyle(OnboardingWeb.ink)
 
                 Spacer()
@@ -1026,17 +1026,17 @@ private struct OnboardingQuizScreen: View {
                     .frame(width: 44, height: 44, alignment: .trailing)
                     .buttonStyle(.plain)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 24)
             .padding(.top, 4)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("帮助 AI 更准确理解它（可跳过）")
                         .nekoText(.support)
                         .foregroundStyle(OnboardingWeb.muted.opacity(0.92))
                     Spacer()
                     Text("已完成 \(answers.count) / \(questions.count)")
-                        .nekoText(.caption)
+                        .nekoText(.eyebrow)
                         .foregroundStyle(OnboardingWeb.questionNumber)
                 }
 
@@ -1051,13 +1051,13 @@ private struct OnboardingQuizScreen: View {
                 }
                 .frame(height: 3)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 12)
 
             Divider()
                 .overlay(OnboardingWeb.border.opacity(0.24))
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
 
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 24) {
@@ -1070,12 +1070,11 @@ private struct OnboardingQuizScreen: View {
 
                                 Text(question.question)
                                     .nekoText(.cardTitle)
-                                    .lineSpacing(5)
                                     .foregroundStyle(OnboardingWeb.ink)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
 
-                            VStack(spacing: 11) {
+                            VStack(spacing: 12) {
                                 QuizOptionButton(label: "A", text: question.optionA, active: answers[question.id] == .a) {
                                     answers[question.id] = .a
                                 }
@@ -1089,21 +1088,21 @@ private struct OnboardingQuizScreen: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 22)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
                 .padding(.bottom, 124)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button(action: onNext) {
                 Text("好了，开始解析 ✨")
-                    .font(.system(size: 18, weight: .semibold))
+                    .nekoText(.button)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
             }
             .buttonStyle(QuizPrimaryButtonStyle())
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 24)
             .padding(.top, 12)
             .padding(.bottom, 8)
             .background(OnboardingFooterFade())
@@ -1433,7 +1432,7 @@ private struct QuizOptionButton: View {
         Button {
             onTap()
         } label: {
-            HStack(alignment: .center, spacing: 15) {
+            HStack(alignment: .center, spacing: 16) {
                 Text(label)
                     .nekoText(.badge)
                     .foregroundStyle(active ? .white : OnboardingWeb.questionNumber)
@@ -1444,7 +1443,6 @@ private struct QuizOptionButton: View {
                     .nekoText(.button)
                     .fontWeight(active ? .medium : .regular)
                     .foregroundStyle(OnboardingWeb.ink)
-                    .lineSpacing(4)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1457,9 +1455,9 @@ private struct QuizOptionButton: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, 19)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
             .background(
                 active
                     ? AnyShapeStyle(Color(red: 0.956, green: 0.925, blue: 0.985).opacity(0.94))
@@ -1470,7 +1468,7 @@ private struct QuizOptionButton: View {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(active ? OnboardingWeb.soulViolet.opacity(0.48) : OnboardingWeb.border.opacity(0.42), lineWidth: active ? 1.25 : 1)
             }
-            .shadow(color: OnboardingWeb.ink.opacity(active ? 0.055 : 0.025), radius: 10, x: 0, y: 4)
+            .shadow(color: OnboardingWeb.ink.opacity(active ? 0.04 : 0.015), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(label)，\(text)")

@@ -312,6 +312,19 @@ enum PersonaStabilityPolicy {
         stabilized.ownerRole = previous.ownerRole
         stabilized.ownerRelationship = previous.ownerRelationship ?? current.ownerRelationship
 
+        stabilized.persona = PersonaSummary(
+            mbti: stabilized.mbti,
+            personaTitle: stabilized.type,
+            summary: stabilized.corePersonality ?? current.persona.summary
+        )
+        stabilized.dimensions = previous.dimensions
+        stabilized.insights = PersonaInsights(
+            misunderstanding: previous.insights.misunderstanding,
+            affection: previous.insights.affection,
+            relationship: previous.insights.relationship
+        )
+        stabilized.bondSummary = previous.bondSummary
+
         let anchoredTags = Array(previous.tags.prefix(2)) + current.tags
         stabilized.tags = Array(NSOrderedSet(array: anchoredTags).compactMap { $0 as? String }.prefix(4))
         return stabilized

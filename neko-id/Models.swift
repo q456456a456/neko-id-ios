@@ -149,7 +149,111 @@ struct CatVideoObservation: Codable, Equatable {
     let confidence: String
 }
 
+struct PersonaSummary: Codable, Equatable {
+    let mbti: String
+    let personaTitle: String
+    let summary: String
+}
+
+enum PersonaDimensionKey: String, Codable, CaseIterable {
+    case social
+    case exploration
+    case companionship
+    case boundary
+}
+
+enum PersonaDirection: String, Codable {
+    case left
+    case centerLeft = "center_left"
+    case center
+    case centerRight = "center_right"
+    case right
+}
+
+enum PersonaStrength: String, Codable {
+    case weak
+    case medium
+    case strong
+}
+
+struct PersonaDimension: Codable, Equatable, Identifiable {
+    let key: PersonaDimensionKey
+    let name: String
+    let leftLabel: String
+    let rightLabel: String
+    let direction: PersonaDirection
+    let strength: PersonaStrength
+
+    var id: PersonaDimensionKey { key }
+
+    static let definitions: [(PersonaDimensionKey, String, String, String)] = [
+        (.social, "社交倾向", "主动亲近", "慢热谨慎"),
+        (.exploration, "探索倾向", "好奇探索", "稳定保守"),
+        (.companionship, "陪伴倾向", "喜欢陪伴", "独立自主"),
+        (.boundary, "边界倾向", "接受互动", "边界明确"),
+    ]
+
+    static func migrateLegacyTraits(_ traits: [PersonaTrait]) -> [PersonaDimension] {
+        func value(matching terms: [String], fallbackIndex: Int, inverted: Bool = false) -> Int {
+            let matched = traits.first { trait in terms.contains { trait.label.contains($0) } }
+            let fallback = traits.indices.contains(fallbackIndex) ? traits[fallbackIndex].value : 50
+            let raw = matched?.value ?? fallback
+            return inverted ? 100 - min(100, max(0, raw)) : min(100, max(0, raw))
+        }
+
+        let scores: [PersonaDimensionKey: Int] = [
+            .social: value(matching: ["亲近", "社交", "互动", "主人关注"], fallbackIndex: 0),
+            .exploration: value(matching: ["好奇", "探索", "观察"], fallbackIndex: 1),
+            .companionship: value(matching: ["陪伴", "依恋", "安全"], fallbackIndex: 2),
+            .boundary: value(matching: ["边界", "独立", "警觉"], fallbackIndex: 3, inverted: true),
+        ]
+
+        return definitions.map { key, name, leftLabel, rightLabel in
+            let score = scores[key] ?? 50
+            let direction: PersonaDirection = switch score {
+            case 80...: .left
+            case 60...: .centerLeft
+            case 41...: .center
+            case 21...: .centerRight
+            default: .right
+            }
+            let distance = abs(score - 50)
+            let strength: PersonaStrength = distance >= 30 ? .strong : distance >= 14 ? .medium : .weak
+            return PersonaDimension(
+                key: key,
+                name: name,
+                leftLabel: leftLabel,
+                rightLabel: rightLabel,
+                direction: direction,
+                strength: strength
+            )
+        }
+    }
+}
+
+struct PersonaInsight: Codable, Equatable {
+    let title: String
+    let conclusion: String
+}
+
+struct PersonaInsights: Codable, Equatable {
+    let misunderstanding: PersonaInsight
+    let affection: PersonaInsight
+    let relationship: PersonaInsight
+}
+
+struct BondSummary: Codable, Equatable {
+    let title: String
+    let quote: String
+}
+
 struct CatPersonaResult: Codable, Equatable {
+    var persona: PersonaSummary
+    var dimensions: [PersonaDimension]
+    var insights: PersonaInsights
+    var bondSummary: BondSummary
+
+    // Transitional compatibility fields. Canonical fields above are the source of truth.
     var type: String
     var mbti: String
     var matchScore: Int
@@ -170,6 +274,10 @@ struct CatPersonaResult: Codable, Equatable {
     var model: String = "native-onboarding-v1"
 
     enum CodingKeys: String, CodingKey {
+        case persona
+        case dimensions
+        case insights
+        case bondSummary
         case type
         case mbti
         case matchScore
@@ -208,21 +316,54 @@ struct CatPersonaResult: Codable, Equatable {
         evidence: [PersonaEvidence] = [],
         dailyMood: String,
         provider: String = "ios-native",
-        model: String = "native-onboarding-v1"
+        model: String = "native-onboarding-v1",
+        persona: PersonaSummary? = nil,
+        dimensions: [PersonaDimension]? = nil,
+        insights: PersonaInsights? = nil,
+        bondSummary: BondSummary? = nil
     ) {
-        self.type = type
-        self.mbti = mbti
+        let resolvedPersona = persona ?? PersonaSummary(
+            mbti: mbti,
+            personaTitle: type,
+            summary: corePersonality?.nonBlank ?? analysis
+        )
+        let resolvedDimensions = dimensions ?? PersonaDimension.migrateLegacyTraits(traits)
+        let resolvedInsights = insights ?? PersonaInsights(
+            misunderstanding: PersonaInsight(
+                title: "你可能一直误会它的一件事",
+                conclusion: misunderstanding?.nonBlank ?? analysis
+            ),
+            affection: PersonaInsight(
+                title: "它表达喜欢的方式",
+                conclusion: loveLanguageInsight?.nonBlank ?? loveLanguage?.nonBlank ?? analysis
+            ),
+            relationship: PersonaInsight(
+                title: "在它眼里，你的位置",
+                conclusion: ownerRelationship?.nonBlank ?? ownerRole
+            )
+        )
+        let resolvedBond = bondSummary ?? BondSummary(
+            title: "你们的关系",
+            quote: resolvedInsights.relationship.conclusion
+        )
+
+        self.persona = resolvedPersona
+        self.dimensions = resolvedDimensions
+        self.insights = resolvedInsights
+        self.bondSummary = resolvedBond
+        self.type = resolvedPersona.personaTitle
+        self.mbti = resolvedPersona.mbti
         self.matchScore = matchScore
         self.monologue = monologue
-        self.analysis = analysis
-        self.corePersonality = corePersonality
-        self.misunderstanding = misunderstanding
-        self.loveLanguage = loveLanguage
-        self.loveLanguageInsight = loveLanguageInsight
-        self.ownerRole = ownerRole
-        self.ownerRelationship = ownerRelationship
+        self.analysis = resolvedInsights.misunderstanding.conclusion
+        self.corePersonality = resolvedPersona.summary
+        self.misunderstanding = resolvedInsights.misunderstanding.conclusion
+        self.loveLanguage = resolvedInsights.affection.conclusion
+        self.loveLanguageInsight = resolvedInsights.affection.conclusion
+        self.ownerRole = resolvedInsights.relationship.conclusion
+        self.ownerRelationship = resolvedInsights.relationship.conclusion
         self.tags = tags
-        self.traits = traits
+        self.traits = resolvedDimensions.map(Self.legacyTrait)
         self.observations = observations
         self.evidence = evidence
         self.dailyMood = dailyMood
@@ -232,20 +373,74 @@ struct CatPersonaResult: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decode(String.self, forKey: .type)
-        mbti = try container.decode(String.self, forKey: .mbti)
-        matchScore = try container.decode(Int.self, forKey: .matchScore)
-        monologue = try container.decode(String.self, forKey: .monologue)
-        analysis = try container.decode(String.self, forKey: .analysis)
-        corePersonality = try container.decodeIfPresent(String.self, forKey: .corePersonality)
-        misunderstanding = try container.decodeIfPresent(String.self, forKey: .misunderstanding)
-        loveLanguage = try container.decodeIfPresent(String.self, forKey: .loveLanguage)
-        loveLanguageInsight = try container.decodeIfPresent(String.self, forKey: .loveLanguageInsight)
-        ownerRole = try container.decode(String.self, forKey: .ownerRole)
-        ownerRelationship = try container.decodeIfPresent(String.self, forKey: .ownerRelationship)
-        tags = try container.decode([String].self, forKey: .tags)
-        traits = try container.decode([PersonaTrait].self, forKey: .traits)
-        observations = try container.decode([PersonaObservation].self, forKey: .observations)
+        let legacyType = try container.decodeIfPresent(String.self, forKey: .type)?.nonBlank
+        let legacyMbti = try container.decodeIfPresent(String.self, forKey: .mbti)?.nonBlank
+        let legacyCore = try container.decodeIfPresent(String.self, forKey: .corePersonality)?.nonBlank
+        let legacyAnalysis = try container.decodeIfPresent(String.self, forKey: .analysis)?.nonBlank
+        let legacyMisunderstanding = try container.decodeIfPresent(String.self, forKey: .misunderstanding)?.nonBlank
+        let legacyLoveLanguage = try container.decodeIfPresent(String.self, forKey: .loveLanguage)?.nonBlank
+        let legacyLoveInsight = try container.decodeIfPresent(String.self, forKey: .loveLanguageInsight)?.nonBlank
+        let legacyOwnerRole = try container.decodeIfPresent(String.self, forKey: .ownerRole)?.nonBlank
+        let legacyOwnerRelationship = try container.decodeIfPresent(String.self, forKey: .ownerRelationship)?.nonBlank
+        let legacyTraits = try container.decodeIfPresent([PersonaTrait].self, forKey: .traits) ?? []
+
+        if container.contains(.persona) {
+            persona = try container.decode(PersonaSummary.self, forKey: .persona)
+        } else if let legacyType, let legacyMbti, let summary = legacyCore ?? legacyAnalysis {
+            persona = PersonaSummary(mbti: legacyMbti, personaTitle: legacyType, summary: summary)
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .persona, in: container, debugDescription: "Missing canonical persona and migratable legacy persona fields")
+        }
+
+        if container.contains(.dimensions) {
+            dimensions = try container.decode([PersonaDimension].self, forKey: .dimensions)
+        } else if !legacyTraits.isEmpty {
+            dimensions = PersonaDimension.migrateLegacyTraits(legacyTraits)
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .dimensions, in: container, debugDescription: "Missing canonical dimensions and migratable legacy traits")
+        }
+
+        if container.contains(.insights) {
+            insights = try container.decode(PersonaInsights.self, forKey: .insights)
+        } else if let misunderstanding = legacyMisunderstanding ?? legacyAnalysis,
+                  let affection = legacyLoveInsight ?? legacyLoveLanguage,
+                  let relationship = legacyOwnerRelationship ?? legacyOwnerRole {
+            insights = PersonaInsights(
+                misunderstanding: PersonaInsight(title: "你可能一直误会它的一件事", conclusion: misunderstanding),
+                affection: PersonaInsight(title: "它表达喜欢的方式", conclusion: affection),
+                relationship: PersonaInsight(title: "在它眼里，你的位置", conclusion: relationship)
+            )
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .insights, in: container, debugDescription: "Missing canonical insights and migratable legacy insight fields")
+        }
+
+        if container.contains(.bondSummary) {
+            bondSummary = try container.decode(BondSummary.self, forKey: .bondSummary)
+        } else if let relationship = legacyOwnerRelationship ?? legacyOwnerRole {
+            bondSummary = BondSummary(title: "你们的关系", quote: relationship)
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .bondSummary, in: container, debugDescription: "Missing canonical bondSummary and migratable legacy relationship")
+        }
+
+        guard Self.validateCanonical(persona: persona, dimensions: dimensions, insights: insights, bondSummary: bondSummary) else {
+            throw DecodingError.dataCorruptedError(forKey: .persona, in: container, debugDescription: "Invalid Persona Result protocol")
+        }
+
+        // Derive every legacy field from canonical data when new fields exist.
+        type = persona.personaTitle
+        mbti = persona.mbti
+        matchScore = try container.decodeIfPresent(Int.self, forKey: .matchScore) ?? 0
+        monologue = try container.decodeIfPresent(String.self, forKey: .monologue)?.nonBlank ?? persona.summary
+        analysis = insights.misunderstanding.conclusion
+        corePersonality = persona.summary
+        misunderstanding = insights.misunderstanding.conclusion
+        loveLanguage = insights.affection.conclusion
+        loveLanguageInsight = insights.affection.conclusion
+        ownerRole = insights.relationship.conclusion
+        ownerRelationship = insights.relationship.conclusion
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? dimensions.prefix(3).map(\.leftLabel)
+        traits = legacyTraits.isEmpty ? dimensions.map(Self.legacyTrait) : legacyTraits
+        observations = try container.decodeIfPresent([PersonaObservation].self, forKey: .observations) ?? []
         evidence = try container.decodeIfPresent([PersonaEvidence].self, forKey: .evidence) ?? []
         // `dailyMood` belonged to the first-generation home card and is no longer
         // emitted by the current persona prompt. Keep decoding older records, but
@@ -253,6 +448,58 @@ struct CatPersonaResult: Codable, Equatable {
         dailyMood = try container.decodeIfPresent(String.self, forKey: .dailyMood) ?? ""
         provider = try container.decodeIfPresent(String.self, forKey: .provider) ?? "server"
         model = try container.decodeIfPresent(String.self, forKey: .model) ?? "neko-id-server-persona"
+    }
+
+    var isCanonicalValid: Bool {
+        Self.validateCanonical(persona: persona, dimensions: dimensions, insights: insights, bondSummary: bondSummary)
+    }
+
+    private static func validateCanonical(
+        persona: PersonaSummary,
+        dimensions: [PersonaDimension],
+        insights: PersonaInsights,
+        bondSummary: BondSummary
+    ) -> Bool {
+        guard persona.mbti.nonBlank != nil,
+              persona.personaTitle.nonBlank != nil,
+              persona.summary.nonBlank != nil,
+              dimensions.count == PersonaDimensionKey.allCases.count,
+              Set(dimensions.map(\.key)) == Set(PersonaDimensionKey.allCases),
+              insights.misunderstanding.title.nonBlank != nil,
+              insights.misunderstanding.conclusion.nonBlank != nil,
+              insights.affection.title.nonBlank != nil,
+              insights.affection.conclusion.nonBlank != nil,
+              insights.relationship.title.nonBlank != nil,
+              insights.relationship.conclusion.nonBlank != nil,
+              bondSummary.title.nonBlank != nil,
+              bondSummary.quote.nonBlank != nil else { return false }
+
+        return dimensions.allSatisfy { dimension in
+            guard let definition = PersonaDimension.definitions.first(where: { $0.0 == dimension.key }) else {
+                return false
+            }
+            return dimension.name == definition.1 &&
+                dimension.leftLabel == definition.2 &&
+                dimension.rightLabel == definition.3
+        }
+    }
+
+    private static func legacyTrait(from dimension: PersonaDimension) -> PersonaTrait {
+        let value: Int = switch dimension.direction {
+        case .left: 85
+        case .centerLeft: 68
+        case .center: 50
+        case .centerRight: 32
+        case .right: 15
+        }
+        return PersonaTrait(label: dimension.name, value: value)
+    }
+}
+
+private extension String {
+    var nonBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }
 
