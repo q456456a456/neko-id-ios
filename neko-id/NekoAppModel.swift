@@ -35,6 +35,7 @@ final class NekoAppModel: ObservableObject {
     @Published private(set) var pendingVoicePublishes: [PendingVoicePublish] = []
     @Published var loginPrompt: NekoLoginPrompt?
     @Published var isBusy = false
+    @Published private(set) var isDeletingAccount = false
     @Published var errorMessage: String?
     @Published var noticeMessage: String?
 
@@ -237,15 +238,11 @@ final class NekoAppModel: ObservableObject {
 
     func analyzeOnboardingVideoClip(
         draft: CatProfileDraft,
-        quizAnswers: [Int: QuizChoice],
-        clip: OnboardingVideoClip,
-        videoCount: Int
+        clip: OnboardingVideoClip
     ) async throws -> CatVideoObservation {
         return try await serverAPI.analyzeOnboardingVideoClip(
             draft: draft,
-            quizAnswers: quizAnswers,
-            clip: clip,
-            videoCount: videoCount
+            clip: clip
         )
     }
 
@@ -315,6 +312,7 @@ final class NekoAppModel: ObservableObject {
                 signedMediaCache.removeValue(forKey: objectKey)
                 return nil
             }
+            guard session?.user.id == activeSession.user.id, !isDeletingAccount else { return nil }
             signedMediaCache[objectKey] = CachedSignedMediaURL(url: url)
             return url
         } catch {
@@ -359,6 +357,7 @@ final class NekoAppModel: ObservableObject {
                 for: profile.avatarObjectKey,
                 accessToken: activeSession.accessToken
                ) {
+                guard session?.user.id == activeSession.user.id, !isDeletingAccount else { return }
                 profile.avatarURL = nextAvatarURL
                 catProfile = profile
             }
@@ -366,6 +365,7 @@ final class NekoAppModel: ObservableObject {
             guard !voices.isEmpty else { return }
             var refreshedVoices = voices
             for index in refreshedVoices.indices {
+                guard session?.user.id == activeSession.user.id, !isDeletingAccount else { return }
                 guard let objectKey = refreshedVoices[index].mediaObjectKey, !objectKey.isEmpty else { continue }
                 if let nextMediaURL = try? await serverAPI.signedMediaURL(
                     for: objectKey,
@@ -374,6 +374,7 @@ final class NekoAppModel: ObservableObject {
                     refreshedVoices[index].mediaURL = nextMediaURL
                 }
             }
+            guard session?.user.id == activeSession.user.id, !isDeletingAccount else { return }
             voices = refreshedVoices
         } catch {
             // 图片 URL 刷新失败不影响主流程；单张图片组件还会在加载失败时再重试一次。
@@ -444,6 +445,7 @@ final class NekoAppModel: ObservableObject {
             for: profile,
             accessToken: activeSession.accessToken
         )
+        guard session?.user.id == activeSession.user.id, !isDeletingAccount else { throw CancellationError() }
         voices = nextVoices
         return nextVoices
     }
@@ -561,8 +563,30 @@ final class NekoAppModel: ObservableObject {
         voices = []
         pendingVoicePublishes = []
         signedMediaCache = [:]
+        loginPrompt = nil
         NekoRemoteImageCache.shared.removeAll()
+        URLCache.shared.removeAllCachedResponses()
         phase = .onboarding
+    }
+
+    func deleteAccount() async throws {
+        guard !isBusy, !isDeletingAccount,
+              !pendingVoicePublishes.contains(where: { $0.status == .publishing }) else {
+            throw NekoAppError.accountOperationInProgress
+        }
+        isBusy = true
+        defer {
+            isBusy = false
+            isDeletingAccount = false
+        }
+        let activeSession = try await authenticatedSession()
+        isDeletingAccount = true
+        // Keep the local login on failure so a partial server cleanup can be retried.
+        try await serverAPI.deleteAccount(accessToken: activeSession.accessToken)
+        signOut()
+        phase = .signedOut
+        errorMessage = nil
+        noticeMessage = "账号已注销，云端资料已删除。"
     }
 
     func startOnboarding() {
@@ -575,6 +599,7 @@ final class NekoAppModel: ObservableObject {
     }
 
     private func authenticatedSession() async throws -> NekoSession {
+        guard !isDeletingAccount else { throw NekoAppError.accountOperationInProgress }
         guard var activeSession = session else {
             requestLogin(message: "继续前需要先登录，猫咪档案和心声会安全保存到你的云端账号。")
             throw NekoAppError.signedOut
@@ -582,6 +607,7 @@ final class NekoAppModel: ObservableObject {
 
         if activeSession.isExpired {
             activeSession = try await serverAPI.refreshSession(activeSession)
+            guard session?.user.id == activeSession.user.id, !isDeletingAccount else { throw CancellationError() }
             try saveStoredSession(activeSession)
             session = activeSession
         }
@@ -615,6 +641,7 @@ final class NekoAppModel: ObservableObject {
 
     private func reloadCloudState(session activeSession: NekoSession) async throws {
         let cloudState = try await serverAPI.fetchCloudState(accessToken: activeSession.accessToken)
+        guard session?.user.id == activeSession.user.id, !isDeletingAccount else { throw CancellationError() }
         applyCloudState(cloudState)
     }
 
@@ -680,6 +707,7 @@ enum NekoAppError: LocalizedError {
     case signedOut
     case missingCatProfile
     case invalidPhone
+    case accountOperationInProgress
 
     var errorDescription: String? {
         switch self {
@@ -689,6 +717,8 @@ enum NekoAppError: LocalizedError {
             return "还没有猫咪档案，请先创建档案。"
         case .invalidPhone:
             return "请输入有效的中国大陆手机号。"
+        case .accountOperationInProgress:
+            return "有操作正在进行，请等待保存或注销完成后再试。"
         }
     }
 }

@@ -27,6 +27,13 @@ struct ContentView: View {
                     LoginView()
                 case .onboarding:
                     NativeOnboardingFlowView()
+                        .toolbar {
+                            if appModel.session != nil {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    NavigationLink("账号设置") { AppSettingsView() }
+                                }
+                            }
+                        }
                 case .home:
                     MainTabRootView()
                 }
@@ -327,6 +334,8 @@ private struct LoginView: View {
     @State private var currentDate = Date()
     @State private var lastSentPhone = ""
     @State private var verificationError: String?
+    @State private var isPrivacyPolicyPresented = false
+    @State private var isTermsOfServicePresented = false
     @FocusState private var focusedField: LoginFocusField?
 
     init(
@@ -356,6 +365,31 @@ private struct LoginView: View {
                     loginCard
                         .padding(.top, 26)
 
+                    HStack(spacing: 12) {
+                        Button {
+                            focusedField = nil
+                            isTermsOfServicePresented = true
+                        } label: {
+                            Text("用户服务协议")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+
+                        Text("·")
+                            .accessibilityHidden(true)
+
+                        Button {
+                            focusedField = nil
+                            isPrivacyPolicyPresented = true
+                        } label: {
+                            Text("隐私政策")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(NekoTheme.menuIcon)
+                    .buttonStyle(.plain)
+                    .padding(.top, 12)
+
                     Spacer(minLength: 36)
                 }
                 .padding(.horizontal, 28)
@@ -371,6 +405,16 @@ private struct LoginView: View {
             }
         }
         .background(NekoBackground())
+        .sheet(isPresented: $isPrivacyPolicyPresented) {
+            NavigationStack {
+                PrivacyPolicyView()
+            }
+        }
+        .sheet(isPresented: $isTermsOfServicePresented) {
+            NavigationStack {
+                TermsOfServiceView()
+            }
+        }
         .onAppear { focusedField = .phone }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             currentDate = Date()
@@ -1569,9 +1613,12 @@ struct NekoRemoteImageView<Placeholder: View>: View {
     @MainActor
     private func load(from url: URL) async -> Bool {
         currentURL = url
+        let loadingUserID = appModel.session?.user.id
         do {
             let request = await appModel.mediaImageRequest(for: url)
             let (data, response) = try await URLSession.shared.data(for: request)
+            try Task.checkCancellation()
+            guard appModel.session?.user.id == loadingUserID, !appModel.isDeletingAccount else { return false }
             if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
                 throw URLError(.badServerResponse)
             }
@@ -2866,7 +2913,7 @@ private struct AccountCenterView: View {
     }
 }
 
-private struct AccountTopBar: View {
+struct AccountTopBar: View {
     let title: String
     let back: () -> Void
 
@@ -2888,7 +2935,10 @@ private struct AppSettingsView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var appModel: NekoAppModel
     @State private var isAccountPresented = false
+    @State private var isPrivacyPolicyPresented = false
+    @State private var isTermsOfServicePresented = false
     @State private var confirmsSignOut = false
+    @State private var isAccountDeletionPresented = false
 
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
@@ -2918,6 +2968,11 @@ private struct AppSettingsView: View {
                         ) {
                             isAccountPresented = true
                         }
+                        if appModel.session != nil {
+                            SettingsLinkRow(icon: "person.crop.circle.badge.minus", title: "注销账号") {
+                                isAccountDeletionPresented = true
+                            }
+                        }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .overlay {
@@ -2933,10 +2988,10 @@ private struct AppSettingsView: View {
 
                     VStack(spacing: 1) {
                         SettingsLinkRow(icon: "hand.raised.fill", title: "隐私政策") {
-                            openWebPath("privacy")
+                            isPrivacyPolicyPresented = true
                         }
                         SettingsLinkRow(icon: "doc.text.fill", title: "用户服务协议") {
-                            openWebPath("terms")
+                            isTermsOfServicePresented = true
                         }
                         SettingsLinkRow(icon: "gearshape.fill", title: "权限设置") {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -3010,11 +3065,17 @@ private struct AppSettingsView: View {
             AccountCenterView()
                 .environmentObject(appModel)
         }
+        .navigationDestination(isPresented: $isPrivacyPolicyPresented) {
+            PrivacyPolicyView()
+        }
+        .navigationDestination(isPresented: $isTermsOfServicePresented) {
+            TermsOfServiceView()
+        }
+        .navigationDestination(isPresented: $isAccountDeletionPresented) {
+            AccountDeletionView()
+        }
     }
 
-    private func openWebPath(_ path: String) {
-        openURL(AppConfig.productionWebURL.appendingPathComponent(path))
-    }
 }
 
 private struct SettingsSectionTitle: View {
@@ -3125,7 +3186,7 @@ private struct AccountStatCard: View {
     }
 }
 
-private struct AccountSectionCard<Content: View>: View {
+struct AccountSectionCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -6056,7 +6117,7 @@ private struct LatestVoiceCard: View {
     }
 }
 
-private struct CatAvatarView: View {
+struct CatAvatarView: View {
     let localImage: UIImage?
     let remoteURL: URL?
     var objectKey: String? = nil
