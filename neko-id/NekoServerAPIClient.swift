@@ -80,6 +80,15 @@ struct NekoServerAPIClient {
         )
     }
 
+    func deleteAccount(accessToken: String) async throws {
+        let response: AccountDeletionResponse = try await perform(
+            path: "/api/ios/cloud/account/delete",
+            body: AccountDeletionRequest(confirmation: "DELETE"),
+            accessToken: accessToken
+        )
+        guard response.deleted else { throw NekoServerAPIError.invalidResponse }
+    }
+
     func detectCatFace(
         imageData: Data,
         mode: CatDetectionMode,
@@ -133,9 +142,7 @@ struct NekoServerAPIClient {
 
     func analyzeOnboardingVideoClip(
         draft: CatProfileDraft,
-        quizAnswers: [Int: QuizChoice],
         clip: OnboardingVideoClip,
-        videoCount: Int,
         accessToken: String? = nil
     ) async throws -> CatVideoObservation {
         let body = VideoAnalysisRequest(
@@ -143,10 +150,10 @@ struct NekoServerAPIClient {
                 name: draft.trimmedName,
                 gender: draft.gender.rawValue,
                 ageStage: draft.ageStage.rawValue,
-                quiz: Dictionary(uniqueKeysWithValues: quizAnswers.map { key, value in
-                    (String(key), value.rawValue)
-                }),
-                videoCount: videoCount,
+                // Observe this clip independently while the user fills in the quiz.
+                // The complete answers/count are still sent to persona generation.
+                quiz: [:],
+                videoCount: 1,
                 updatedAt: Int64(Date().timeIntervalSince1970 * 1000)
             ),
             clipId: clip.id.uuidString,
@@ -646,6 +653,14 @@ struct NekoCatProfileSaveResult: Decodable, Equatable {
 }
 
 private struct EmptyServerRequest: Encodable {}
+
+private struct AccountDeletionRequest: Encodable {
+    let confirmation: String
+}
+
+private struct AccountDeletionResponse: Decodable {
+    let deleted: Bool
+}
 
 private enum MediaUploadPurpose: String {
     case catAvatar = "cat_avatar"

@@ -27,6 +27,8 @@ struct NativeOnboardingFlowView: View {
     @State private var showsCamera = false
     @State private var selectedVideoItems: [PhotosPickerItem] = []
     @State private var videoClips: [OnboardingVideoClip] = []
+    @State private var videoAnalysisQueue = OnboardingVideoAnalysisQueue<OnboardingVideoAnalysisKey, CatVideoObservation>()
+    @State private var isFlowVisible = false
     @State private var quizAnswers: [Int: QuizChoice] = [:]
     @State private var personaPreview: CatPersonaResult?
     @State private var analysisProgress = 0.0
@@ -65,8 +67,9 @@ struct NativeOnboardingFlowView: View {
                 case .video:
                     OnboardingVideoScreen(
                         selectedVideoItems: $selectedVideoItems,
-                        videoClips: $videoClips,
+                        videoClips: videoClips,
                         isValidating: isValidatingVideo,
+                        onRemove: removeVideoClip,
                         onNext: validateVideoAndContinue,
                         onBack: goBack
                     )
@@ -128,10 +131,22 @@ struct NativeOnboardingFlowView: View {
             handleEdgeSwipeBack()
         }
         .onAppear {
+            isFlowVisible = true
             hydrateExistingProfileForRetest()
+            synchronizeVideoAnalysis()
         }
-        .onChange(of: selectedVideoItems) { _, items in
-            Task { await loadVideos(from: items) }
+        .onDisappear {
+            isFlowVisible = false
+            videoAnalysisQueue.cancelPendingWork()
+        }
+        .task(id: selectedVideoItems) {
+            await loadVideos(from: selectedVideoItems)
+        }
+        .onChange(of: draft) { _, _ in
+            synchronizeVideoAnalysis()
+        }
+        .onChange(of: step) { _, _ in
+            synchronizeVideoAnalysis()
         }
         .task(id: step) {
             guard step == .analyzing else { return }
@@ -218,7 +233,8 @@ struct NativeOnboardingFlowView: View {
     }
 
     private func validateVideoAndContinue() {
-        guard !isValidatingVideo else { return }
+        // Keep the selected batch stable before final generation can snapshot it.
+        guard !isValidatingVideo, selectedVideoItems.isEmpty else { return }
 
         guard !videoClips.isEmpty else {
             appModel.errorMessage = "需要选择至少 1 段猫咪日常视频，才能继续分析。"
@@ -303,11 +319,15 @@ struct NativeOnboardingFlowView: View {
     @MainActor
     private func loadVideos(from items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
-        defer { selectedVideoItems = [] }
+        defer {
+            // A cancelled import must not clear a newer picker selection.
+            if selectedVideoItems == items { selectedVideoItems = [] }
+        }
 
         var rejectionMessages: [String] = []
 
         for (selectionIndex, item) in items.enumerated() {
+            guard !Task.isCancelled, isFlowVisible else { return }
             guard videoClips.count < 3 else {
                 rejectionMessages.append("第 \(selectionIndex + 1) 个视频：最多只能选择 3 段视频。")
                 break
@@ -317,14 +337,20 @@ struct NativeOnboardingFlowView: View {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     throw NekoMediaError.unsupportedVideo
                 }
+                try Task.checkCancellation()
 
                 let clip = try await MediaUploadProcessor.prepareOnboardingVideo(
                     from: data,
                     preferredLabel: "视频 \(videoClips.count + 1)",
                     currentCount: videoClips.count
                 )
+                try Task.checkCancellation()
                 videoClips.append(clip)
+                // Start each ready clip immediately; don't wait for the whole import
+                // or for the user to finish the questionnaire.
+                synchronizeVideoAnalysis()
             } catch {
+                guard !Task.isCancelled else { return }
                 rejectionMessages.append(
                     "第 \(selectionIndex + 1) 个视频：\(userFacingMediaMessage(error))"
                 )
@@ -401,7 +427,7 @@ struct NativeOnboardingFlowView: View {
 
         await withTaskCancellationHandler {
             do {
-                let videoObservations = await analyzeUploadedVideos()
+                let videoObservations = try await analyzeUploadedVideos()
                 try Task.checkCancellation()
                 let generated = try await appModel.generateOnboardingPersona(
                     draft: draft,
@@ -441,66 +467,91 @@ struct NativeOnboardingFlowView: View {
     }
 
     @MainActor
-    private func analyzeUploadedVideos() async -> [CatVideoObservation] {
-        let clips = videoClips
-        let videoCount = clips.count
+    private func analyzeUploadedVideos() async throws -> [CatVideoObservation] {
+        try Task.checkCancellation()
+        // Only already-failed prefetches are retried here. Running/completed work is
+        // shared, rather than issuing duplicate requests when "Generate" is tapped.
+        synchronizeVideoAnalysis(retryFailures: true)
+        let keys = videoClips.filter { !$0.videoFrames.isEmpty }.map(videoAnalysisKey)
         var observations: [CatVideoObservation] = []
-
-        for clip in clips {
-            guard !Task.isCancelled else {
-                return observations
+        for key in keys {
+            do {
+                let observation = try await videoAnalysisQueue.value(for: key)
+                try Task.checkCancellation()
+                if observation.containsCat { observations.append(observation) }
+            } catch {
+                try Task.checkCancellation()
+                // Preserve the existing failed-video policy. The card shows the real
+                // error; no synthetic observation is supplied to persona generation.
             }
+        }
+        return observations
+    }
 
-            if let current = videoClips.first(where: { $0.id == clip.id }),
-               let observation = current.observation {
-                if observation.containsCat {
-                    observations.append(observation)
-                }
-                continue
-            }
+    private func videoAnalysisKey(for clip: OnboardingVideoClip) -> OnboardingVideoAnalysisKey {
+        OnboardingVideoAnalysisKey(
+            clipID: clip.id,
+            name: draft.trimmedName,
+            gender: draft.gender.rawValue,
+            ageStage: draft.ageStage.rawValue
+        )
+    }
 
-            guard !clip.videoFrames.isEmpty else {
-                updateVideoClip(clip.id) { next in
-                    next.analysisStatus = .failed
-                    next.analysisError = "视频抽帧失败，已跳过视频观察。"
-                }
-                continue
+    @MainActor
+    private func removeVideoClip(_ id: UUID) {
+        videoClips.removeAll { $0.id == id }
+        synchronizeVideoAnalysis()
+    }
+
+    @MainActor
+    private func synchronizeVideoAnalysis(retryFailures: Bool = false) {
+        videoAnalysisQueue.retainOnly(Set(videoClips.map(videoAnalysisKey)))
+        let shouldRun = isFlowVisible && draft.isValid
+            && (step == .video || step == .quiz || step == .analyzing)
+        if !shouldRun { videoAnalysisQueue.cancelPendingWork() }
+
+        for clip in videoClips {
+            let key = videoAnalysisKey(for: clip)
+            if retryFailures && videoAnalysisQueue.hasFailed(key) {
+                videoAnalysisQueue.remove(key)
             }
+            guard !videoAnalysisQueue.contains(key) else { continue }
 
             updateVideoClip(clip.id) { next in
-                next.analysisStatus = .analyzing
-                next.analysisError = nil
+                next.observation = nil
+                next.analysisStatus = clip.videoFrames.isEmpty ? .failed : .pending
+                next.analysisError = clip.videoFrames.isEmpty ? "视频抽帧失败，已跳过视频观察。" : nil
             }
-
-            do {
-                let observation = try await appModel.analyzeOnboardingVideoClip(
-                    draft: draft,
-                    quizAnswers: quizAnswers,
-                    clip: clip,
-                    videoCount: videoCount
-                )
-                try Task.checkCancellation()
+            guard shouldRun, !clip.videoFrames.isEmpty else { continue }
+            let profileSnapshot = draft
+            videoAnalysisQueue.enqueue(key) {
                 updateVideoClip(clip.id) { next in
-                    next.analysisStatus = .ready
+                    next.analysisStatus = .analyzing
                     next.analysisError = nil
-                    next.observation = observation
                 }
-                if observation.containsCat {
-                    observations.append(observation)
-                }
-            } catch {
-                guard !Task.isCancelled else { return observations }
+                return try await appModel.analyzeOnboardingVideoClip(
+                    draft: profileSnapshot,
+                    clip: clip
+                )
+            } completion: { result in
+                // Also guard the UI against an obsolete cat profile or removed clip.
+                guard isFlowVisible, videoAnalysisKey(for: clip) == key else { return }
                 updateVideoClip(clip.id) { next in
-                    next.analysisStatus = .failed
-                    next.analysisError = userFacingServerMessage(
-                        error,
-                        fallback: "视频观察失败，已跳过这段视频。"
-                    )
+                    switch result {
+                    case .success(let observation):
+                        next.analysisStatus = .ready
+                        next.analysisError = nil
+                        next.observation = observation
+                    case .failure(let error):
+                        next.analysisStatus = .failed
+                        next.analysisError = userFacingServerMessage(
+                            error,
+                            fallback: "视频观察失败，已跳过这段视频。"
+                        )
+                    }
                 }
             }
         }
-
-        return observations
     }
 
     @MainActor
@@ -854,8 +905,9 @@ private struct OnboardingProfileScreen: View {
 
 private struct OnboardingVideoScreen: View {
     @Binding var selectedVideoItems: [PhotosPickerItem]
-    @Binding var videoClips: [OnboardingVideoClip]
+    let videoClips: [OnboardingVideoClip]
     let isValidating: Bool
+    let onRemove: (UUID) -> Void
     let onNext: () -> Void
     let onBack: () -> Void
 
@@ -921,7 +973,7 @@ private struct OnboardingVideoScreen: View {
                     .frame(minHeight: 200)
                 }
                 .buttonStyle(.plain)
-                .disabled(videoClips.count >= 3)
+                .disabled(videoClips.count >= 3 || !selectedVideoItems.isEmpty)
 
                 if !videoClips.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -942,7 +994,7 @@ private struct OnboardingVideoScreen: View {
                             HStack(spacing: 10) {
                                 ForEach(videoClips) { clip in
                                     VideoClipCard(clip: clip) {
-                                        videoClips.removeAll { $0.id == clip.id }
+                                        onRemove(clip.id)
                                     }
                                     .frame(width: 142)
                                 }
@@ -977,16 +1029,16 @@ private struct OnboardingVideoScreen: View {
                 onNext()
             } label: {
                 HStack(spacing: 8) {
-                    if isValidating {
+                    if isValidating || !selectedVideoItems.isEmpty {
                         ProgressView()
                             .tint(.white)
                     }
-                    Text(isValidating ? "识别中…" : "继续")
+                    Text(!selectedVideoItems.isEmpty ? "读取视频中…" : (isValidating ? "识别中…" : "继续"))
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(OnboardingPrimaryButtonStyle())
-            .disabled(isValidating)
+            .disabled(isValidating || !selectedVideoItems.isEmpty)
         }
     }
 }
