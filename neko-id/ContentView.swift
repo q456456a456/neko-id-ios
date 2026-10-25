@@ -5549,23 +5549,39 @@ private struct VoiceResultPhotoStage: View {
                 subject: subject,
                 bubbleSize: bubbleSize
             )
+            let stageBounds = CGRect(origin: .zero, size: proxy.size)
+                .insetBy(dx: HeartVoiceLayout.bubbleInset, dy: HeartVoiceLayout.bubbleInset)
+            let bubbleFrame = layout.bubbleFrame.clamped(to: stageBounds)
 
             ZStack(alignment: .topLeading) {
                 NekoTheme.photoPlaceholderGradient
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
-                        .offset(x: layout.imageFrame.minX, y: layout.imageFrame.minY)
-                }
+                    .overlay(alignment: .topLeading) {
+                        if let image {
+                            Image(uiImage: image)
+                                .resizable()
+                                .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
+                                .offset(x: layout.imageFrame.minX, y: layout.imageFrame.minY)
+                        }
+                    }
 
                 VoiceResultSpeechBubble(text: text, showsLoadingIndicator: showsLoadingIndicator)
-                    .frame(width: layout.bubbleFrame.width, height: layout.bubbleFrame.height)
-                    .offset(x: layout.bubbleFrame.minX, y: layout.bubbleFrame.minY)
+                    .frame(width: bubbleFrame.width, height: bubbleFrame.height, alignment: .topLeading)
+                    .offset(x: bubbleFrame.minX, y: bubbleFrame.minY)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
+    }
+}
+
+private extension CGRect {
+    func clamped(to bounds: CGRect) -> CGRect {
+        CGRect(
+            x: min(max(minX, bounds.minX), max(bounds.minX, bounds.maxX - width)),
+            y: min(max(minY, bounds.minY), max(bounds.minY, bounds.maxY - height)),
+            width: min(width, bounds.width),
+            height: min(height, bounds.height)
+        )
     }
 }
 
@@ -5574,30 +5590,28 @@ private struct VoiceResultSpeechBubble: View {
     let showsLoadingIndicator: Bool
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            HStack(spacing: 8) {
-                if showsLoadingIndicator {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(NekoTheme.soulViolet)
-                }
-                Text(text)
-                    .font(.system(size: 16, weight: .medium, design: .default))
-                    .foregroundStyle(NekoTheme.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+        HStack(spacing: 8) {
+            if showsLoadingIndicator {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(NekoTheme.soulViolet)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, maxHeight: 66, alignment: .leading)
-            .background(NekoTheme.cardWhite.opacity(0.96), in: Capsule())
-            .overlay {
-                Capsule().stroke(NekoTheme.softLilac, lineWidth: 1)
-            }
-
+            Text(text)
+                .font(.system(size: 16, weight: .medium, design: .default))
+                .foregroundStyle(NekoTheme.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64, alignment: .leading)
+        .background(NekoTheme.cardWhite.opacity(0.96), in: Capsule())
+        .overlay {
+            Capsule().stroke(NekoTheme.softLilac, lineWidth: 1)
+        }
+        .overlay(alignment: .bottomLeading) {
             BubbleTail()
                 .fill(NekoTheme.cardWhite.opacity(0.96))
-                .frame(width: 18, height: 13)
+                .frame(width: 18, height: 12)
                 .offset(x: 28, y: 8)
         }
     }
