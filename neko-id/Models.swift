@@ -272,6 +272,8 @@ struct CatPersonaResult: Codable, Equatable {
     var dailyMood: String
     var provider: String = "ios-native"
     var model: String = "native-onboarding-v1"
+    /// Answers that produced this result. nil means the old snapshot is unknown.
+    var questionnaireAnswers: [Int: QuizChoice]?
 
     enum CodingKeys: String, CodingKey {
         case persona
@@ -296,6 +298,7 @@ struct CatPersonaResult: Codable, Equatable {
         case dailyMood
         case provider
         case model
+        case questionnaireAnswers
     }
 
     init(
@@ -320,7 +323,8 @@ struct CatPersonaResult: Codable, Equatable {
         persona: PersonaSummary? = nil,
         dimensions: [PersonaDimension]? = nil,
         insights: PersonaInsights? = nil,
-        bondSummary: BondSummary? = nil
+        bondSummary: BondSummary? = nil,
+        questionnaireAnswers: [Int: QuizChoice]? = nil
     ) {
         let resolvedPersona = persona ?? PersonaSummary(
             mbti: mbti,
@@ -369,6 +373,7 @@ struct CatPersonaResult: Codable, Equatable {
         self.dailyMood = dailyMood
         self.provider = provider
         self.model = model
+        self.questionnaireAnswers = questionnaireAnswers
     }
 
     init(from decoder: Decoder) throws {
@@ -448,6 +453,7 @@ struct CatPersonaResult: Codable, Equatable {
         dailyMood = try container.decodeIfPresent(String.self, forKey: .dailyMood) ?? ""
         provider = try container.decodeIfPresent(String.self, forKey: .provider) ?? "server"
         model = try container.decodeIfPresent(String.self, forKey: .model) ?? "neko-id-server-persona"
+        questionnaireAnswers = try container.decodeIfPresent([Int: QuizChoice].self, forKey: .questionnaireAnswers)
     }
 
     var isCanonicalValid: Bool {

@@ -24,7 +24,6 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Temporary for pre-ICP direct-IP testing. Remove before App Store submission. -->
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>

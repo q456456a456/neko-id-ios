@@ -115,6 +115,12 @@ struct NekoServerAPIClient {
         previousPersona: CatPersonaResult? = nil,
         accessToken: String? = nil
     ) async throws -> CatPersonaResult {
+        let trace = NekoPerformanceTrace("persona")
+        var outcome = "error"
+        defer { trace.log("client_operation_end", ["outcome": outcome]) }
+        let imageDataURL = try trace.measure("image_prepare") {
+            try avatarImageData.map { try MediaUploadProcessor.makeAIImageDataURL(from: $0) }
+        }
         let body = PersonaRequest(
             profile: ServerCatProfile(
                 name: draft.trimmedName,
@@ -126,18 +132,22 @@ struct NekoServerAPIClient {
                 videoCount: videoCount,
                 updatedAt: Int64(Date().timeIntervalSince1970 * 1000)
             ),
-            imageDataUrl: try avatarImageData.map {
-                try MediaUploadProcessor.makeAIImageDataURL(from: $0)
-            },
+            imageDataUrl: imageDataURL,
             videoObservations: videoObservations,
-            previousPersona: previousPersona
+            previousPersona: PersonaStabilityPolicy.referencePersona(
+                previousPersona,
+                currentAnswers: quizAnswers
+            )
         )
 
-        return try await perform(
+        let result: CatPersonaResult = try await perform(
             path: "/api/ios/onboarding/persona",
             body: body,
-            accessToken: accessToken
+            accessToken: accessToken,
+            parentTrace: trace
         )
+        outcome = "ok"
+        return result
     }
 
     func analyzeOnboardingVideoClip(
@@ -216,10 +226,13 @@ struct NekoServerAPIClient {
         completeOnboarding: Bool,
         accessToken: String
     ) async throws -> NekoCatProfileSaveResult {
+        let trace = NekoPerformanceTrace("profile_save")
+        var outcome = "error"
+        defer { trace.log("client_operation_end", ["outcome": outcome]) }
         let catId = currentProfile?.id ?? UUID().uuidString
         let avatarObjectKey: String?
-        let avatarUpload = try avatarImageData.map { data in
-            try MediaUploadProcessor.prepareAvatarImage(from: data)
+        let avatarUpload = try trace.measure("avatar_prepare") {
+            try avatarImageData.map { try MediaUploadProcessor.prepareAvatarImage(from: $0) }
         }
         if let avatarUpload {
             let uploadTarget = try await requestMediaUploadURL(
@@ -227,9 +240,10 @@ struct NekoServerAPIClient {
                 catId: catId,
                 voiceId: nil,
                 upload: avatarUpload,
-                accessToken: accessToken
+                accessToken: accessToken,
+                parentTrace: trace
             )
-            try await uploadPreparedImage(avatarUpload, to: uploadTarget)
+            try await uploadPreparedImage(avatarUpload, to: uploadTarget, parentTrace: trace)
             avatarObjectKey = uploadTarget.objectKey
         } else {
             avatarObjectKey = nil
@@ -249,11 +263,14 @@ struct NekoServerAPIClient {
             completeOnboarding: completeOnboarding
         )
 
-        return try await perform(
+        let result: NekoCatProfileSaveResult = try await perform(
             path: "/api/ios/cloud/cat-profile",
             body: body,
-            accessToken: accessToken
+            accessToken: accessToken,
+            parentTrace: trace
         )
+        outcome = "ok"
+        return result
     }
 
     func uploadAvatarImage(
@@ -364,7 +381,8 @@ struct NekoServerAPIClient {
         catId: String?,
         voiceId: String?,
         upload: PreparedImageUpload,
-        accessToken: String
+        accessToken: String,
+        parentTrace: NekoPerformanceTrace? = nil
     ) async throws -> MediaUploadURLResponse {
         try await perform(
             path: "/api/ios/cloud/media-upload",
@@ -376,14 +394,20 @@ struct NekoServerAPIClient {
                 fileExtension: upload.fileExtension,
                 byteSize: upload.data.count
             ),
-            accessToken: accessToken
+            accessToken: accessToken,
+            parentTrace: parentTrace
         )
     }
 
     private func uploadPreparedImage(
         _ upload: PreparedImageUpload,
-        to target: MediaUploadURLResponse
+        to target: MediaUploadURLResponse,
+        parentTrace: NekoPerformanceTrace? = nil
     ) async throws {
+        let trace = NekoPerformanceTrace("media_upload", flowID: parentTrace?.flowID)
+        var outcome = "error"
+        var status = 0
+        defer { trace.log("client_upload_end", ["outcome": outcome, "httpStatus": status, "requestBytes": upload.data.count]) }
         var request = URLRequest(url: target.uploadURL)
         request.httpMethod = target.method
         request.httpBody = upload.data
@@ -392,10 +416,11 @@ struct NekoServerAPIClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await session.data(for: request, delegate: NekoURLSessionMetrics(trace: trace))
         guard let http = response as? HTTPURLResponse else {
             throw NekoServerAPIError.invalidResponse
         }
+        status = http.statusCode
 
         guard (200..<300).contains(http.statusCode) else {
             throw NekoServerAPIError.server(
@@ -403,32 +428,78 @@ struct NekoServerAPIClient {
                 message: "图片上传失败，请稍后再试。"
             )
         }
+        outcome = "ok"
     }
 
     private func perform<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody,
-        accessToken: String? = nil
+        accessToken: String? = nil,
+        parentTrace: NekoPerformanceTrace? = nil
     ) async throws -> ResponseBody {
+        let operations = [
+            "/api/ios/onboarding/persona": "persona",
+            "/api/ios/onboarding/video-analysis": "video_analysis",
+            "/api/ios/detect-cat-face": "cat_detection",
+            "/api/ios/voice": "voice",
+            "/api/ios/cloud/cat-profile": "profile_save",
+            "/api/ios/cloud/media-upload": "media_upload_url",
+        ]
+        let trace = operations[path].map { NekoPerformanceTrace($0, flowID: parentTrace?.flowID) }
+        var metrics: [String: Any] = ["outcome": "error", "phase": "encode"]
+        defer { trace?.log("client_request_end", metrics) }
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
             throw NekoServerAPIError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        let encodeStarted = ProcessInfo.processInfo.systemUptime
         request.httpBody = try encoder.encode(body)
+        metrics["encodeMs"] = NekoPerformanceTrace.milliseconds(since: encodeStarted)
+        metrics["requestBytes"] = request.httpBody?.count ?? 0
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let accessToken {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
+        if let trace {
+            request.setValue(trace.id, forHTTPHeaderField: "X-Neko-Request-ID")
+            request.setValue(trace.flowID, forHTTPHeaderField: "X-Neko-Flow-ID")
+        }
 
-        let (data, response) = try await session.data(for: request)
+        metrics["phase"] = "network"
+        let networkStarted = ProcessInfo.processInfo.systemUptime
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request, delegate: trace.map { NekoURLSessionMetrics(trace: $0) })
+        } catch {
+            metrics["networkMs"] = NekoPerformanceTrace.milliseconds(since: networkStarted)
+            if let error = error as? URLError { metrics["urlErrorCode"] = error.code.rawValue }
+            throw error
+        }
+        let networkMs = NekoPerformanceTrace.milliseconds(since: networkStarted)
+        metrics["networkMs"] = networkMs
+        metrics["responseBytes"] = data.count
         guard let http = response as? HTTPURLResponse else {
             throw NekoServerAPIError.invalidResponse
         }
+        metrics["httpStatus"] = http.statusCode
+        if let raw = http.value(forHTTPHeaderField: "X-Neko-Server-Duration-Ms"),
+           let serverMs = Int(raw), serverMs >= 0 {
+            metrics["serverMs"] = serverMs
+            // Includes network, proxy buffering and scheduling; not pure upload time.
+            metrics["outsideServerMs"] = max(0, networkMs - serverMs)
+        }
+        if let raw = http.value(forHTTPHeaderField: "X-Neko-Request-ID"), let id = UUID(uuidString: raw) {
+            metrics["serverRequestId"] = id.uuidString.lowercased()
+        }
 
+        metrics["phase"] = "decode"
+        let decodeStarted = ProcessInfo.processInfo.systemUptime
         let envelope = try? decoder.decode(APIEnvelope<ResponseBody>.self, from: data)
+        metrics["decodeMs"] = NekoPerformanceTrace.milliseconds(since: decodeStarted)
         guard (200..<300).contains(http.statusCode) else {
             throw NekoServerAPIError.server(
                 statusCode: http.statusCode,
@@ -443,6 +514,8 @@ struct NekoServerAPIClient {
             )
         }
 
+        metrics["outcome"] = "ok"
+        metrics["phase"] = "complete"
         return payload
     }
 

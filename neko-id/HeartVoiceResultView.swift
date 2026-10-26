@@ -289,67 +289,66 @@ enum SubjectLayoutEngine {
     }
 }
 
-struct HeartVoiceResultView: View {
-    let image: UIImage?
-    let catName: String
-    let voiceText: String
+struct HeartVoiceResultView<Content: View>: View {
     let isBusy: Bool
     let onBack: () -> Void
     let onSave: () -> Void
     let onShare: () -> Void
+    private let content: Content
 
-    @State private var subject: HeartVoiceSubject?
-    @State private var detectionFinished = false
+    init(
+        isBusy: Bool,
+        onBack: @escaping () -> Void,
+        onSave: @escaping () -> Void,
+        onShare: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.isBusy = isBusy
+        self.onBack = onBack
+        self.onSave = onSave
+        self.onShare = onShare
+        self.content = content()
+    }
 
     var body: some View {
-        GeometryReader { proxy in
-            let stageHeight = min(
-                HeartVoiceLayout.maximumStageHeight,
-                max(HeartVoiceLayout.minimumStageHeight, proxy.size.height * HeartVoiceLayout.stageHeightRatio)
-            )
+        ZStack {
+            NekoTheme.backgroundGradient.ignoresSafeArea()
 
-            ZStack(alignment: .topLeading) {
-                NekoTheme.backgroundGradient.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: HeartVoiceLayout.pageMargin) {
+                    HStack {
+                        Button(action: onBack) {
+                            Image(systemName: "chevron.left")
+                                .nekoText(.cardTitle)
+                                .foregroundStyle(NekoTheme.ink)
+                                .frame(width: 44, height: 44)
+                                .background(NekoTheme.cardWhite, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("返回")
+                        .accessibilityIdentifier("voice.detail.back")
+                        Spacer()
+                    }
 
-                PhotoStageView(
-                    image: image,
-                    catName: catName,
-                    voiceText: voiceText,
-                    subject: subject,
-                    detectionFinished: detectionFinished
-                )
-                .frame(height: stageHeight)
-                .padding(.horizontal, HeartVoiceLayout.pageMargin)
-                .padding(.top, HeartVoiceLayout.stageTopInset)
-
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .nekoText(.cardTitle)
+                    Text("这是它想对你说的话")
+                        .nekoText(.moduleTitle)
                         .foregroundStyle(NekoTheme.ink)
-                        .frame(width: 44, height: 44)
-                        .background(NekoTheme.cardWhite, in: Circle())
+
+                    // The preview and saved detail share the exact same square
+                    // photo, bounded speech bubble and AI interpretation card.
+                    content
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, HeartVoiceLayout.pageMargin + HeartVoiceLayout.navigationInset)
+                .padding(.horizontal, HeartVoiceLayout.pageMargin)
                 .padding(.top, HeartVoiceLayout.navigationTopInset)
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HeartVoiceBottomActionBar(
-                    isBusy: isBusy,
-                    onSave: onSave,
-                    onShare: onShare
-                )
+                .padding(.bottom, HeartVoiceLayout.pageMargin)
             }
         }
-        .task(id: image) {
-            guard let image else {
-                subject = nil
-                detectionFinished = true
-                return
-            }
-            detectionFinished = false
-            subject = await HeartVoiceSubjectDetector.detect(in: image)
-            detectionFinished = true
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HeartVoiceBottomActionBar(
+                isBusy: isBusy,
+                onSave: onSave,
+                onShare: onShare
+            )
         }
     }
 }

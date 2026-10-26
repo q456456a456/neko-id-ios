@@ -175,7 +175,8 @@ enum PersonaGenerator {
                 PersonaObservation(label: "年龄阶段", value: "\(draft.ageStage.rawValue)特征已纳入分析"),
             ],
             evidence: buildEvidence(from: quizAnswers),
-            dailyMood: mood
+            dailyMood: mood,
+            questionnaireAnswers: quizAnswers
         )
     }
 
@@ -289,17 +290,26 @@ enum PersonaStabilityPolicy {
         "营业", "控场", "发令", "施压", "稳态", "高质互动", "策略性靠近",
     ]
 
+    static func referencePersona(
+        _ previous: CatPersonaResult?,
+        currentAnswers: [Int: QuizChoice]
+    ) -> CatPersonaResult? {
+        guard let previous,
+              let previousAnswers = previous.questionnaireAnswers,
+              previousAnswers == currentAnswers else { return nil }
+        return previous
+    }
+
     static func stabilize(
         _ current: CatPersonaResult,
         previous: CatPersonaResult?,
         currentAnswers: [Int: QuizChoice]
     ) -> CatPersonaResult {
-        guard let previous else { return current }
-        guard !hasStrongNewEvidence(current: current, previous: previous, currentAnswers: currentAnswers) else {
-            return current
-        }
-
         var stabilized = current
+        stabilized.questionnaireAnswers = currentAnswers
+        guard let previous = referencePersona(previous, currentAnswers: currentAnswers) else {
+            return stabilized
+        }
         if isNaturalTitle(previous.type) {
             stabilized.type = previous.type
         }
@@ -328,43 +338,6 @@ enum PersonaStabilityPolicy {
         let anchoredTags = Array(previous.tags.prefix(2)) + current.tags
         stabilized.tags = Array(NSOrderedSet(array: anchoredTags).compactMap { $0 as? String }.prefix(4))
         return stabilized
-    }
-
-    private static func hasStrongNewEvidence(
-        current: CatPersonaResult,
-        previous: CatPersonaResult,
-        currentAnswers: [Int: QuizChoice]
-    ) -> Bool {
-        let previousAnswers = answers(from: previous.evidence)
-        if !previousAnswers.isEmpty {
-            let changedAnswers = Set(previousAnswers.keys).union(currentAnswers.keys).reduce(into: 0) { count, key in
-                if previousAnswers[key] != currentAnswers[key] { count += 1 }
-            }
-            if changedAnswers > 1 { return true }
-        }
-
-        let previousTraits = Dictionary(uniqueKeysWithValues: previous.traits.map { ($0.label, $0.value) })
-        let sharedDifferences = current.traits.compactMap { trait -> Int? in
-            guard let prior = previousTraits[trait.label] else { return nil }
-            return abs(prior - trait.value)
-        }
-        guard sharedDifferences.count >= 2 else { return false }
-        let averageDifference = Double(sharedDifferences.reduce(0, +)) / Double(sharedDifferences.count)
-        return averageDifference >= 15
-    }
-
-    private static func answers(from evidence: [PersonaEvidence]) -> [Int: QuizChoice] {
-        var answers: [Int: QuizChoice] = [:]
-        for item in evidence {
-            for code in item.supportedBy {
-                let parts = code.split(separator: ":")
-                guard parts.count == 2,
-                      let question = Int(parts[0].dropFirst()),
-                      let choice = QuizChoice(rawValue: parts[1].lowercased()) else { continue }
-                answers[question - 1] = choice
-            }
-        }
-        return answers
     }
 
     private static func isNaturalTitle(_ value: String) -> Bool {

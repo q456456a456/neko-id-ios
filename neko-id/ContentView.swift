@@ -27,13 +27,6 @@ struct ContentView: View {
                     LoginView()
                 case .onboarding:
                     NativeOnboardingFlowView()
-                        .toolbar {
-                            if appModel.session != nil {
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    NavigationLink("账号设置") { AppSettingsView() }
-                                }
-                            }
-                        }
                 case .home:
                     MainTabRootView()
                 }
@@ -334,6 +327,11 @@ private struct LoginView: View {
     @State private var currentDate = Date()
     @State private var lastSentPhone = ""
     @State private var verificationError: String?
+    @State private var legalConsent: LoginLegalConsent?
+    @State private var showsLegalConsentHint = true
+    @State private var isConsentSheetPresented = false
+    @State private var pendingConsentRequest: LoginRequest?
+    @State private var shouldContinueAfterConsent = false
     @State private var isPrivacyPolicyPresented = false
     @State private var isTermsOfServicePresented = false
     @FocusState private var focusedField: LoginFocusField?
@@ -365,31 +363,6 @@ private struct LoginView: View {
                     loginCard
                         .padding(.top, 26)
 
-                    HStack(spacing: 12) {
-                        Button {
-                            focusedField = nil
-                            isTermsOfServicePresented = true
-                        } label: {
-                            Text("用户服务协议")
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-
-                        Text("·")
-                            .accessibilityHidden(true)
-
-                        Button {
-                            focusedField = nil
-                            isPrivacyPolicyPresented = true
-                        } label: {
-                            Text("隐私政策")
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(NekoTheme.menuIcon)
-                    .buttonStyle(.plain)
-                    .padding(.top, 12)
-
                     Spacer(minLength: 36)
                 }
                 .padding(.horizontal, 28)
@@ -415,7 +388,11 @@ private struct LoginView: View {
                 TermsOfServiceView()
             }
         }
+        .sheet(isPresented: $isConsentSheetPresented, onDismiss: continueAfterConsentSheet) {
+            LoginConsentSheet(onAgree: agreeAndContinue)
+        }
         .onAppear { focusedField = .phone }
+        .task { await dismissLegalConsentHintAfterDelay() }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             currentDate = Date()
         }
@@ -484,6 +461,7 @@ private struct LoginView: View {
                         .focused($focusedField, equals: .phone)
                         .nekoText(.support)
                         .foregroundStyle(NekoTheme.ink)
+                        .accessibilityIdentifier("login.phone")
 
                     if !phone.isEmpty {
                         Button(action: resetPhoneInput) {
@@ -505,6 +483,8 @@ private struct LoginView: View {
                     verificationFields
                 }
 
+                legalConsentConfirmation
+
                 Button {
                     if hasSentCode {
                         completeLogin()
@@ -517,10 +497,73 @@ private struct LoginView: View {
                 }
                 .buttonStyle(NekoPrimaryButtonStyle())
                 .disabled(hasSentCode ? !canCompleteLogin : !canSendCode)
+                .accessibilityIdentifier("login.submit")
             }
             .padding(16)
             .animation(.easeInOut(duration: 0.2), value: hasSentCode)
         }
+    }
+
+    private var legalConsentConfirmation: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if showsLegalConsentHint && legalConsent == nil {
+                legalConsentHint
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
+            HStack(alignment: .top, spacing: 4) {
+                Button {
+                    legalConsent = legalConsent == nil ? LoginLegalConsent() : nil
+                    showsLegalConsentHint = false
+                } label: {
+                    Image(systemName: legalConsent == nil ? "square" : "checkmark.square.fill")
+                        .nekoText(.iconMedium)
+                        .foregroundStyle(NekoTheme.menuIcon)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+                .accessibilityLabel("我已阅读并同意用户服务协议和隐私政策")
+                .accessibilityValue(legalConsent == nil ? "未勾选" : "已勾选")
+                .accessibilityIdentifier("login.legalConsent")
+
+                Text("我已阅读并同意[《用户服务协议》](neko-legal://terms)和[《隐私政策》](neko-legal://privacy)")
+                    .nekoText(.support)
+                    .foregroundStyle(NekoTheme.inkSoft)
+                    .tint(NekoTheme.menuIcon)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard url.scheme == "neko-legal" else { return .discarded }
+                        focusedField = nil
+                        switch url.host {
+                        case "terms": isTermsOfServicePresented = true
+                        case "privacy": isPrivacyPolicyPresented = true
+                        default: return .discarded
+                        }
+                        return .handled
+                    })
+            }
+        }
+    }
+
+    private var legalConsentHint: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("勾选同意后登录")
+                .nekoText(.support)
+                .foregroundStyle(NekoTheme.creamTop)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(NekoTheme.ink, in: RoundedRectangle(cornerRadius: 12))
+            Triangle()
+                .fill(NekoTheme.ink)
+                .frame(width: 12, height: 8)
+                .padding(.leading, 16)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("login.consentHint")
     }
 
     @ViewBuilder
@@ -536,6 +579,7 @@ private struct LoginView: View {
                 .tint(NekoTheme.soulViolet)
                 .disabled(isBusy)
                 .accessibilityLabel("6 位短信验证码")
+                .accessibilityIdentifier("login.code")
                 .onAppear { focusedField = .code }
 
             Button(action: sendLoginCode) {
@@ -549,6 +593,7 @@ private struct LoginView: View {
             .buttonStyle(.plain)
             .fixedSize(horizontal: true, vertical: false)
             .disabled(!canSendCode)
+            .accessibilityIdentifier("login.resend")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -651,9 +696,10 @@ private struct LoginView: View {
     }
 
     private func sendLoginCode() {
-        guard canSendCode else { return }
+        guard canSendCode, let consent = requireLegalConsent(for: .sendingCode) else { return }
         let requestedPhone = phone
         request = .sendingCode
+        consent.saveLocally()
 
         Task {
             defer { request = nil }
@@ -671,10 +717,11 @@ private struct LoginView: View {
     }
 
     private func completeLogin() {
-        guard canCompleteLogin else { return }
+        guard canCompleteLogin, let consent = requireLegalConsent(for: .verifyingCode) else { return }
         let requestedPhone = phone
         let requestedCode = code
         request = .verifyingCode
+        consent.saveLocally()
 
         Task {
             defer { request = nil }
@@ -697,6 +744,53 @@ private struct LoginView: View {
         }
     }
 
+    private func requireLegalConsent(for action: LoginRequest) -> LoginLegalConsent? {
+        guard let legalConsent else {
+            showsLegalConsentHint = false
+            focusedField = nil
+            pendingConsentRequest = action
+            shouldContinueAfterConsent = false
+            isConsentSheetPresented = true
+            return nil
+        }
+        return legalConsent
+    }
+
+    private func dismissLegalConsentHintAfterDelay() async {
+        do {
+            try await Task.sleep(for: .seconds(5))
+        } catch {
+            return
+        }
+        withAnimation(.easeOut(duration: 0.2)) {
+            showsLegalConsentHint = false
+        }
+    }
+
+    private func agreeAndContinue() {
+        guard !isBusy, !shouldContinueAfterConsent else { return }
+        legalConsent = LoginLegalConsent()
+        legalConsent?.saveLocally()
+        showsLegalConsentHint = false
+        shouldContinueAfterConsent = true
+        isConsentSheetPresented = false
+    }
+
+    private func continueAfterConsentSheet() {
+        let pendingRequest = pendingConsentRequest
+        pendingConsentRequest = nil
+        guard shouldContinueAfterConsent else { return }
+        shouldContinueAfterConsent = false
+
+        if canCompleteLogin {
+            completeLogin()
+        } else if pendingRequest == .sendingCode {
+            sendLoginCode()
+        } else {
+            focusedField = hasSentCode ? .code : .phone
+        }
+    }
+
     private func formatPhone(_ value: String) -> String {
         let digits = String(value.filter(\.isNumber).prefix(11))
         guard digits.count > 3 else { return digits }
@@ -710,6 +804,84 @@ private struct LoginView: View {
         let middle = rest.prefix(4)
         let last = rest.dropFirst(4)
         return "\(first) \(middle) \(last)"
+    }
+}
+
+private struct LoginConsentSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var detent: PresentationDetent = .height(320)
+    let onAgree: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("请阅读并同意以下条款")
+                        .nekoText(.cardTitle)
+                        .foregroundStyle(NekoTheme.ink)
+
+                    HStack(spacing: 8) {
+                        NavigationLink {
+                            TermsOfServiceView()
+                                .onAppear { detent = .large }
+                        } label: {
+                            Text("《用户服务协议》")
+                                .frame(minHeight: 44)
+                        }
+                        NavigationLink {
+                            PrivacyPolicyView()
+                                .onAppear { detent = .large }
+                        } label: {
+                            Text("《隐私政策》")
+                                .frame(minHeight: 44)
+                        }
+                    }
+                    .nekoText(.support)
+                    .foregroundStyle(NekoTheme.menuIcon)
+                    .buttonStyle(.plain)
+
+                    VStack(spacing: 8) {
+                        Button(action: onAgree) {
+                            Text("同意并继续")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(NekoPrimaryButtonStyle())
+                        .accessibilityIdentifier("login.agreeAndContinue")
+
+                        Button("暂不同意") { dismiss() }
+                            .nekoText(.support)
+                            .foregroundStyle(NekoTheme.inkSoft)
+                            .frame(minHeight: 44)
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(24)
+            }
+            .background(NekoTheme.creamTop.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .onAppear { detent = .height(320) }
+        }
+        .presentationDetents([.height(320), .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(24)
+    }
+}
+
+/// A local receipt only; it never restores a checked state on a later login visit.
+private struct LoginLegalConsent: Codable {
+    let acceptedAt: Date
+    let privacyPolicyVersion: String
+    let termsOfServiceVersion: String
+
+    init() {
+        acceptedAt = Date()
+        privacyPolicyVersion = PrivacyPolicy.document.updatedDate
+        termsOfServiceVersion = TermsOfService.document.updatedDate
+    }
+
+    func saveLocally() {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        UserDefaults.standard.set(data, forKey: "neko.login.latestLegalConsent")
     }
 }
 
@@ -1249,10 +1421,7 @@ private struct PendingVoicePublishCard: View {
 
     var body: some View {
         let previewImage = UIImage(data: pending.imageData)
-        let mediaRatio = NekoMediaAspect.displayRatio(
-            for: pending.voice.aspect,
-            image: previewImage
-        )
+        let mediaRatio = VoiceMediaMetrics.aspectRatio
 
         NekoGlassCard(cornerRadius: 24) {
             VStack(alignment: .leading, spacing: 0) {
@@ -1260,10 +1429,7 @@ private struct PendingVoicePublishCard: View {
                     PublishWebStyle.warmPhotoGradient
 
                     if let image = previewImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        VoiceMediaPhotoView(image: image)
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -1399,12 +1565,7 @@ private struct VoiceFeedCard: View {
                         VoiceMediaImageView(
                             url: voice.mediaURL,
                             objectKey: voice.mediaObjectKey,
-                            mediaType: voice.mediaType,
-                            aspect: voice.aspect,
-                            contentMode: .fit,
-                            fallbackAvatarURL: profile.avatarURL,
-                            fallbackAvatarObjectKey: profile.avatarObjectKey,
-                            preferNaturalAspect: true
+                            mediaType: voice.mediaType
                         )
 
                         LinearGradient(
@@ -1469,65 +1630,23 @@ private struct VoiceFeedCard: View {
     }
 }
 
-private enum VoiceMediaOrientation {
-    case portrait
-    case landscape
-    case square
+private enum VoiceMediaMetrics {
+    // Feed, pending-publish and management cards keep their shared center crop.
+    // Result screens use the newer subject-aware layout.
+    static let aspectRatio: CGFloat = 3.0 / 4.0
 }
 
-private enum VoiceMediaMetrics {
-    static func aspectRatio(for value: String?, image: UIImage? = nil) -> CGFloat {
-        switch orientation(for: value, image: image) {
-        case .portrait:
-            return 3.0 / 4.0
-        case .landscape:
-            return 4.0 / 3.0
-        case .square:
-            return 1.0
+private struct VoiceMediaPhotoView: View {
+    let image: UIImage
+
+    var body: some View {
+        GeometryReader { proxy in
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
         }
-    }
-
-    static func feedHeight(for value: String?, image: UIImage? = nil) -> CGFloat {
-        switch orientation(for: value, image: image) {
-        case .portrait:
-            return 330
-        case .landscape:
-            return 224
-        case .square:
-            return 299
-        }
-    }
-
-    static func detailHeight(for value: String?, image: UIImage? = nil) -> CGFloat {
-        switch orientation(for: value, image: image) {
-        case .portrait:
-            return 442
-        case .landscape:
-            return 265
-        case .square:
-            return 354
-        }
-    }
-
-    static func manageHeight(for value: String?) -> CGFloat {
-        switch orientation(for: value) {
-        case .portrait:
-            return 206
-        case .landscape:
-            return 124
-        case .square:
-            return 164
-        }
-    }
-
-    private static func orientation(for value: String?, image: UIImage? = nil) -> VoiceMediaOrientation {
-        let ratio = NekoMediaAspect.displayRatio(for: value, image: image)
-
-        if abs(ratio - 1) <= 0.04 {
-            return .square
-        }
-
-        return ratio > 1 ? .landscape : .portrait
     }
 }
 
@@ -1537,6 +1656,7 @@ struct NekoRemoteImageView<Placeholder: View>: View {
     let remoteURL: URL?
     let objectKey: String?
     let contentMode: ContentMode
+    let isVideoCover: Bool
     let onImageLoaded: (UIImage?) -> Void
     private let placeholder: () -> Placeholder
     @State private var loadedImage: UIImage?
@@ -1546,18 +1666,30 @@ struct NekoRemoteImageView<Placeholder: View>: View {
         remoteURL: URL?,
         objectKey: String? = nil,
         contentMode: ContentMode = .fill,
+        isVideoCover: Bool = false,
         onImageLoaded: @escaping (UIImage?) -> Void = { _ in },
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.remoteURL = remoteURL
         self.objectKey = objectKey
         self.contentMode = contentMode
+        self.isVideoCover = isVideoCover
         self.onImageLoaded = onImageLoaded
         self.placeholder = placeholder
     }
 
     private var imageSourceID: String {
-        "\(remoteURL?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(contentMode)"
+        "\(remoteURL?.absoluteString ?? "nil")|\(objectKey ?? "nil")|\(contentMode)|\(isVideoCover)"
+    }
+
+    private var cacheObjectKey: String? {
+        guard isVideoCover else { return objectKey }
+        return NekoRemoteImageCache.cacheKey(objectKey: objectKey, url: remoteURL)
+            .map { "voice-video-cover-v1:\($0)" }
+    }
+
+    private var cacheURL: URL? {
+        isVideoCover ? nil : remoteURL
     }
 
     var body: some View {
@@ -1583,8 +1715,8 @@ struct NekoRemoteImageView<Placeholder: View>: View {
         currentURL = remoteURL
 
         if let cachedImage = NekoRemoteImageCache.shared.image(
-            objectKey: objectKey,
-            url: remoteURL
+            objectKey: cacheObjectKey,
+            url: cacheURL
         ) {
             loadedImage = cachedImage
             onImageLoaded(cachedImage)
@@ -1616,16 +1748,28 @@ struct NekoRemoteImageView<Placeholder: View>: View {
         let loadingUserID = appModel.session?.user.id
         do {
             let request = await appModel.mediaImageRequest(for: url)
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let data: Data
+            let image: UIImage
+            if isVideoCover {
+                image = try await VoiceVideoCoverLoader.image(for: request)
+                guard let coverData = image.jpegData(compressionQuality: 0.9) else {
+                    throw URLError(.cannotDecodeContentData)
+                }
+                data = coverData
+            } else {
+                let (imageData, response) = try await URLSession.shared.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                guard let decoded = UIImage(data: imageData) else {
+                    throw URLError(.cannotDecodeContentData)
+                }
+                data = imageData
+                image = decoded
+            }
             try Task.checkCancellation()
             guard appModel.session?.user.id == loadingUserID, !appModel.isDeletingAccount else { return false }
-            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
-                throw URLError(.badServerResponse)
-            }
-            guard let image = UIImage(data: data) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            NekoRemoteImageCache.shared.store(data: data, objectKey: objectKey, url: url)
+            NekoRemoteImageCache.shared.store(data: data, objectKey: cacheObjectKey, url: isVideoCover ? nil : url)
             loadedImage = image
             onImageLoaded(image)
             return true
@@ -1856,90 +2000,40 @@ private struct VoiceMediaSkeletonView: View {
 }
 
 private struct VoiceMediaImageView: View {
-    @EnvironmentObject private var appModel: NekoAppModel
-
     let url: URL?
     let objectKey: String?
     let mediaType: String?
-    let aspect: String?
-    let contentMode: ContentMode
-    let fallbackAvatarURL: URL?
-    let fallbackAvatarObjectKey: String?
-    var maxHeight: CGFloat = 420
-    var preferNaturalAspect: Bool = true
-    @State private var loadedImage: UIImage?
+    var showsVideoIndicator = true
+    var onImageLoaded: (UIImage?) -> Void = { _ in }
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 NekoTheme.photoPlaceholderGradient
 
-                if mediaType == "video" {
-                    fallbackContent
-                } else {
-                    NekoRemoteImageView(
-                        remoteURL: url,
-                        objectKey: objectKey,
-                        contentMode: contentMode,
-                        onImageLoaded: { loadedImage = $0 }
-                    ) {
-                        VoiceMediaSkeletonView()
-                    }
-                    .frame(width: proxy.size.width, height: mediaHeight)
-                    .clipped()
-                }
-            }
-            .frame(width: proxy.size.width, height: mediaHeight)
-            .clipped()
-        }
-        .frame(height: mediaHeight)
-        .clipped()
-    }
-
-    private var mediaHeight: CGFloat {
-        return VoiceMediaMetrics.feedHeight(for: aspect, image: loadedImage)
-    }
-
-    @ViewBuilder
-    private var fallbackContent: some View {
-        if mediaType == "video" {
-            Image(systemName: "play.circle.fill")
-                .nekoText(.display)
-                .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
-        } else {
-            VoiceMediaSkeletonView()
-        }
-    }
-}
-
-private struct VoiceDetailMediaFillView: View {
-    let url: URL?
-    let objectKey: String?
-    let mediaType: String?
-    let fallbackAvatarURL: URL?
-    let fallbackAvatarObjectKey: String?
-    var onImageLoaded: (UIImage?) -> Void = { _ in }
-
-    var body: some View {
-        ZStack {
-            NekoTheme.photoPlaceholderGradient
-
-            if mediaType == "video" {
-                Image(systemName: "play.circle.fill")
-                    .nekoText(.display)
-                    .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
-            } else {
                 NekoRemoteImageView(
                     remoteURL: url,
                     objectKey: objectKey,
-                    contentMode: .fit,
+                    contentMode: .fill,
+                    isVideoCover: mediaType == "video",
                     onImageLoaded: onImageLoaded
                 ) {
                     VoiceMediaSkeletonView()
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
+
+                if mediaType == "video", showsVideoIndicator {
+                    Image(systemName: "play.circle.fill")
+                        .nekoText(.display)
+                        .foregroundStyle(Color.white.opacity(0.92), NekoTheme.soulViolet.opacity(0.65))
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .aspectRatio(VoiceMediaMetrics.aspectRatio, contentMode: .fit)
+        .clipped()
     }
 }
 
@@ -2131,14 +2225,18 @@ private struct VoiceDetailView: View {
 
     var body: some View {
         HeartVoiceResultView(
-            image: detailPhotoImage,
-            catName: catName,
-            voiceText: voice.text,
             isBusy: isSavingImage,
             onBack: { dismiss() },
             onSave: saveCurrentVoiceImage,
             onShare: shareCurrentVoiceImage
-        )
+        ) {
+            VoiceResultCard(
+                catName: catName,
+                photoPreviewImage: detailPhotoImage,
+                voice: voice,
+                isLoading: false
+            )
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationBarBackButtonHidden(true)
         .nekoEdgeSwipeBack {
@@ -2210,6 +2308,48 @@ private struct VoiceDetailView: View {
     private func resolvedPhotoImage() async throws -> UIImage {
         if let detailPhotoImage { return detailPhotoImage }
 
+        // Preserve the feed's image/video-cover cache when the new result layout
+        // loads its photo directly instead of embedding VoiceMediaImageView.
+        let isVideoCover = voice.mediaType == "video"
+        let cacheObjectKey = isVideoCover
+            ? NekoRemoteImageCache.cacheKey(objectKey: voice.mediaObjectKey, url: voice.mediaURL)
+                .map { "voice-video-cover-v1:\($0)" }
+            : voice.mediaObjectKey
+        let cacheURL = isVideoCover ? nil : voice.mediaURL
+        if let cached = NekoRemoteImageCache.shared.image(objectKey: cacheObjectKey, url: cacheURL) {
+            detailPhotoImage = cached
+            return cached
+        }
+        let loadingUserID = appModel.session?.user.id
+
+        func load(from url: URL) async throws -> UIImage {
+            let request = await appModel.mediaImageRequest(for: url)
+            let image: UIImage
+            let data: Data
+            if isVideoCover {
+                image = try await VoiceVideoCoverLoader.image(for: request)
+                guard let coverData = image.jpegData(compressionQuality: 0.9) else {
+                    throw URLError(.cannotDecodeContentData)
+                }
+                data = coverData
+            } else {
+                let (imageData, response) = try await URLSession.shared.data(for: request)
+                if let response = response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                guard let decoded = UIImage(data: imageData) else { throw VoiceShareError.missingContent }
+                image = decoded
+                data = imageData
+            }
+            try Task.checkCancellation()
+            guard appModel.session?.user.id == loadingUserID, !appModel.isDeletingAccount else {
+                throw CancellationError()
+            }
+            NekoRemoteImageCache.shared.store(data: data, objectKey: cacheObjectKey, url: isVideoCover ? nil : url)
+            detailPhotoImage = image
+            return image
+        }
+
         let sourceURL: URL?
         if let mediaURL = voice.mediaURL {
             sourceURL = mediaURL
@@ -2217,14 +2357,19 @@ private struct VoiceDetailView: View {
             sourceURL = await appModel.signedMediaURL(for: voice.mediaObjectKey)
         }
         guard let sourceURL else { throw VoiceShareError.missingContent }
-        let request = await appModel.mediaImageRequest(for: sourceURL)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let response = response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
-            throw URLError(.badServerResponse)
+        do {
+            return try await load(from: sourceURL)
+        } catch {
+            try Task.checkCancellation()
+            guard appModel.session?.user.id == loadingUserID, !appModel.isDeletingAccount else {
+                throw CancellationError()
+            }
+            guard voice.mediaURL != nil,
+                  let refreshedURL = await appModel.signedMediaURL(for: voice.mediaObjectKey, forceRefresh: true) else {
+                throw error
+            }
+            return try await load(from: refreshedURL)
         }
-        guard let image = UIImage(data: data) else { throw VoiceShareError.missingContent }
-        detailPhotoImage = image
-        return image
     }
 }
 
@@ -3674,10 +3819,6 @@ private struct ManageVoiceCard: View {
     let selected: Bool
     let action: () -> Void
 
-    private var mediaHeight: CGFloat {
-        VoiceMediaMetrics.manageHeight(for: voice.aspect)
-    }
-
     var body: some View {
         Button(action: action) {
             VStack(spacing: 0) {
@@ -3685,25 +3826,19 @@ private struct ManageVoiceCard: View {
                     ZStack(alignment: .bottomLeading) {
                         NekoTheme.photoPlaceholderGradient
 
-                        if voice.mediaType == "video" {
-                            avatarFallback
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                                .overlay {
-                                    Image(systemName: "play.circle.fill")
-                                        .nekoText(.mainTitle)
-                                        .foregroundStyle(.white.opacity(0.94), NekoTheme.soulViolet.opacity(0.68))
-                                }
-                        } else {
-                            NekoRemoteImageView(
-                                remoteURL: voice.mediaURL,
-                                objectKey: voice.mediaObjectKey,
-                                contentMode: .fit
-                            ) {
-                                VoiceMediaSkeletonView()
-                                    .frame(width: proxy.size.width, height: proxy.size.height)
+                        VoiceMediaImageView(
+                            url: voice.mediaURL,
+                            objectKey: voice.mediaObjectKey,
+                            mediaType: voice.mediaType,
+                            showsVideoIndicator: false
+                        )
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .overlay {
+                            if voice.mediaType == "video" {
+                                Image(systemName: "play.circle.fill")
+                                    .nekoText(.mainTitle)
+                                    .foregroundStyle(.white.opacity(0.94), NekoTheme.soulViolet.opacity(0.68))
                             }
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .clipped()
                         }
 
                         LinearGradient(
@@ -3727,7 +3862,7 @@ private struct ManageVoiceCard: View {
                         }
                     }
                 }
-                .frame(height: mediaHeight)
+                .aspectRatio(VoiceMediaMetrics.aspectRatio, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .clipped()
 
@@ -3748,13 +3883,6 @@ private struct ManageVoiceCard: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
-    }
-
-    private var avatarFallback: some View {
-        ZStack {
-            NekoTheme.photoPlaceholderGradient
-            CatAvatarView(localImage: nil, remoteURL: profile?.avatarURL, objectKey: profile?.avatarObjectKey, size: 64)
-        }
     }
 
     private var selectionBadge: some View {

@@ -73,16 +73,25 @@ final class OnboardingVideoAnalysisQueue<Key: Hashable & Sendable, Value> {
     }
 
     func value(for key: Key) async throws -> Value {
+        let trace = NekoPerformanceTrace("video_wait")
+        var cached = false
+        var outcome = "error"
+        defer { trace.log("client_video_wait_end", ["cacheHit": cached, "outcome": outcome]) }
         try Task.checkCancellation()
         guard let entry = entries[key] else { throw CancellationError() }
-        if let result = entry.result { return try result.get() }
+        if let result = entry.result {
+            cached = true
+            let value = try result.get()
+            outcome = "ok"
+            return value
+        }
 
         let waiterID = UUID()
         let token = entry.token
         // Cancelling the result-page waiter must not cancel shared prefetch work:
         // returning to the quiz should let those same requests finish in background.
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+        let value: Value = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Value, Error>) in
                 if Task.isCancelled {
                     continuation.resume(throwing: CancellationError())
                 } else {
@@ -95,6 +104,8 @@ final class OnboardingVideoAnalysisQueue<Key: Hashable & Sendable, Value> {
                 entry.waiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
             }
         }
+        outcome = "ok"
+        return value
     }
 
     private func removeEntry(_ key: Key) {

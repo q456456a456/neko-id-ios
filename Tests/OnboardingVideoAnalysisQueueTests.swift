@@ -1,6 +1,6 @@
 import Foundation
 
-// swiftc neko-id/OnboardingVideoAnalysisQueue.swift Tests/OnboardingVideoAnalysisQueueTests.swift -o /tmp/neko-video-queue-tests
+// swiftc neko-id/NekoPerformanceTrace.swift neko-id/OnboardingVideoAnalysisQueue.swift Tests/OnboardingVideoAnalysisQueueTests.swift -o /tmp/neko-video-queue-tests
 // /tmp/neko-video-queue-tests
 @MainActor
 private final class ControlledAnalysis {
