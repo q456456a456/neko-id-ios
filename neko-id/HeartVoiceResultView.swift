@@ -9,15 +9,16 @@ enum HeartVoiceLayout {
     static let minimumStageHeight: CGFloat = 500
     static let maximumStageHeight: CGFloat = 680
     static let bubbleWidthRatio: CGFloat = 0.48
-    static let bubbleMinimumWidth: CGFloat = 168
-    static let bubbleMaximumWidth: CGFloat = 236
-    static let bubbleInset: CGFloat = 20
-    static let subjectClearance: CGFloat = 20
+    static let fallbackBubbleWidthRatio: CGFloat = 0.42
+    static let largeSubjectBubbleWidthRatio: CGFloat = 0.36
+    static let bubbleHeight: CGFloat = 92
+    static let bubbleInset: CGFloat = 16
+    static let subjectClearance: CGFloat = 18
     static let actionHeight: CGFloat = 54
     static let stageTopInset: CGFloat = 8
     static let navigationInset: CGFloat = 12
     static let navigationTopInset: CGFloat = 20
-    static let bubblePadding: CGFloat = 16
+    static let bubblePadding: CGFloat = 12
     static let actionTopInset: CGFloat = 12
     static let actionBottomInset: CGFloat = 8
 }
@@ -25,11 +26,6 @@ enum HeartVoiceLayout {
 struct HeartVoiceSubject: Equatable {
     let catBoundingBox: CGRect
     let catFaceBoundingBox: CGRect?
-
-    static let fallback = HeartVoiceSubject(
-        catBoundingBox: CGRect(x: 0.24, y: 0.22, width: 0.52, height: 0.58),
-        catFaceBoundingBox: nil
-    )
 }
 
 enum HeartVoiceSubjectDetector {
@@ -110,77 +106,144 @@ private extension CGImagePropertyOrientation {
 enum HeartVoiceBubblePlacement: CaseIterable {
     case topLeft
     case topRight
-    case upperLeftCenter
-    case upperRightCenter
 }
 
 struct HeartVoiceStageLayout {
     let imageFrame: CGRect
     let bubbleFrame: CGRect
-    let decorationFrames: [CGRect]
+    let bubblePlacement: HeartVoiceBubblePlacement
 }
 
 enum SubjectLayoutEngine {
+    static func bubbleWidthRatio(
+        for subject: HeartVoiceSubject?,
+        detectionFinished: Bool
+    ) -> CGFloat {
+        guard detectionFinished, let subject else {
+            return HeartVoiceLayout.fallbackBubbleWidthRatio
+        }
+        if usesLargeSubjectBubble(for: subject) {
+            return HeartVoiceLayout.largeSubjectBubbleWidthRatio
+        }
+        if usesCompactBubble(for: subject) {
+            return HeartVoiceLayout.fallbackBubbleWidthRatio
+        }
+        return HeartVoiceLayout.bubbleWidthRatio
+    }
+
     static func layout(
         image: UIImage?,
         stageSize: CGSize,
         subject: HeartVoiceSubject?,
         bubbleSize: CGSize
     ) -> HeartVoiceStageLayout {
-        let imageSize = image?.size ?? stageSize
-        let detectedSubject = subject ?? .fallback
-        let imageFrame = aspectFillFrame(
-            imageSize: imageSize,
+        let imageFrame = focalAspectFillFrame(
+            imageSize: image?.size ?? stageSize,
             stageSize: stageSize,
-            focalPoint: CGPoint(x: detectedSubject.catBoundingBox.midX, y: detectedSubject.catBoundingBox.midY)
+            subject: subject
         )
-        let catFrame = map(detectedSubject.catBoundingBox, through: imageFrame)
-        let faceFrame = detectedSubject.catFaceBoundingBox.map { map($0, through: imageFrame) }
+        let catFrame = subject.map { map($0.catBoundingBox, through: imageFrame) }
+        let faceFrame = subject?.catFaceBoundingBox.map { map($0, through: imageFrame) }
+        let subjectAnchor = faceFrame ?? catFrame
         let candidates = HeartVoiceBubblePlacement.allCases.map {
             ($0, frame(for: $0, stageSize: stageSize, bubbleSize: bubbleSize))
         }
-        let winner: CGRect
-        if subject == nil {
-            winner = frame(for: .topRight, stageSize: stageSize, bubbleSize: bubbleSize)
-        } else {
-            winner = candidates.max {
-                score(
-                    $0.1,
-                    placement: $0.0,
-                    stageSize: stageSize,
-                    catFrame: catFrame,
-                    faceFrame: faceFrame,
-                    backgroundScore: backgroundScore(image: image, candidate: $0.1, imageFrame: imageFrame)
-                ) < score(
-                    $1.1,
-                    placement: $1.0,
-                    stageSize: stageSize,
-                    catFrame: catFrame,
-                    faceFrame: faceFrame,
-                    backgroundScore: backgroundScore(image: image, candidate: $1.1, imageFrame: imageFrame)
-                )
-            }?.1 ?? frame(for: .topRight, stageSize: stageSize, bubbleSize: bubbleSize)
-        }
-
-        let decorations = decorationFrames(
+        let placement = bubblePlacement(
+            subjectAnchor: subjectAnchor,
+            candidates: candidates,
+            image: image,
+            imageFrame: imageFrame,
             stageSize: stageSize,
-            excluded: [winner, catFrame] + (faceFrame.map { [$0] } ?? []),
-            reduced: subject == nil
+            catFrame: catFrame,
+            faceFrame: faceFrame
         )
-        return HeartVoiceStageLayout(imageFrame: imageFrame, bubbleFrame: winner, decorationFrames: decorations)
+        let winner = frame(for: placement, stageSize: stageSize, bubbleSize: bubbleSize)
+
+        return HeartVoiceStageLayout(
+            imageFrame: imageFrame,
+            bubbleFrame: winner,
+            bubblePlacement: placement
+        )
     }
 
-    private static func aspectFillFrame(imageSize: CGSize, stageSize: CGSize, focalPoint: CGPoint) -> CGRect {
+    static func focalAspectFillFrame(
+        imageSize: CGSize,
+        stageSize: CGSize,
+        subject: HeartVoiceSubject?
+    ) -> CGRect {
         guard imageSize.width > 0, imageSize.height > 0 else {
             return CGRect(origin: .zero, size: stageSize)
         }
         let scale = max(stageSize.width / imageSize.width, stageSize.height / imageSize.height)
         let rendered = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
-        let desiredX = stageSize.width / 2 - focalPoint.x * rendered.width
-        let desiredY = stageSize.height / 2 - focalPoint.y * rendered.height
-        let originX = min(0, max(stageSize.width - rendered.width, desiredX))
-        let originY = min(0, max(stageSize.height - rendered.height, desiredY))
-        return CGRect(origin: CGPoint(x: originX, y: originY), size: rendered)
+        guard let subject else {
+            return CGRect(
+                x: (stageSize.width - rendered.width) / 2,
+                y: (stageSize.height - rendered.height) / 2,
+                width: rendered.width,
+                height: rendered.height
+            )
+        }
+
+        let focus = subject.catFaceBoundingBox ?? subject.catBoundingBox
+        let targetX: CGFloat
+        if focus.midX < 0.42 {
+            targetX = 0.36
+        } else if focus.midX > 0.58 {
+            targetX = 0.64
+        } else {
+            let leftSpace = focus.minX
+            let rightSpace = 1 - focus.maxX
+            targetX = rightSpace >= leftSpace ? 0.40 : 0.60
+        }
+        let targetY: CGFloat = focus.midY < 0.42 ? 0.46 : 0.52
+        var origin = CGPoint(
+            x: stageSize.width * targetX - focus.midX * rendered.width,
+            y: stageSize.height * targetY - focus.midY * rendered.height
+        )
+        origin.x = clampedOrigin(origin.x, renderedLength: rendered.width, stageLength: stageSize.width)
+        origin.y = clampedOrigin(origin.y, renderedLength: rendered.height, stageLength: stageSize.height)
+
+        let faceOrSubject = subject.catFaceBoundingBox ?? subject.catBoundingBox
+        let safety = HeartVoiceLayout.bubbleInset
+        let visibleBounds = CGRect(origin: .zero, size: stageSize).insetBy(dx: safety, dy: safety)
+        var frame = CGRect(origin: origin, size: rendered)
+        let focusFrame = map(faceOrSubject, through: frame)
+
+        if focusFrame.minX < visibleBounds.minX {
+            origin.x += visibleBounds.minX - focusFrame.minX
+        } else if focusFrame.maxX > visibleBounds.maxX {
+            origin.x -= focusFrame.maxX - visibleBounds.maxX
+        }
+        if focusFrame.minY < visibleBounds.minY {
+            origin.y += visibleBounds.minY - focusFrame.minY
+        } else if focusFrame.maxY > visibleBounds.maxY {
+            origin.y -= focusFrame.maxY - visibleBounds.maxY
+        }
+
+        origin.x = clampedOrigin(origin.x, renderedLength: rendered.width, stageLength: stageSize.width)
+        origin.y = clampedOrigin(origin.y, renderedLength: rendered.height, stageLength: stageSize.height)
+        frame.origin = origin
+        return frame
+    }
+
+    static func usesCompactBubble(for subject: HeartVoiceSubject?) -> Bool {
+        guard let subject else { return true }
+        let faceNeedsTopClearance = subject.catFaceBoundingBox.map {
+            $0.width >= 0.36 && $0.minY < 0.36
+        } ?? false
+        return usesLargeSubjectBubble(for: subject) || faceNeedsTopClearance
+    }
+
+    private static func usesLargeSubjectBubble(for subject: HeartVoiceSubject) -> Bool {
+        let box = subject.catBoundingBox
+        return box.width >= 0.72
+            || box.height >= 0.78
+            || box.width * box.height >= 0.48
+    }
+
+    private static func clampedOrigin(_ value: CGFloat, renderedLength: CGFloat, stageLength: CGFloat) -> CGFloat {
+        min(0, max(stageLength - renderedLength, value))
     }
 
     private static func map(_ normalized: CGRect, through imageFrame: CGRect) -> CGRect {
@@ -198,39 +261,60 @@ enum SubjectLayoutEngine {
         bubbleSize: CGSize
     ) -> CGRect {
         let edge = HeartVoiceLayout.bubbleInset
-        let centeredY = max(edge, stageSize.height * 0.22)
         switch placement {
         case .topLeft:
             return CGRect(x: edge, y: edge, width: bubbleSize.width, height: bubbleSize.height)
         case .topRight:
             return CGRect(x: stageSize.width - edge - bubbleSize.width, y: edge, width: bubbleSize.width, height: bubbleSize.height)
-        case .upperLeftCenter:
-            return CGRect(x: edge, y: centeredY, width: bubbleSize.width, height: bubbleSize.height)
-        case .upperRightCenter:
-            return CGRect(x: stageSize.width - edge - bubbleSize.width, y: centeredY, width: bubbleSize.width, height: bubbleSize.height)
         }
+    }
+
+    private static func bubblePlacement(
+        subjectAnchor: CGRect?,
+        candidates: [(HeartVoiceBubblePlacement, CGRect)],
+        image: UIImage?,
+        imageFrame: CGRect,
+        stageSize: CGSize,
+        catFrame: CGRect?,
+        faceFrame: CGRect?
+    ) -> HeartVoiceBubblePlacement {
+        guard let subjectAnchor else { return .topRight }
+        let centerRatio = subjectAnchor.midX / max(stageSize.width, 1)
+        if centerRatio < 0.42 { return .topRight }
+        if centerRatio > 0.58 { return .topLeft }
+
+        return candidates.max {
+            score(
+                $0.1,
+                stageSize: stageSize,
+                catFrame: catFrame,
+                faceFrame: faceFrame,
+                backgroundScore: backgroundScore(image: image, candidate: $0.1, imageFrame: imageFrame)
+            ) < score(
+                $1.1,
+                stageSize: stageSize,
+                catFrame: catFrame,
+                faceFrame: faceFrame,
+                backgroundScore: backgroundScore(image: image, candidate: $1.1, imageFrame: imageFrame)
+            )
+        }?.0 ?? .topRight
     }
 
     private static func score(
         _ frame: CGRect,
-        placement: HeartVoiceBubblePlacement,
         stageSize: CGSize,
-        catFrame: CGRect,
+        catFrame: CGRect?,
         faceFrame: CGRect?,
         backgroundScore: CGFloat
     ) -> CGFloat {
         var value = backgroundScore
         let safeFace = faceFrame?.insetBy(dx: -HeartVoiceLayout.subjectClearance, dy: -HeartVoiceLayout.subjectClearance)
         if let safeFace { value -= overlapRatio(frame, safeFace) * 1_000 }
-        value -= overlapRatio(frame, catFrame) * 320
+        if let catFrame { value -= overlapRatio(frame, catFrame) * 320 }
 
         let safeBounds = CGRect(origin: .zero, size: stageSize).insetBy(dx: HeartVoiceLayout.bubbleInset, dy: HeartVoiceLayout.bubbleInset)
         if !safeBounds.contains(frame) { value -= 500 }
 
-        let bubbleIsLeft = frame.midX < stageSize.width / 2
-        let catIsLeft = catFrame.midX < stageSize.width / 2
-        if bubbleIsLeft != catIsLeft { value += 90 }
-        if placement == .topLeft || placement == .topRight { value += 12 }
         return value
     }
 
@@ -274,19 +358,6 @@ enum SubjectLayoutEngine {
         return intersection.width * intersection.height / (lhs.width * lhs.height)
     }
 
-    private static func decorationFrames(stageSize: CGSize, excluded: [CGRect], reduced: Bool) -> [CGRect] {
-        let size: CGFloat = 28
-        let candidates = [
-            CGRect(x: 24, y: stageSize.height * 0.42, width: size, height: size),
-            CGRect(x: stageSize.width - 52, y: stageSize.height * 0.50, width: size, height: size),
-            CGRect(x: stageSize.width - 60, y: stageSize.height - 84, width: size, height: size),
-            CGRect(x: 28, y: stageSize.height - 96, width: size, height: size),
-        ]
-        let limit = reduced ? 2 : 3
-        return Array(candidates.filter { candidate in
-            !excluded.contains { $0.insetBy(dx: -12, dy: -12).intersects(candidate) }
-        }.prefix(limit))
-    }
 }
 
 struct HeartVoiceResultView<Content: View>: View {
@@ -363,11 +434,14 @@ struct PhotoStageView: View {
     var body: some View {
         GeometryReader { proxy in
             let stageSize = proxy.size
-            let bubbleWidth = min(
-                HeartVoiceLayout.bubbleMaximumWidth,
-                max(HeartVoiceLayout.bubbleMinimumWidth, stageSize.width * HeartVoiceLayout.bubbleWidthRatio)
+            let widthRatio = SubjectLayoutEngine.bubbleWidthRatio(
+                for: subject,
+                detectionFinished: detectionFinished
             )
-            let bubbleSize = CGSize(width: bubbleWidth, height: 132)
+            let bubbleSize = CGSize(
+                width: stageSize.width * widthRatio,
+                height: HeartVoiceLayout.bubbleHeight
+            )
             let layout = SubjectLayoutEngine.layout(
                 image: image,
                 stageSize: stageSize,
@@ -381,14 +455,16 @@ struct PhotoStageView: View {
                     Image(uiImage: image)
                         .resizable()
                         .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
-                        .offset(x: layout.imageFrame.minX, y: layout.imageFrame.minY)
+                        .position(x: layout.imageFrame.midX, y: layout.imageFrame.midY)
                 }
 
-                DoodleOverlayView(frames: layout.decorationFrames)
-
-                SpeechBubbleView(catName: catName, text: voiceText)
+                SpeechBubbleView(
+                    catName: catName,
+                    text: voiceText,
+                    placement: layout.bubblePlacement
+                )
                     .frame(width: layout.bubbleFrame.width, height: layout.bubbleFrame.height)
-                    .offset(x: layout.bubbleFrame.minX, y: layout.bubbleFrame.minY)
+                    .position(x: layout.bubbleFrame.midX, y: layout.bubbleFrame.midY)
             }
             .frame(width: stageSize.width, height: stageSize.height)
             .clipShape(RoundedRectangle(cornerRadius: HeartVoiceLayout.stageRadius, style: .continuous))
@@ -399,6 +475,7 @@ struct PhotoStageView: View {
 struct SpeechBubbleView: View {
     let catName: String
     let text: String
+    let placement: HeartVoiceBubblePlacement
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -407,10 +484,11 @@ struct SpeechBubbleView: View {
                 .foregroundStyle(NekoTheme.muted)
                 .lineLimit(1)
             Text(text)
-                .nekoText(.body)
+                .nekoText(.voiceBubble)
                 .foregroundStyle(NekoTheme.ink)
-                .lineLimit(3)
+                .lineLimit(2)
                 .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(HeartVoiceLayout.bubblePadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -419,66 +497,55 @@ struct SpeechBubbleView: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(NekoTheme.softLilac.opacity(0.90), lineWidth: 1)
         }
-    }
-}
-
-struct DoodleOverlayView: View {
-    let frames: [CGRect]
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(Array(frames.enumerated()), id: \.offset) { index, frame in
-                decoration(for: index)
-                    .frame(width: frame.width, height: frame.height)
-                    .offset(x: frame.minX, y: frame.minY)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private func decoration(for index: Int) -> some View {
-        switch index % 3 {
-        case 0:
-            Image(systemName: "heart")
-                .font(NekoTypography.font(.iconMedium))
-                .foregroundStyle(NekoTheme.soulPink.opacity(0.50))
-        case 1:
-            Image(systemName: "pawprint")
-                .font(NekoTypography.font(.iconMedium))
-                .foregroundStyle(NekoTheme.soulViolet.opacity(0.42))
-        default:
-            SparkleDecoration()
-                .stroke(NekoTheme.softPink.opacity(0.52), lineWidth: 2)
+        .overlay(alignment: placement == .topLeft ? .bottomTrailing : .bottomLeading) {
+            HeartVoiceBubbleTail()
+                .fill(Color.white.opacity(0.90))
+                .frame(width: 18, height: 12)
+                .scaleEffect(x: placement == .topLeft ? -1 : 1, y: 1)
+                .offset(x: placement == .topLeft ? -24 : 24, y: 8)
         }
     }
 }
 
-struct SparkleDecoration: Shape {
+struct HeartVoiceBubbleTail: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addCurve(
-            to: CGPoint(x: rect.maxX, y: rect.midY),
-            control1: CGPoint(x: rect.midX, y: rect.midY * 0.75),
-            control2: CGPoint(x: rect.midX * 1.25, y: rect.midY)
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.28, y: rect.maxY),
+            control: CGPoint(x: rect.midX, y: rect.maxY * 0.72)
         )
-        path.addCurve(
-            to: CGPoint(x: rect.midX, y: rect.maxY),
-            control1: CGPoint(x: rect.midX * 1.25, y: rect.midY),
-            control2: CGPoint(x: rect.midX, y: rect.midY * 1.25)
-        )
-        path.addCurve(
-            to: CGPoint(x: rect.minX, y: rect.midY),
-            control1: CGPoint(x: rect.midX, y: rect.midY * 1.25),
-            control2: CGPoint(x: rect.midX * 0.75, y: rect.midY)
-        )
-        path.addCurve(
-            to: CGPoint(x: rect.midX, y: rect.minY),
-            control1: CGPoint(x: rect.midX * 0.75, y: rect.midY),
-            control2: CGPoint(x: rect.midX, y: rect.midY * 0.75)
-        )
+        path.closeSubpath()
         return path
+    }
+}
+
+struct HeartVoiceFocalImageView: View {
+    let image: UIImage
+    var knownSubject: HeartVoiceSubject? = nil
+
+    @State private var detectedSubject: HeartVoiceSubject?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let imageFrame = SubjectLayoutEngine.focalAspectFillFrame(
+                imageSize: image.size,
+                stageSize: proxy.size,
+                subject: knownSubject ?? detectedSubject
+            )
+
+            Image(uiImage: image)
+                .resizable()
+                .frame(width: imageFrame.width, height: imageFrame.height)
+                .position(x: imageFrame.midX, y: imageFrame.midY)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                .clipped()
+        }
+        .task {
+            guard knownSubject == nil, detectedSubject == nil else { return }
+            detectedSubject = await HeartVoiceSubjectDetector.detect(in: image)
+        }
     }
 }
 

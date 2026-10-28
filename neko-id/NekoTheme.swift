@@ -87,6 +87,57 @@ enum NekoTheme {
 }
 
 enum NekoTypography {
+    /// Canonical typography for the Persona onboarding → analyzing → result flow.
+    /// Keep this set intentionally small so equal hierarchy always renders equally.
+    enum PersonaTextStyle {
+        case pageTitle
+        case heroTitle
+        case sectionTitle
+        case cardTitle
+        case body
+        case secondary
+        case button
+
+        var size: CGFloat {
+            switch self {
+            case .pageTitle: 24
+            case .heroTitle: 32
+            case .sectionTitle: 20
+            case .cardTitle: 18
+            case .body: 16
+            case .secondary: 14
+            case .button: 17
+            }
+        }
+
+        var lineHeight: CGFloat {
+            switch self {
+            case .pageTitle: 32
+            case .heroTitle: 38
+            case .sectionTitle: 27
+            case .cardTitle: 24
+            case .body: 24
+            case .secondary: 20
+            case .button: 22
+            }
+        }
+
+        var weight: Font.Weight {
+            switch self {
+            case .pageTitle, .heroTitle, .sectionTitle, .cardTitle, .button:
+                .semibold
+            case .secondary:
+                .medium
+            case .body:
+                .regular
+            }
+        }
+
+        var lineSpacing: CGFloat {
+            max(0, lineHeight - size)
+        }
+    }
+
     enum RelativeTextStyle {
         case avatarSymbol
         case mediaPlaceholderIcon
@@ -114,6 +165,13 @@ enum NekoTypography {
         case body
         case support
         case button
+        case flowTitle
+        case flowSupport
+        case flowStep
+        case flowInput
+        case voiceBubble
+        case voiceInsightTitle
+        case voiceInsightBody
         case tabBarLabel
         case badge
         case eyebrow
@@ -140,6 +198,13 @@ enum NekoTypography {
             case .body: 16
             case .support: 14
             case .button: 17
+            case .flowTitle: 24
+            case .flowSupport: 14
+            case .flowStep: 14
+            case .flowInput: 16
+            case .voiceBubble: 16
+            case .voiceInsightTitle: 16
+            case .voiceInsightBody: 15
             case .tabBarLabel: 13
             case .badge: 15
             case .eyebrow: 14
@@ -168,6 +233,13 @@ enum NekoTypography {
             case .body: 24
             case .support: 20
             case .button: 22
+            case .flowTitle: 32
+            case .flowSupport: 20
+            case .flowStep: 20
+            case .flowInput: 24
+            case .voiceBubble: 22
+            case .voiceInsightTitle: 22
+            case .voiceInsightBody: 23
             case .tabBarLabel: 18
             case .badge: 20
             case .eyebrow: 20
@@ -189,9 +261,9 @@ enum NekoTypography {
 
         var weight: Font.Weight {
             switch self {
-            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
+            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .flowTitle, .voiceInsightTitle, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
                 .semibold
-            case .tabBarLabel, .badge, .eyebrow, .caption, .iconSmall, .iconMedium:
+            case .flowStep, .voiceBubble, .tabBarLabel, .badge, .eyebrow, .caption, .iconSmall, .iconMedium:
                 .medium
             case .monospacedCaption:
                 .medium
@@ -223,6 +295,19 @@ enum NekoTypography {
             )
         case .monospacedCaption:
             return .system(size: style.size, weight: style.weight, design: .monospaced)
+        default:
+            return .system(size: style.size, weight: style.weight)
+        }
+    }
+
+    static func personaFont(_ style: PersonaTextStyle) -> Font {
+        switch style {
+        case .heroTitle:
+            return named(
+                ["Songti SC Semibold", "SongtiSC-Semibold", "Songti SC Bold", "SongtiSC-Bold", "STSong"],
+                size: style.size,
+                fallback: .system(size: style.size, weight: style.weight, design: .serif)
+            )
         default:
             return .system(size: style.size, weight: style.weight)
         }
@@ -269,6 +354,17 @@ private struct NekoTextStyleModifier: ViewModifier {
     }
 }
 
+private struct NekoPersonaTextStyleModifier: ViewModifier {
+    let style: NekoTypography.PersonaTextStyle
+
+    func body(content: Content) -> some View {
+        content
+            .font(NekoTypography.personaFont(style))
+            .lineSpacing(style.lineSpacing)
+            .tracking(0)
+    }
+}
+
 extension View {
     func nekoText(_ style: NekoTypography.TextStyle) -> some View {
         modifier(NekoTextStyleModifier(style: style))
@@ -277,6 +373,10 @@ extension View {
     func nekoRelativeText(_ style: NekoTypography.RelativeTextStyle, size: CGFloat) -> some View {
         font(NekoTypography.relativeFont(style, for: size))
             .tracking(0)
+    }
+
+    func nekoPersonaText(_ style: NekoTypography.PersonaTextStyle) -> some View {
+        modifier(NekoPersonaTextStyleModifier(style: style))
     }
 }
 

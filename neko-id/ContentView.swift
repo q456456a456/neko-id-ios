@@ -1421,7 +1421,6 @@ private struct PendingVoicePublishCard: View {
 
     var body: some View {
         let previewImage = UIImage(data: pending.imageData)
-        let mediaRatio = VoiceMediaMetrics.aspectRatio
 
         NekoGlassCard(cornerRadius: 24) {
             VStack(alignment: .leading, spacing: 0) {
@@ -1429,7 +1428,7 @@ private struct PendingVoicePublishCard: View {
                     PublishWebStyle.warmPhotoGradient
 
                     if let image = previewImage {
-                        VoiceMediaPhotoView(image: image)
+                        HeartVoiceFocalImageView(image: image)
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -1445,7 +1444,7 @@ private struct PendingVoicePublishCard: View {
                     .background(Color.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(14)
                 }
-                .aspectRatio(mediaRatio, contentMode: .fit)
+                .aspectRatio(3 / 4, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                 HStack {
@@ -4996,10 +4995,10 @@ private struct PublishBackgroundScreen: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text("发生了什么呢？")
-                                .nekoText(.moduleTitle)
+                                .nekoText(.flowTitle)
                                 .foregroundStyle(NekoTheme.ink)
                             Text("补充背景信息，可以让 AI 更懂它哦 （可选）")
-                                .nekoText(.micro)
+                                .nekoText(.flowSupport)
                                 .foregroundStyle(NekoTheme.muted)
                         }
                         .padding(.horizontal, 28)
@@ -5010,13 +5009,13 @@ private struct PublishBackgroundScreen: View {
                             ZStack(alignment: .topLeading) {
                                 if scene.isEmpty {
                                     Text("例如：刚刚拿逗猫棒逗它，它一直盯着但没扑过来")
-                                        .nekoText(.micro)
+                                        .nekoText(.flowInput)
                                         .foregroundStyle(NekoTheme.mutedLight)
                                         .padding(.top, 8)
                                         .allowsHitTesting(false)
                                 }
                                 TextEditor(text: $scene)
-                                    .nekoText(.micro)
+                                    .nekoText(.flowInput)
                                     .foregroundStyle(NekoTheme.ink)
                                     .scrollContentBackground(.hidden)
                                     .padding(.horizontal, -5)
@@ -5025,7 +5024,7 @@ private struct PublishBackgroundScreen: View {
                                     .background(.clear)
 
                                 Text("\(scene.count)/120")
-                                    .nekoText(.tiny)
+                                    .nekoText(.flowStep)
                                     .foregroundStyle(PublishWebStyle.step.opacity(0.82))
                                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                                     .allowsHitTesting(false)
@@ -5034,7 +5033,7 @@ private struct PublishBackgroundScreen: View {
                             HStack(spacing: 8) {
                                 ForEach(["在玩", "刚睡醒", "在看我"], id: \.self) { prompt in
                                     Button(prompt) { applyQuickPrompt(prompt) }
-                                        .nekoText(.tiny)
+                                        .nekoText(.flowSupport)
                                         .foregroundStyle(NekoTheme.soulViolet)
                                         .padding(.horizontal, 12)
                                         .frame(height: 32)
@@ -5109,14 +5108,14 @@ private struct PublishPreviewScreen: View {
                                 .foregroundStyle(NekoTheme.soulViolet)
                             Text(statusText)
                         }
-                        .nekoText(.tiny)
+                        .nekoText(.flowSupport)
                         .foregroundStyle(PublishWebStyle.step)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
                         .background(.white.opacity(0.75), in: Capsule())
 
                         Text("这是它想对你说的话")
-                            .nekoText(.moduleTitle)
+                            .nekoText(.flowTitle)
                             .foregroundStyle(NekoTheme.ink)
                     }
                     .padding(.horizontal, 28)
@@ -5402,7 +5401,7 @@ private struct PublishTopBar<Trailing: View>: View {
             PublishBackButton(onBack: onBack)
             Spacer()
             Text(stepText)
-                .nekoText(.tiny)
+                .nekoText(.flowStep)
                 .foregroundStyle(PublishWebStyle.step)
             Spacer()
             trailing
@@ -5542,7 +5541,7 @@ private struct PublishSectionTitle: View {
 
     var body: some View {
         Text(text)
-            .nekoText(.tiny)
+            .nekoText(.flowSupport)
             .foregroundStyle(PublishWebStyle.step)
     }
 }
@@ -5585,7 +5584,7 @@ private struct PublishBottomCTA: View {
                     }
                     Text(isBusy ? "识别中…" : title)
                 }
-                .nekoText(.badge)
+                .nekoText(.button)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
@@ -5617,11 +5616,13 @@ private struct VoiceResultCard: View {
         VStack(alignment: .leading, spacing: 20) {
             VoiceResultPhotoStage(
                 image: photoPreviewImage,
+                catName: catName,
                 text: speechBubbleText,
                 subject: detectionFinished ? detectedSubject : nil,
+                detectionFinished: detectionFinished,
                 showsLoadingIndicator: isLoading
             )
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(3 / 4, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
 
             VoiceInsightBlock(analysis: isLoading ? nil : voice?.analysis, fallbackText: analysisText, isLoading: isLoading)
@@ -5664,13 +5665,22 @@ private struct VoiceResultCard: View {
 
 private struct VoiceResultPhotoStage: View {
     let image: UIImage?
+    let catName: String
     let text: String
     let subject: HeartVoiceSubject?
+    let detectionFinished: Bool
     let showsLoadingIndicator: Bool
 
     var body: some View {
         GeometryReader { proxy in
-            let bubbleSize = CGSize(width: min(264, proxy.size.width * 0.68), height: 78)
+            let widthRatio = SubjectLayoutEngine.bubbleWidthRatio(
+                for: subject,
+                detectionFinished: detectionFinished
+            )
+            let bubbleSize = CGSize(
+                width: proxy.size.width * widthRatio,
+                height: HeartVoiceLayout.bubbleHeight
+            )
             let layout = SubjectLayoutEngine.layout(
                 image: image,
                 stageSize: proxy.size,
@@ -5688,13 +5698,18 @@ private struct VoiceResultPhotoStage: View {
                             Image(uiImage: image)
                                 .resizable()
                                 .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
-                                .offset(x: layout.imageFrame.minX, y: layout.imageFrame.minY)
+                                .position(x: layout.imageFrame.midX, y: layout.imageFrame.midY)
                         }
                     }
 
-                VoiceResultSpeechBubble(text: text, showsLoadingIndicator: showsLoadingIndicator)
+                VoiceResultSpeechBubble(
+                    catName: catName,
+                    text: text,
+                    showsLoadingIndicator: showsLoadingIndicator,
+                    placement: layout.bubblePlacement
+                )
                     .frame(width: bubbleFrame.width, height: bubbleFrame.height, alignment: .topLeading)
-                    .offset(x: bubbleFrame.minX, y: bubbleFrame.minY)
+                    .position(x: bubbleFrame.midX, y: bubbleFrame.midY)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -5714,48 +5729,45 @@ private extension CGRect {
 }
 
 private struct VoiceResultSpeechBubble: View {
+    let catName: String
     let text: String
     let showsLoadingIndicator: Bool
+    let placement: HeartVoiceBubblePlacement
 
     var body: some View {
-        HStack(spacing: 8) {
-            if showsLoadingIndicator {
-                ProgressView()
-                    .controlSize(.mini)
-                    .tint(NekoTheme.soulViolet)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(catName)
+                .nekoText(.flowStep)
+                .foregroundStyle(NekoTheme.muted)
+                .lineLimit(1)
+
+            HStack(spacing: 6) {
+                if showsLoadingIndicator {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(NekoTheme.soulViolet)
+                }
+                Text(text)
+                    .nekoText(.voiceBubble)
+                    .foregroundStyle(NekoTheme.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(text)
-                .font(.system(size: 16, weight: .medium, design: .default))
-                .foregroundStyle(NekoTheme.ink)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
         }
-        .padding(.horizontal, 18)
-        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64, alignment: .leading)
+        .padding(HeartVoiceLayout.bubblePadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(NekoTheme.cardWhite.opacity(0.96), in: Capsule())
         .overlay {
             Capsule().stroke(NekoTheme.softLilac, lineWidth: 1)
         }
-        .overlay(alignment: .bottomLeading) {
-            BubbleTail()
+        .overlay(alignment: placement == .topLeft ? .bottomTrailing : .bottomLeading) {
+            HeartVoiceBubbleTail()
                 .fill(NekoTheme.cardWhite.opacity(0.96))
                 .frame(width: 18, height: 12)
-                .offset(x: 28, y: 8)
+                .scaleEffect(x: placement == .topLeft ? -1 : 1, y: 1)
+                .offset(x: placement == .topLeft ? -24 : 24, y: 8)
         }
-    }
-}
-
-private struct BubbleTail: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + rect.width * 0.28, y: rect.maxY),
-            control: CGPoint(x: rect.midX, y: rect.maxY * 0.72)
-        )
-        path.closeSubpath()
-        return path
     }
 }
 
@@ -5784,15 +5796,14 @@ private struct VoiceInsightBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AI 解读")
-                .font(.system(size: 16, weight: .semibold, design: .default))
+                .nekoText(.voiceInsightTitle)
                 .foregroundStyle(NekoTheme.ink)
             if isLoading {
                 VoiceInsightSkeleton()
             } else {
                 Text(compactAnalysis)
-                    .font(.system(size: 15, weight: .regular, design: .default))
-                    .lineSpacing(5)
-                    .lineLimit(4)
+                    .nekoText(.voiceInsightBody)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .foregroundStyle(NekoTheme.ink.opacity(0.84))

@@ -229,79 +229,6 @@ private enum LovableResultStyle {
         endPoint: .trailing
     )
 
-    static func chineseEditorial(_ size: CGFloat) -> Font {
-        if UIFont(name: "SongtiSC-Semibold", size: size) != nil {
-            return .custom("SongtiSC-Semibold", fixedSize: size)
-        }
-        if UIFont(name: "Songti SC", size: size) != nil {
-            return .custom("Songti SC", fixedSize: size).weight(.semibold)
-        }
-        if UIFont(name: "STSong", size: size) != nil {
-            return .custom("STSong", fixedSize: size).weight(.semibold)
-        }
-        return .system(size: size, weight: .semibold, design: .serif)
-    }
-
-    static func englishEditorial(_ size: CGFloat) -> Font {
-        if UIFont(name: "Didot", size: size) != nil {
-            return .custom("Didot", fixedSize: size)
-        }
-        if UIFont(name: "Bodoni 72", size: size) != nil {
-            return .custom("Bodoni 72", fixedSize: size)
-        }
-        if UIFont(name: "Baskerville", size: size) != nil {
-            return .custom("Baskerville", fixedSize: size)
-        }
-        if UIFont(name: "Times New Roman", size: size) != nil {
-            return .custom("Times New Roman", fixedSize: size)
-        }
-        return .system(size: size, design: .serif)
-    }
-
-    static func chineseUI(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        if UIFont(name: "PingFangSC-Regular", size: size) != nil {
-            return .custom("PingFang SC", fixedSize: size).weight(weight)
-        }
-        return .system(size: size, weight: weight)
-    }
-
-}
-
-private struct EditorialPersonaTitle {
-    let text: String
-    let fontSize: CGFloat
-
-    init(_ rawValue: String) {
-        let normalized = rawValue
-            .replacingOccurrences(of: "\n", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let characters = Array(normalized)
-
-        switch characters.count {
-        case ...6:
-            text = normalized
-            fontSize = 44
-        case 7...10:
-            text = Self.balancedTwoLines(characters)
-            fontSize = 39
-        case 11...14:
-            text = Self.balancedTwoLines(characters)
-            fontSize = 34
-        default:
-            // The generation layer is expected to keep titles within 14 Chinese
-            // characters. This visual guard prevents legacy data producing an
-            // orphaned third line while preserving the full stored value.
-            text = Self.balancedTwoLines(Array(characters.prefix(14)))
-            fontSize = 32
-        }
-    }
-
-    private static func balancedTwoLines(_ characters: [Character]) -> String {
-        guard characters.count > 6 else { return String(characters) }
-        var split = Int(ceil(Double(characters.count) / 2.0))
-        split = min(max(split, 3), characters.count - 3)
-        return String(characters[..<split]) + "\n" + String(characters[split...])
-    }
 }
 
 private enum LovablePersonaCopy {
@@ -334,32 +261,17 @@ private enum LovablePersonaCopy {
     }
 
     static func description(_ value: String, fallback: String) -> String {
-        boundedSentence(value, fallback: fallback, max: 50)
+        normalizedSentence(value, fallback: fallback)
     }
 
     static func insight(_ value: String, fallback: String) -> String {
-        boundedSentence(value, fallback: fallback, max: 60)
+        normalizedSentence(value, fallback: fallback)
     }
 
-    private static func boundedSentence(_ value: String, fallback: String, max: Int) -> String {
+    private static func normalizedSentence(_ value: String, fallback: String) -> String {
         let normalized = compact(value).trimmingCharacters(in: CharacterSet(charactersIn: "“”\"'「」『』"))
         let selected = charCount(normalized) >= 8 ? normalized : compact(fallback)
-        let chars = Array(selected)
-        guard chars.count > max else { return selected }
-        let punctuation = Set(["。", "！", "？", "；", "，", ",", ";", "!", "?"])
-        let minIndex = max / 2
-        var cutIndex = max
-        for index in stride(from: max - 1, through: minIndex, by: -1) where punctuation.contains(String(chars[index])) {
-            cutIndex = index + 1
-            break
-        }
-        var sliced = String(chars.prefix(cutIndex))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "，,；;：:"))
-        if !sliced.hasSuffix("。") && !sliced.hasSuffix("！") && !sliced.hasSuffix("？") {
-            sliced.append("。")
-        }
-        return sliced
+        return selected
     }
 
     private static func compact(_ value: String) -> String {
@@ -517,9 +429,9 @@ struct LovableResultHero: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
                 Text(catName)
-                    .nekoText(.button)
+                    .nekoPersonaText(.secondary)
                 Text(personaMbti)
-                    .nekoText(.button)
+                    .nekoPersonaText(.secondary)
             }
             .foregroundStyle(LovableResultStyle.heroCopyInk)
             .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
@@ -528,7 +440,7 @@ struct LovableResultHero: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(titleLines.enumerated()), id: \.offset) { _, line in
                     Text(line)
-                        .nekoText(.display)
+                        .nekoPersonaText(.heroTitle)
                         .lineLimit(1)
                 }
             }
@@ -537,11 +449,10 @@ struct LovableResultHero: View {
             .padding(.top, 12)
 
             Text(coreDescription)
-                .font(LovableResultStyle.chineseUI(16))
-                .lineSpacing(4)
+                .nekoPersonaText(.body)
                 .foregroundStyle(LovableResultStyle.heroCopyInk)
                 .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 10)
         }
         .padding(.horizontal, 24)
@@ -748,7 +659,7 @@ private struct LovablePersonaDimensionsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(catName)的四个行为维度")
-                .nekoText(.moduleTitle)
+                .nekoPersonaText(.sectionTitle)
                 .foregroundStyle(LovableResultStyle.ink)
 
             VStack(spacing: 0) {
@@ -793,13 +704,12 @@ private struct LovablePersonaDimensionRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(dimension.name)
-                .nekoText(.body)
-                .fontWeight(.semibold)
+                .nekoPersonaText(.cardTitle)
                 .foregroundStyle(LovableResultStyle.ink)
 
             HStack(spacing: 10) {
                 Text(dimension.leftLabel)
-                    .nekoText(.support)
+                    .nekoPersonaText(.secondary)
                     .foregroundStyle(LovableResultStyle.muted)
                     .lineLimit(1)
                     .frame(width: 64, alignment: .leading)
@@ -823,7 +733,7 @@ private struct LovablePersonaDimensionRow: View {
                 .frame(height: 14)
 
                 Text(dimension.rightLabel)
-                    .nekoText(.support)
+                    .nekoPersonaText(.secondary)
                     .foregroundStyle(LovableResultStyle.muted)
                     .lineLimit(1)
                     .frame(width: 64, alignment: .trailing)
@@ -848,25 +758,25 @@ private struct LovableCatInsightSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("原来\(catName)是这样的猫")
-                .nekoText(.moduleTitle)
+                .nekoPersonaText(.sectionTitle)
                 .foregroundStyle(LovableResultStyle.ink)
 
             VStack(spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, insight in
                     HStack(alignment: .top, spacing: 12) {
                         Text(insight.number)
-                            .nekoText(.badge)
+                            .nekoPersonaText(.secondary)
                             .foregroundStyle(LovableResultStyle.primaryStart.opacity(0.78))
                             .frame(width: 24, alignment: .leading)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text(insight.title)
-                                .nekoText(.button)
+                                .nekoPersonaText(.cardTitle)
                                 .foregroundStyle(LovableResultStyle.ink)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             Text(insight.text)
-                                .nekoText(.body)
+                                .nekoPersonaText(.body)
                                 .foregroundStyle(LovableResultStyle.inkSoft)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -899,11 +809,11 @@ private struct LovableBondSummarySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(catName)和你的关系")
-                .nekoText(.moduleTitle)
+                .nekoPersonaText(.sectionTitle)
                 .foregroundStyle(LovableResultStyle.ink)
 
             Text(quote)
-                .nekoText(.cardTitle)
+                .nekoPersonaText(.body)
                 .foregroundStyle(LovableResultStyle.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(20)
@@ -931,7 +841,7 @@ private struct LovableResultBottomActions: View {
         HStack(spacing: 12) {
             Button(action: onRestart) {
                 Text("重新识别")
-                    .nekoText(.button)
+                    .nekoPersonaText(.button)
                     .foregroundStyle(Color(red: 0.500, green: 0.320, blue: 0.590))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
@@ -947,7 +857,7 @@ private struct LovableResultBottomActions: View {
 
             Button(action: onSave) {
                 Text(isSaving ? "保存中…" : "保存结果")
-                    .nekoText(.button)
+                    .nekoPersonaText(.button)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)

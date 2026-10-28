@@ -490,7 +490,7 @@ struct CatPersonaResult: Codable, Equatable {
         }
     }
 
-    private static func legacyTrait(from dimension: PersonaDimension) -> PersonaTrait {
+    nonisolated private static func legacyTrait(from dimension: PersonaDimension) -> PersonaTrait {
         let value: Int = switch dimension.direction {
         case .left: 85
         case .centerLeft: 68

@@ -911,6 +911,8 @@ private struct OnboardingVideoScreen: View {
     let onNext: () -> Void
     let onBack: () -> Void
 
+    private let multipleVideoCardWidthRatio: CGFloat = 0.625
+
     var body: some View {
         OnboardingScrollableStep(
             step: 2,
@@ -926,51 +928,68 @@ private struct OnboardingVideoScreen: View {
                     matching: .videos,
                     preferredItemEncoding: .current
                 ) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(.white.opacity(0.60))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                    .stroke(OnboardingWeb.activeBar.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
+                    if videoClips.isEmpty {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(.white.opacity(0.60))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                        .stroke(OnboardingWeb.activeBar.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
+                                }
+
+                            Circle()
+                                .fill(OnboardingWeb.activeBar.opacity(0.36))
+                                .frame(width: 150, height: 150)
+                                .blur(radius: 34)
+                                .offset(x: -112, y: -88)
+
+                            Circle()
+                                .fill(OnboardingWeb.soulOpal.opacity(0.28))
+                                .frame(width: 150, height: 150)
+                                .blur(radius: 34)
+                                .offset(x: 110, y: 86)
+
+                            VStack(spacing: 0) {
+                                Text("▶")
+                                    .nekoText(.moduleTitle)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 64, height: 64)
+                                    .background(
+                                        LinearGradient(colors: [OnboardingWeb.activeBar, OnboardingWeb.videoPink], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: Circle()
+                                    )
+                                    .shadow(color: OnboardingWeb.soulViolet.opacity(0.34), radius: 20, x: 0, y: 10)
+                                    .padding(.top, 4)
+
+                                Text("轻触上传视频")
+                                    .nekoText(.badge)
+                                    .foregroundStyle(OnboardingWeb.ink)
+                                    .padding(.top, 12)
+
+                                Text("可多选 · 最多 3 个 · 每个 5～60 秒")
+                                    .nekoText(.tiny)
+                                    .foregroundStyle(OnboardingWeb.label)
+                                    .padding(.top, 5)
                             }
-
-                        Circle()
-                            .fill(OnboardingWeb.activeBar.opacity(0.36))
-                            .frame(width: 150, height: 150)
-                            .blur(radius: 34)
-                            .offset(x: -112, y: -88)
-
-                        Circle()
-                            .fill(OnboardingWeb.soulOpal.opacity(0.28))
-                            .frame(width: 150, height: 150)
-                            .blur(radius: 34)
-                            .offset(x: 110, y: 86)
-
-                        VStack(spacing: 0) {
-                            Text("▶")
-                                .nekoText(.moduleTitle)
-                                .foregroundStyle(.white)
-                                .frame(width: 64, height: 64)
-                                .background(
-                                    LinearGradient(colors: [OnboardingWeb.activeBar, OnboardingWeb.videoPink], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                    in: Circle()
-                                )
-                                .shadow(color: OnboardingWeb.soulViolet.opacity(0.34), radius: 20, x: 0, y: 10)
-                                .padding(.top, 4)
-
-                            Text(videoClips.count >= 3 ? "最多只能上传 3 个视频" : "轻触上传视频")
-                                .nekoText(.badge)
-                                .foregroundStyle(OnboardingWeb.ink)
-                                .padding(.top, 12)
-
-                            Text("可多选 · 最多 3 个 · 每个 5～60 秒")
-                                .nekoText(.tiny)
-                                .foregroundStyle(OnboardingWeb.label)
-                                .padding(.top, 5)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 200)
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                                .nekoText(.button)
+                            Text("添加视频")
+                                .nekoText(.button)
+                        }
+                        .foregroundStyle(OnboardingWeb.questionNumber)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(OnboardingWeb.activeBar.opacity(0.45), lineWidth: 1)
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 200)
                 }
                 .buttonStyle(.plain)
                 .disabled(videoClips.count >= 3 || !selectedVideoItems.isEmpty)
@@ -990,17 +1009,32 @@ private struct OnboardingVideoScreen: View {
                         }
                         .padding(.horizontal, 1)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(videoClips) { clip in
-                                    VideoClipCard(clip: clip) {
-                                        onRemove(clip.id)
+                        if videoClips.count == 1, let clip = videoClips.first {
+                            GeometryReader { proxy in
+                                VideoClipCard(clip: clip) {
+                                    onRemove(clip.id)
+                                }
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                            }
+                            .aspectRatio(3 / 4, contentMode: .fit)
+                        } else {
+                            GeometryReader { proxy in
+                                let cardWidth = proxy.size.width * multipleVideoCardWidthRatio
+                                let cardHeight = cardWidth * 4 / 3
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(spacing: 12) {
+                                        ForEach(videoClips) { clip in
+                                            VideoClipCard(clip: clip) {
+                                                onRemove(clip.id)
+                                            }
+                                            .frame(width: cardWidth, height: cardHeight)
+                                        }
                                     }
-                                    .frame(width: 142)
+                                    .frame(height: cardHeight)
                                 }
                             }
-                            .padding(.horizontal, 1)
-                            .padding(.bottom, 2)
+                            .aspectRatio(3 / (4 * multipleVideoCardWidthRatio), contentMode: .fit)
                         }
                     }
                     .padding(.top, 16)
@@ -1057,7 +1091,7 @@ private struct OnboardingQuizScreen: View {
             HStack(spacing: 12) {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .nekoText(.button)
+                        .nekoPersonaText(.button)
                         .foregroundStyle(OnboardingWeb.soulViolet)
                         .frame(width: 44, height: 44)
                         .background(.white.opacity(0.78), in: Circle())
@@ -1067,13 +1101,13 @@ private struct OnboardingQuizScreen: View {
                 Spacer()
 
                 Text("行为小测试")
-                    .nekoText(.moduleTitle)
+                    .nekoPersonaText(.pageTitle)
                     .foregroundStyle(OnboardingWeb.ink)
 
                 Spacer()
 
                 Button("跳过", action: onSkip)
-                    .nekoText(.button)
+                    .nekoPersonaText(.button)
                     .foregroundStyle(OnboardingWeb.questionNumber)
                     .frame(width: 44, height: 44, alignment: .trailing)
                     .buttonStyle(.plain)
@@ -1084,11 +1118,11 @@ private struct OnboardingQuizScreen: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("帮助 AI 更准确理解它（可跳过）")
-                        .nekoText(.support)
+                        .nekoPersonaText(.secondary)
                         .foregroundStyle(OnboardingWeb.muted.opacity(0.92))
                     Spacer()
                     Text("已完成 \(answers.count) / \(questions.count)")
-                        .nekoText(.eyebrow)
+                        .nekoPersonaText(.secondary)
                         .foregroundStyle(OnboardingWeb.questionNumber)
                 }
 
@@ -1117,11 +1151,11 @@ private struct OnboardingQuizScreen: View {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Text(String(format: "%02d", index + 1))
-                                    .nekoText(.badge)
+                                    .nekoPersonaText(.secondary)
                                     .foregroundStyle(OnboardingWeb.questionNumber)
 
                                 Text(question.question)
-                                    .nekoText(.cardTitle)
+                                    .nekoPersonaText(.cardTitle)
                                     .foregroundStyle(OnboardingWeb.ink)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -1148,7 +1182,7 @@ private struct OnboardingQuizScreen: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button(action: onNext) {
                 Text("好了，开始解析 ✨")
-                    .nekoText(.button)
+                    .nekoPersonaText(.button)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
@@ -1185,17 +1219,17 @@ private struct OnboardingAnalyzingScreen: View {
 
             VStack(spacing: 0) {
                 Text("A I · A N A L Y Z I N G")
-                    .nekoText(.tiny)
+                    .nekoPersonaText(.secondary)
                     .foregroundStyle(OnboardingWeb.labelPink)
                     .padding(.top, 64)
 
                 Text("AI 分析中")
-                    .nekoText(.moduleTitle)
+                    .nekoPersonaText(.pageTitle)
                     .foregroundStyle(OnboardingWeb.ink)
                     .padding(.top, 8)
 
                 Text("正在构建属于它的人格画像")
-                    .nekoText(.micro)
+                    .nekoPersonaText(.secondary)
                     .foregroundStyle(OnboardingWeb.muted)
                     .padding(.top, 3)
 
@@ -1203,7 +1237,7 @@ private struct OnboardingAnalyzingScreen: View {
                     .padding(.top, 28)
 
                 Text("进度为预估，完成后自动展示报告")
-                    .nekoText(.tiny)
+                    .nekoPersonaText(.secondary)
                     .foregroundStyle(OnboardingWeb.muted)
                     .padding(.top, 8)
 
@@ -1219,9 +1253,10 @@ private struct OnboardingAnalyzingScreen: View {
                 Spacer()
 
                 Text("每只猫，\n都有独一无二的灵魂")
-                    .nekoText(.micro)
+                    .nekoPersonaText(.secondary)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(OnboardingWeb.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, 26)
             }
             .frame(maxWidth: .infinity)
@@ -1340,9 +1375,11 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
                     .ignoresSafeArea(.keyboard, edges: .bottom)
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             WebBackButton(onBack: onBack)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -1486,14 +1523,13 @@ private struct QuizOptionButton: View {
         } label: {
             HStack(alignment: .center, spacing: 16) {
                 Text(label)
-                    .nekoText(.badge)
+                    .nekoPersonaText(.secondary)
                     .foregroundStyle(active ? .white : OnboardingWeb.questionNumber)
                     .frame(width: 30, height: 30)
                     .background(active ? OnboardingWeb.soulViolet : Color(red: 0.95, green: 0.92, blue: 0.98), in: Circle())
 
                 Text(text)
-                    .nekoText(.button)
-                    .fontWeight(active ? .medium : .regular)
+                    .nekoPersonaText(.body)
                     .foregroundStyle(OnboardingWeb.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1618,49 +1654,49 @@ private struct VideoClipCard: View {
     let onRemove: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            ZStack {
-                LinearGradient(colors: [OnboardingWeb.activeBar.opacity(0.70), OnboardingWeb.videoPink.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        ZStack {
+            LinearGradient(colors: [OnboardingWeb.activeBar.opacity(0.70), OnboardingWeb.videoPink.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing)
 
-                if let data = clip.thumbnailData, let image = UIImage(data: data) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Text("▶")
-                        .nekoText(.moduleTitle)
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-
-                LinearGradient(colors: [.clear, .black.opacity(0.36)], startPoint: .center, endPoint: .bottom)
-
+            if let data = clip.thumbnailData, let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
                 Text("▶")
-                    .nekoText(.tiny)
-                    .foregroundStyle(OnboardingWeb.questionNumber)
-                    .frame(width: 28, height: 28)
-                    .background(.white.opacity(0.85), in: Circle())
-
-                Text(clip.durationLabel)
-                    .nekoText(.tiny)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(.black.opacity(0.35), in: Capsule())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(7)
-
-                Text(clip.label)
-                    .nekoText(.tiny)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
+                    .nekoText(.moduleTitle)
+                    .foregroundStyle(.white.opacity(0.9))
             }
-            .aspectRatio(3 / 4, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: OnboardingWeb.soulViolet.opacity(0.16), radius: 12, x: 0, y: 8)
 
+            LinearGradient(colors: [.clear, .black.opacity(0.36)], startPoint: .center, endPoint: .bottom)
+
+            Text("▶")
+                .nekoText(.tiny)
+                .foregroundStyle(OnboardingWeb.questionNumber)
+                .frame(width: 28, height: 28)
+                .background(.white.opacity(0.85), in: Circle())
+
+            Text(clip.durationLabel)
+                .nekoText(.tiny)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.35), in: Capsule())
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(7)
+
+            Text(clip.label)
+                .nekoText(.tiny)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+        }
+        .aspectRatio(3 / 4, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(alignment: .topLeading) {
             Button {
                 onRemove()
             } label: {
@@ -1672,9 +1708,9 @@ private struct VideoClipCard: View {
                     .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 2)
             }
             .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(6)
         }
+        .shadow(color: OnboardingWeb.soulViolet.opacity(0.16), radius: 12, x: 0, y: 8)
     }
 }
 
@@ -1722,7 +1758,7 @@ private struct AnalysisRing: View {
             FlowAvatarView(image: avatarImage, size: 154, placeholderTitle: "等待头像", placeholderIcon: "cat")
 
             Text("\(Int(progress * 100))%")
-                .nekoText(.tiny)
+                .nekoPersonaText(.secondary)
                 .foregroundStyle(OnboardingWeb.questionNumber)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
@@ -1747,7 +1783,7 @@ private struct AnalysisStepRow: View {
                 .shadow(color: isActive ? OnboardingWeb.soulPink.opacity(0.70) : .clear, radius: 5)
 
             Text(title + (isActive ? "" : "..."))
-                .nekoText(.micro)
+                .nekoPersonaText(.body)
                 .foregroundStyle(isDone || isActive ? OnboardingWeb.ink : OnboardingWeb.muted.opacity(0.70))
 
             Spacer()
