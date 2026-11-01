@@ -3906,62 +3906,111 @@ struct ConfirmSheetOverlay: View {
     let hint: String
     let confirmText: String
     var cancelText: String = "取消"
+    var usesPersonaResultButtonStyles = false
     let danger: Bool
     let onConfirm: () -> Void
     let onCancel: () -> Void
+
+    // Local geometry follows Design System v1 §§4, 5 and 8. The project has no
+    // shared spacing/radius tokens yet; do not introduce a separate size scale.
+    private enum Layout {
+        static let contentPadding: CGFloat = 24
+        static let sectionSpacing: CGFloat = 20
+        static let textSpacing: CGFloat = 8
+        static let compactSpacing: CGFloat = 12
+        static let handleWidth: CGFloat = 40
+        static let handleHeight: CGFloat = 4
+        static let buttonHeight: CGFloat = 54
+        static let buttonRadius: CGFloat = 22
+        static let panelRadius: CGFloat = 28
+        // Scoped to the user's compact-dialog reference: two 120pt buttons
+        // with a 24pt gap, allowed to shrink on narrower available widths.
+        static let confirmationActionsMaxWidth: CGFloat = 264
+        static let confirmationActionsSpacing: CGFloat = 24
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture(perform: onCancel)
+                .accessibilityHidden(true)
 
             VStack(spacing: 0) {
                 Capsule()
                     .fill(NekoTheme.muted.opacity(0.35))
-                    .frame(width: 40, height: 4)
-                    .padding(.top, 10)
+                    .frame(width: Layout.handleWidth, height: Layout.handleHeight)
+                    .padding(.top, Layout.compactSpacing)
+                    .accessibilityHidden(true)
 
                 Text(title)
-                    .nekoText(.badge)
+                    .nekoText(.button)
                     .foregroundStyle(NekoTheme.ink)
-                    .padding(.top, 18)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Layout.sectionSpacing)
+                    .accessibilityAddTraits(.isHeader)
 
                 if !hint.isEmpty {
                     Text(hint)
-                        .nekoText(.micro)
+                        .nekoText(.support)
                         .foregroundStyle(NekoTheme.muted)
-                        .padding(.top, 6)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Layout.textSpacing)
                 }
 
-                HStack(spacing: 10) {
-                    Button(cancelText, action: onCancel)
-                        .nekoText(.caption)
-                        .foregroundStyle(NekoTheme.ink)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(red: 0.968, green: 0.944, blue: 0.982), in: Capsule())
+                HStack(spacing: usesPersonaResultButtonStyles ? Layout.confirmationActionsSpacing : Layout.compactSpacing) {
+                    if usesPersonaResultButtonStyles {
+                        Button(cancelText, action: onCancel)
+                            .buttonStyle(PersonaResultActionButtonStyle(isPrimary: true, size: .confirmation))
+                        Button(confirmText, action: onConfirm)
+                            .buttonStyle(PersonaResultActionButtonStyle(isPrimary: false, size: .confirmation))
+                    } else {
+                        Button(cancelText, action: onCancel)
+                            .nekoText(.button)
+                            .foregroundStyle(NekoTheme.soulViolet)
+                            .padding(.horizontal, Layout.compactSpacing)
+                            .frame(maxWidth: .infinity, minHeight: Layout.buttonHeight)
+                            .background(.white, in: RoundedRectangle(cornerRadius: Layout.buttonRadius, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: Layout.buttonRadius, style: .continuous)
+                                    .stroke(NekoTheme.soulViolet, lineWidth: 1)
+                            }
 
-                    Button(confirmText, action: onConfirm)
-                        .nekoText(.caption)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
-                            danger
-                                ? AnyShapeStyle(LinearGradient(colors: [Color(red: 0.92, green: 0.43, blue: 0.36), Color(red: 0.91, green: 0.50, blue: 0.62)], startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(NekoTheme.primaryGradient),
-                            in: Capsule()
-                        )
+                        Button(confirmText, action: onConfirm)
+                            .nekoText(.button)
+                            .foregroundStyle(danger ? Color.red : .white)
+                            .padding(.horizontal, Layout.compactSpacing)
+                            .frame(maxWidth: .infinity, minHeight: Layout.buttonHeight)
+                            .background(
+                                danger ? AnyShapeStyle(.white) : AnyShapeStyle(NekoTheme.primaryGradient),
+                                in: RoundedRectangle(cornerRadius: Layout.buttonRadius, style: .continuous)
+                            )
+                            .overlay {
+                                if danger {
+                                    // DS danger action: white fill, light-red border,
+                                    // semantic red text, never a saturated gradient.
+                                    RoundedRectangle(cornerRadius: Layout.buttonRadius, style: .continuous)
+                                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                }
+                            }
+                    }
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
-                .padding(.bottom, 112)
+                .frame(maxWidth: usesPersonaResultButtonStyles ? Layout.confirmationActionsMaxWidth : .infinity)
+                .padding(.top, Layout.sectionSpacing)
             }
+            .padding(.horizontal, Layout.contentPadding)
+            .padding(.bottom, Layout.contentPadding)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(0.95), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous))
-            .shadow(color: NekoTheme.ink.opacity(0.12), radius: 24, x: 0, y: -6)
+            .background {
+                UnevenRoundedRectangle(topLeadingRadius: Layout.panelRadius, topTrailingRadius: Layout.panelRadius, style: .continuous)
+                    .fill(.white)
+                    // Extend ONLY the surface: controls retain the safe-area
+                    // inset plus 24pt breathing room, without a fixed-height gap.
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }

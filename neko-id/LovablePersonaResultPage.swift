@@ -829,6 +829,51 @@ private struct LovableBondSummarySection: View {
     }
 }
 
+/// Shared with the unsaved-result sheet at the user's request. Preserve the
+/// reference result page's 52pt capsule, colors and shadows as a scoped exception
+/// to the generic 54pt / 22pt-radius button rules. The user-requested compact
+/// confirmation variant uses a 36pt surface with a 44pt hit area; other result
+/// buttons keep their original size and appearance.
+struct PersonaResultActionButtonStyle: ButtonStyle {
+    enum Size {
+        case regular
+        case confirmation
+
+        var visualHeight: CGFloat { self == .confirmation ? 36 : 52 }
+        var hitHeight: CGFloat { max(44, visualHeight) }
+    }
+
+    let isPrimary: Bool
+    var size: Size = .regular
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .nekoPersonaText(.button)
+            .foregroundStyle(isPrimary ? .white : Color(red: 0.500, green: 0.320, blue: 0.590))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .frame(height: size.visualHeight)
+            .background(
+                isPrimary ? AnyShapeStyle(LovableResultStyle.primaryGradient) : AnyShapeStyle(.white),
+                in: Capsule()
+            )
+            .overlay {
+                if !isPrimary {
+                    Capsule()
+                        .stroke(Color(red: 0.780, green: 0.702, blue: 0.949), lineWidth: 1.5)
+                }
+            }
+            .shadow(
+                color: LovableResultStyle.primaryStart.opacity(isPrimary ? 0.26 : 0.10),
+                radius: size == .confirmation ? 8 : (isPrimary ? 14 : 10),
+                x: 0,
+                y: size == .confirmation ? 4 : (isPrimary ? 8 : 5)
+            )
+            .padding(.vertical, (size.hitHeight - size.visualHeight) / 2)
+            .contentShape(Rectangle())
+    }
+}
+
 private struct LovableResultBottomActions: View {
     let isSaving: Bool
     let saveDisabled: Bool
@@ -839,35 +884,13 @@ private struct LovableResultBottomActions: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onRestart) {
-                Text("重新识别")
-                    .nekoPersonaText(.button)
-                    .foregroundStyle(Color(red: 0.500, green: 0.320, blue: 0.590))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(.white, in: Capsule())
-                    .overlay {
-                        Capsule()
-                            .stroke(Color(red: 0.780, green: 0.702, blue: 0.949), lineWidth: 1.5)
-                    }
-                    .shadow(color: LovableResultStyle.primaryStart.opacity(0.10), radius: 10, x: 0, y: 5)
-            }
-            .buttonStyle(.plain)
+            Button("重新识别", action: onRestart)
+                .buttonStyle(PersonaResultActionButtonStyle(isPrimary: false))
 
-            Button(action: onSave) {
-                Text(isSaving ? "保存中…" : "保存结果")
-                    .nekoPersonaText(.button)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(LovableResultStyle.primaryGradient, in: Capsule())
-                    .shadow(color: LovableResultStyle.primaryStart.opacity(0.26), radius: 14, x: 0, y: 8)
-            }
-            .buttonStyle(.plain)
-            .disabled(saveDisabled || isSaving)
-            .opacity(saveDisabled ? 0.58 : 1)
+            Button(isSaving ? "保存中…" : "保存结果", action: onSave)
+                .buttonStyle(PersonaResultActionButtonStyle(isPrimary: true))
+                .disabled(saveDisabled || isSaving)
+                .opacity(saveDisabled ? 0.58 : 1)
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)

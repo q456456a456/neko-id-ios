@@ -111,10 +111,11 @@ struct NativeOnboardingFlowView: View {
 
             if showsUnsavedResultConfirmation {
                 ConfirmSheetOverlay(
-                    title: "要离开这次识别吗？",
-                    hint: "当前结果还没有保存。",
+                    title: "结果还未保存，确定离开吗？",
+                    hint: "",
                     confirmText: "离开",
                     cancelText: "继续查看",
+                    usesPersonaResultButtonStyles: true,
                     danger: true,
                     onConfirm: {
                         showsUnsavedResultConfirmation = false
