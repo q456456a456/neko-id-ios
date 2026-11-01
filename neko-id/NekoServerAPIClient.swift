@@ -10,6 +10,7 @@ import Foundation
 struct NekoServerAPIClient {
     private let baseURL: URL
     private let session: URLSession
+    private let usesBackgroundGeneration: Bool
 
     init(
         baseURL: URL = AppConfig.productionWebURL,
@@ -17,6 +18,9 @@ struct NekoServerAPIClient {
     ) {
         self.baseURL = baseURL
         self.session = session ?? Self.defaultSession
+        // Preserve explicitly injected sessions for callers/tests. Production
+        // generation uses the system-owned transfer, other API calls stay as-is.
+        self.usesBackgroundGeneration = session == nil
     }
 
     func isProtectedMediaURL(_ url: URL) -> Bool {
@@ -473,7 +477,12 @@ struct NekoServerAPIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request, delegate: trace.map { NekoURLSessionMetrics(trace: $0) })
+            if usesBackgroundGeneration && NekoGenerationTransport.handles(path) {
+                metrics["transport"] = "background_upload"
+                (data, response) = try await NekoGenerationTransport.shared.data(for: request, trace: trace)
+            } else {
+                (data, response) = try await session.data(for: request, delegate: trace.map { NekoURLSessionMetrics(trace: $0) })
+            }
         } catch {
             metrics["networkMs"] = NekoPerformanceTrace.milliseconds(since: networkStarted)
             if let error = error as? URLError { metrics["urlErrorCode"] = error.code.rawValue }

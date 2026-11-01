@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct neko_idApp: App {
+    @UIApplicationDelegateAdaptor(NekoAppDelegate.self) private var appDelegate
     @StateObject private var appModel = NekoAppModel()
 
     var body: some Scene {
