@@ -1656,18 +1656,18 @@ private struct VideoClipCard: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [OnboardingWeb.activeBar.opacity(0.70), OnboardingWeb.videoPink.opacity(0.70)], startPoint: .topLeading, endPoint: .bottomTrailing)
-
-            if let data = clip.thumbnailData, let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            } else {
-                Text("▶")
-                    .nekoText(.moduleTitle)
-                    .foregroundStyle(.white.opacity(0.9))
-            }
+                .overlay {
+                    if let data = clip.thumbnailData, let image = UIImage(data: data) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .allowsHitTesting(false)
+                    } else {
+                        Text("▶")
+                            .nekoText(.moduleTitle)
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
 
             LinearGradient(colors: [.clear, .black.opacity(0.36)], startPoint: .center, endPoint: .bottom)
 
