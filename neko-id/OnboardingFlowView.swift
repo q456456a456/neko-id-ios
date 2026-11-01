@@ -919,7 +919,8 @@ private struct OnboardingVideoScreen: View {
             step: 2,
             title: "上传猫咪视频",
             subtitle: "选择 1～3 个猫咪视频，每个需为 5～60 秒",
-            onBack: onBack
+            onBack: onBack,
+            footerUsesSafeAreaInset: !videoClips.isEmpty
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 PhotosPicker(
@@ -1010,34 +1011,11 @@ private struct OnboardingVideoScreen: View {
                         }
                         .padding(.horizontal, 1)
 
-                        if videoClips.count == 1, let clip = videoClips.first {
-                            GeometryReader { proxy in
-                                VideoClipCard(clip: clip) {
-                                    onRemove(clip.id)
-                                }
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                            }
-                            .aspectRatio(3 / 4, contentMode: .fit)
-                        } else {
-                            GeometryReader { proxy in
-                                let cardWidth = proxy.size.width * multipleVideoCardWidthRatio
-                                let cardHeight = cardWidth * 4 / 3
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 12) {
-                                        ForEach(videoClips) { clip in
-                                            VideoClipCard(clip: clip) {
-                                                onRemove(clip.id)
-                                            }
-                                            .frame(width: cardWidth, height: cardHeight)
-                                        }
-                                    }
-                                    .frame(height: cardHeight)
-                                }
-                            }
-                            .aspectRatio(3 / (4 * multipleVideoCardWidthRatio), contentMode: .fit)
-                        }
+                        uploadedVideoPreviews
                     }
+                    // OnboardingScrollableStep contributes 20pt. The extra 4pt
+                    // keeps uploaded media on the canonical 24pt page margin.
+                    .padding(.horizontal, 4)
                     .padding(.top, 16)
                 }
 
@@ -1074,6 +1052,38 @@ private struct OnboardingVideoScreen: View {
             }
             .buttonStyle(OnboardingPrimaryButtonStyle())
             .disabled(isValidating || !selectedVideoItems.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private var uploadedVideoPreviews: some View {
+        if videoClips.count == 1, let clip = videoClips.first {
+            VideoPreviewCard(clip: clip) {
+                onRemove(clip.id)
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            GeometryReader { proxy in
+                let cardWidth = proxy.size.width * multipleVideoCardWidthRatio
+                let cardHeight = cardWidth * 4 / 3
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(videoClips) { clip in
+                            VideoPreviewCard(clip: clip) {
+                                onRemove(clip.id)
+                            }
+                            .frame(width: cardWidth, height: cardHeight)
+                            .id(clip.id)
+                        }
+                    }
+                    .frame(height: cardHeight, alignment: .top)
+                }
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .defaultScrollAnchor(.leading)
+                .scrollClipDisabled()
+            }
+            .aspectRatio(3 / (4 * multipleVideoCardWidthRatio), contentMode: .fit)
         }
     }
 }
@@ -1306,6 +1316,7 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
     let subtitle: String
     let onBack: () -> Void
     let skipAction: (() -> Void)?
+    let footerUsesSafeAreaInset: Bool
     @ViewBuilder let content: Content
     @ViewBuilder let footer: Footer
 
@@ -1315,6 +1326,7 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
         subtitle: String,
         onBack: @escaping () -> Void,
         skipAction: (() -> Void)? = nil,
+        footerUsesSafeAreaInset: Bool = false,
         @ViewBuilder content: () -> Content,
         @ViewBuilder footer: () -> Footer
     ) {
@@ -1323,64 +1335,85 @@ private struct OnboardingScrollableStep<Content: View, Footer: View>: View {
         self.subtitle = subtitle
         self.onBack = onBack
         self.skipAction = skipAction
+        self.footerUsesSafeAreaInset = footerUsesSafeAreaInset
         self.content = content()
         self.footer = footer()
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ZStack(alignment: .bottom) {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        StepBar(step: step)
-                            .padding(.top, 58)
-
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(title)
-                                    .nekoText(.moduleTitle)
-                                    .foregroundStyle(OnboardingWeb.ink)
-                                Spacer()
-                                if let skipAction {
-                                    Button {
-                                        skipAction()
-                                    } label: {
-                                        Text("跳过 ›")
-                                            .nekoText(.button)
-                                            .foregroundStyle(OnboardingWeb.label)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-
-                            Text(subtitle)
-                                .nekoText(.micro)
-                                .foregroundStyle(OnboardingWeb.muted)
-                                .padding(.top, 6)
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.top, 2)
-
-                        content
-                            .padding(.horizontal, 20)
-                            .padding(.top, 24)
-                    }
-                    .padding(.bottom, 152)
-                }
-
-                footer
-                    .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                    .padding(.bottom, 10)
-                    .background(OnboardingFooterFade())
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
-            }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            scrollingLayer
 
             WebBackButton(onBack: onBack)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var scrollingLayer: some View {
+        if footerUsesSafeAreaInset {
+            scrollContent
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    footerContainer
+                        .background(OnboardingWeb.creamBottom)
+                }
+        } else {
+            ZStack(alignment: .bottom) {
+                scrollContent
+                footerContainer
+            }
+        }
+    }
+
+    private var scrollContent: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                StepBar(step: step)
+                    .padding(.top, 58)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(title)
+                            .nekoText(.moduleTitle)
+                            .foregroundStyle(OnboardingWeb.ink)
+                        Spacer()
+                        if let skipAction {
+                            Button {
+                                skipAction()
+                            } label: {
+                                Text("跳过 ›")
+                                    .nekoText(.button)
+                                    .foregroundStyle(OnboardingWeb.label)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Text(subtitle)
+                        .nekoText(.micro)
+                        .foregroundStyle(OnboardingWeb.muted)
+                        .padding(.top, 6)
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 2)
+
+                content
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+            }
+            .padding(.bottom, footerUsesSafeAreaInset ? 24 : 152)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var footerContainer: some View {
+        footer
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+            .background(OnboardingFooterFade())
+            .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 
@@ -1650,7 +1683,7 @@ private struct FlowAvatarView: View {
     }
 }
 
-private struct VideoClipCard: View {
+private struct VideoPreviewCard: View {
     let clip: OnboardingVideoClip
     let onRemove: () -> Void
 
@@ -1678,15 +1711,6 @@ private struct VideoClipCard: View {
                 .frame(width: 28, height: 28)
                 .background(.white.opacity(0.85), in: Circle())
 
-            Text(clip.durationLabel)
-                .nekoText(.tiny)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.35), in: Capsule())
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(7)
-
             Text(clip.label)
                 .nekoText(.tiny)
                 .foregroundStyle(.white)
@@ -1710,6 +1734,15 @@ private struct VideoClipCard: View {
             }
             .buttonStyle(.plain)
             .padding(6)
+        }
+        .overlay(alignment: .topTrailing) {
+            Text(clip.durationLabel)
+                .nekoText(.tiny)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.35), in: Capsule())
+                .padding(7)
         }
         .shadow(color: OnboardingWeb.soulViolet.opacity(0.16), radius: 12, x: 0, y: 8)
     }

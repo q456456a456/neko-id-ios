@@ -576,7 +576,11 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
     var text: String
     var subtext: String?
     var location: String?
-    var tags: [String]
+    var sceneTags: [String]
+    var tags: [String] {
+        get { sceneTags }
+        set { sceneTags = Self.normalizedSceneTags(newValue) }
+    }
     var createdAt: Int64?
     var mediaObjectKey: String?
     var mediaType: String?
@@ -610,6 +614,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         case text
         case subtext
         case location
+        case sceneTags
         case tags
         case createdAt
         case mediaObjectKey
@@ -628,6 +633,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         text: String,
         subtext: String? = nil,
         location: String? = nil,
+        sceneTags: [String]? = nil,
         tags: [String] = [],
         createdAt: Int64? = nil,
         mediaObjectKey: String? = nil,
@@ -644,7 +650,7 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         self.text = text
         self.subtext = subtext
         self.location = location
-        self.tags = tags
+        self.sceneTags = Self.normalizedSceneTags(sceneTags ?? tags)
         self.createdAt = createdAt
         self.mediaObjectKey = mediaObjectKey
         self.mediaType = mediaType
@@ -664,7 +670,11 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         text = try container.decode(String.self, forKey: .text)
         subtext = try container.decodeIfPresent(String.self, forKey: .subtext)
         location = try container.decodeIfPresent(String.self, forKey: .location)
-        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        sceneTags = Self.normalizedSceneTags(
+            try container.decodeIfPresent([String].self, forKey: .sceneTags)
+                ?? container.decodeIfPresent([String].self, forKey: .tags)
+                ?? []
+        )
         createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt)
         mediaObjectKey = try container.decodeIfPresent(String.self, forKey: .mediaObjectKey)
         mediaType = try container.decodeIfPresent(String.self, forKey: .mediaType) ?? "photo"
@@ -679,6 +689,39 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
         }
         share = try container.decodeIfPresent(CatVoiceShare.self, forKey: .share)
         mediaURL = try container.decodeIfPresent(URL.self, forKey: .mediaURL)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(cloudId, forKey: .cloudId)
+        try container.encode(time, forKey: .time)
+        try container.encode(grad, forKey: .grad)
+        try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(subtext, forKey: .subtext)
+        try container.encodeIfPresent(location, forKey: .location)
+        try container.encode(sceneTags, forKey: .sceneTags)
+        try container.encode(sceneTags, forKey: .tags)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(mediaObjectKey, forKey: .mediaObjectKey)
+        try container.encodeIfPresent(mediaType, forKey: .mediaType)
+        try container.encodeIfPresent(aspect, forKey: .aspect)
+        try container.encodeIfPresent(videoDuration, forKey: .videoDuration)
+        try container.encodeIfPresent(analysis, forKey: .analysis)
+        try container.encodeIfPresent(share, forKey: .share)
+        try container.encodeIfPresent(mediaURL, forKey: .mediaURL)
+    }
+
+    private static func normalizedSceneTags(_ values: [String]) -> [String] {
+        var result: [String] = []
+        for value in values {
+            let cleaned = value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "#", with: "")
+            guard cleaned.count >= 4, cleaned.count <= 10, !result.contains(cleaned) else { continue }
+            result.append(cleaned)
+            if result.count == 3 { break }
+        }
+        return result
     }
 }
 

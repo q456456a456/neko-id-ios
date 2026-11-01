@@ -1026,6 +1026,7 @@ private struct HomeView: View {
     @State private var isVoiceDetailPresented = false
     @State private var actionVoice: CatVoiceResult?
     @State private var confirmDeleteVoice: CatVoiceResult?
+    @State private var isSavingActionVoice = false
 
     private var homeVoices: [CatVoiceResult] {
         var voices: [CatVoiceResult] = []
@@ -1132,12 +1133,11 @@ private struct HomeView: View {
             if let actionVoice {
                 VoiceActionSheet(
                     title: "猫咪心声",
-                    saveText: "保存长图",
+                    saveText: "保存图片",
                     showDelete: true,
                     onClose: { self.actionVoice = nil },
                     onSave: {
-                        self.actionVoice = nil
-                        appModel.noticeMessage = "保存长图稍后继续接相册。"
+                        saveVoiceImage(actionVoice)
                     },
                     onDelete: {
                         self.actionVoice = nil
@@ -1210,6 +1210,32 @@ private struct HomeView: View {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "MM 月 dd 日"
         return formatter.string(from: date)
+    }
+
+    private func saveVoiceImage(_ voice: CatVoiceResult) {
+        guard !isSavingActionVoice else { return }
+        isSavingActionVoice = true
+        actionVoice = nil
+
+        Task { @MainActor in
+            defer { isSavingActionVoice = false }
+            do {
+                let image = try await VoiceActionShareImageBuilder.make(
+                    voice: voice,
+                    profile: appModel.catProfile,
+                    persona: appModel.persona,
+                    appModel: appModel
+                )
+                try await VoicePhotoLibrarySaver.save(image)
+                appModel.noticeMessage = "已保存到相册"
+            } catch {
+                print("[HomeView] Failed to save heart voice image: \(error)")
+                appModel.errorMessage = NekoUserFacingError.message(
+                    for: error,
+                    fallback: "保存失败，请重试"
+                )
+            }
+        }
     }
 
     private func deleteVoice(_ voice: CatVoiceResult) {
@@ -1449,8 +1475,8 @@ private struct PendingVoicePublishCard: View {
 
                 HStack {
                     NekoFlowLayout(spacing: 8, lineSpacing: 7) {
-                        ForEach(Array((pending.voice.share?.tags ?? pending.voice.tags).prefix(3)), id: \.self) { tag in
-                            VoiceTagChip(tag: tag.hasPrefix("#") ? tag : "#\(tag)", compact: true)
+                        ForEach(Array(pending.voice.sceneTags.prefix(3)), id: \.self) { tag in
+                            VoiceTagChip(tag: tag, compact: true)
                         }
                     }
                     Spacer()
@@ -1533,12 +1559,12 @@ private struct VoiceTagChip: View {
 
     var body: some View {
         Text(tag)
-            .nekoText(.tiny)
+            .nekoText(.flowStep)
             .foregroundStyle(NekoTheme.soulViolet)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, compact ? 10 : 8)
-            .padding(.vertical, compact ? 5 : 4)
+            .padding(.horizontal, compact ? 12 : 16)
+            .padding(.vertical, 6)
             .background(
                 LinearGradient(
                     colors: [NekoTheme.softPink.opacity(0.86), NekoTheme.softLilac.opacity(0.76)],
@@ -1547,6 +1573,19 @@ private struct VoiceTagChip: View {
                 ),
                 in: Capsule()
             )
+    }
+}
+
+private struct VoiceSceneTagsRow: View {
+    let tags: [String]
+
+    var body: some View {
+        NekoFlowLayout(spacing: 8, lineSpacing: 8) {
+            ForEach(Array(tags.prefix(3)), id: \.self) { tag in
+                VoiceTagChip(tag: tag)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1595,7 +1634,7 @@ private struct VoiceFeedCard: View {
                 HStack(alignment: .bottom, spacing: 8) {
                     Button(action: onSelect) {
                         NekoFlowLayout(spacing: 8, lineSpacing: 7) {
-                            ForEach(Array(voice.tags.prefix(3)), id: \.self) { tag in
+                            ForEach(Array(voice.sceneTags.prefix(3)), id: \.self) { tag in
                                 VoiceTagChip(tag: tag, compact: true)
                             }
 
@@ -2055,67 +2094,84 @@ private struct VoiceActionSheet: View {
                 Capsule()
                     .fill(Color(red: 0.847, green: 0.824, blue: 0.886))
                     .frame(width: 72, height: 3)
-                    .padding(.top, 14)
-                    .padding(.bottom, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 12)
 
                 Text(title)
                     .nekoText(.caption)
                     .foregroundStyle(NekoTheme.ink)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 12)
 
-                HStack(alignment: .top, spacing: 48) {
+                HStack(alignment: .top, spacing: 16) {
                     Button(action: onSave) {
-                        VStack(spacing: 10) {
+                        VStack(spacing: 8) {
                             ZStack {
                                 Circle()
-                                    .fill(NekoTheme.primaryGradient)
-                                    .frame(width: 56, height: 56)
-                                    .shadow(color: NekoTheme.soulViolet.opacity(0.28), radius: 22, x: 0, y: 10)
-                                SavePosterIcon()
-                                    .frame(width: 25, height: 25)
+                                    .fill(NekoTheme.softLilac.opacity(0.72))
+                                    .frame(
+                                        width: NekoActionSheetMetrics.iconDiameter,
+                                        height: NekoActionSheetMetrics.iconDiameter
+                                    )
+                                SavePosterIcon(color: NekoTheme.soulViolet)
+                                    .frame(
+                                        width: NekoActionSheetMetrics.iconSize,
+                                        height: NekoActionSheetMetrics.iconSize
+                                    )
                             }
                             Text(saveText)
-                                .nekoText(.button)
+                                .nekoText(.actionSheetLabel)
                                 .foregroundStyle(NekoTheme.ink)
                         }
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.plain)
 
                     if showDelete {
                         Button(action: onDelete) {
-                            VStack(spacing: 10) {
+                            VStack(spacing: 8) {
                                 ZStack {
                                     Circle()
-                                        .fill(Color(red: 0.988, green: 0.910, blue: 0.929))
-                                        .frame(width: 56, height: 56)
+                                        .fill(NekoTheme.dangerSurface)
+                                        .frame(
+                                            width: NekoActionSheetMetrics.iconDiameter,
+                                            height: NekoActionSheetMetrics.iconDiameter
+                                        )
                                     Image(systemName: "trash")
-                                        .nekoText(.moduleTitle)
-                                        .foregroundStyle(Color(red: 0.941, green: 0.541, blue: 0.639))
+                                        .font(
+                                            .system(
+                                                size: NekoActionSheetMetrics.iconSize,
+                                                weight: .medium
+                                            )
+                                        )
+                                        .foregroundStyle(NekoTheme.dangerRed)
                                 }
                                 Text("删除")
-                                    .nekoText(.button)
-                                    .foregroundStyle(NekoTheme.muted)
+                                    .nekoText(.actionSheetLabel)
+                                    .foregroundStyle(NekoTheme.dangerRed)
                             }
+                            .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, 4)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
-            .padding(.bottom, 28)
+            .padding(.bottom, 20)
             .background(
                 Color(red: 0.992, green: 0.984, blue: 1.0).opacity(0.96),
                 in: UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32, style: .continuous)
             )
-            .shadow(color: NekoTheme.ink.opacity(0.20), radius: 34, x: 0, y: -14)
+            .shadow(color: NekoTheme.ink.opacity(0.12), radius: 20, x: 0, y: -8)
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 }
 
 private struct SavePosterIcon: View {
+    let color: Color
+
     var body: some View {
         Canvas { context, size in
             let stroke = StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
@@ -2142,7 +2198,115 @@ private struct SavePosterIcon: View {
             path.addLine(to: CGPoint(x: w * 0.78, y: h * 0.88))
             path.addLine(to: CGPoint(x: w * 0.92, y: h * 0.74))
 
-            context.stroke(path, with: .color(.white), style: stroke)
+            context.stroke(path, with: .color(color), style: stroke)
+        }
+    }
+}
+
+@MainActor
+private enum VoiceActionShareImageBuilder {
+    static func make(
+        voice: CatVoiceResult,
+        profile: CatProfile?,
+        persona: CatPersonaResult?,
+        appModel: NekoAppModel
+    ) async throws -> UIImage {
+        let photo = try await resolvePhoto(for: voice, appModel: appModel)
+        let analysisText = voice.analysisText
+            ?? "它似乎在表达：这个瞬间里，它正在用自己的方式向你靠近。"
+        let data = VoiceShareCardData(
+            catName: profile?.name ?? "猫咪",
+            mbti: persona?.mbti.nonEmpty ?? "猫咪人格",
+            personalityTitle: persona?.type.nonEmpty ?? "专属小性格",
+            sceneTags: Array(voice.sceneTags.prefix(3)),
+            photo: photo,
+            generatedVoice: voice.text,
+            analysisText: analysisText
+        )
+
+        guard let image = await VoiceShareImageRenderer.render(data: data) else {
+            throw VoiceShareError.renderFailed
+        }
+        return image
+    }
+
+    private static func resolvePhoto(
+        for voice: CatVoiceResult,
+        appModel: NekoAppModel
+    ) async throws -> UIImage {
+        let isVideoCover = voice.mediaType == "video"
+        let cacheObjectKey = isVideoCover
+            ? NekoRemoteImageCache.cacheKey(objectKey: voice.mediaObjectKey, url: voice.mediaURL)
+                .map { "voice-video-cover-v1:\($0)" }
+            : voice.mediaObjectKey
+        let cacheURL = isVideoCover ? nil : voice.mediaURL
+        if let cached = NekoRemoteImageCache.shared.image(
+            objectKey: cacheObjectKey,
+            url: cacheURL
+        ) {
+            return cached
+        }
+
+        let loadingUserID = appModel.session?.user.id
+
+        func load(from url: URL) async throws -> UIImage {
+            let request = await appModel.mediaImageRequest(for: url)
+            let image: UIImage
+            let data: Data
+            if isVideoCover {
+                image = try await VoiceVideoCoverLoader.image(for: request)
+                guard let coverData = image.jpegData(compressionQuality: 0.9) else {
+                    throw URLError(.cannotDecodeContentData)
+                }
+                data = coverData
+            } else {
+                let (imageData, response) = try await URLSession.shared.data(for: request)
+                if let response = response as? HTTPURLResponse,
+                   !(200..<300).contains(response.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                guard let decoded = UIImage(data: imageData) else {
+                    throw VoiceShareError.missingContent
+                }
+                image = decoded
+                data = imageData
+            }
+
+            try Task.checkCancellation()
+            guard appModel.session?.user.id == loadingUserID, !appModel.isDeletingAccount else {
+                throw CancellationError()
+            }
+            NekoRemoteImageCache.shared.store(
+                data: data,
+                objectKey: cacheObjectKey,
+                url: isVideoCover ? nil : url
+            )
+            return image
+        }
+
+        let sourceURL: URL?
+        if let mediaURL = voice.mediaURL {
+            sourceURL = mediaURL
+        } else {
+            sourceURL = await appModel.signedMediaURL(for: voice.mediaObjectKey)
+        }
+        guard let sourceURL else { throw VoiceShareError.missingContent }
+
+        do {
+            return try await load(from: sourceURL)
+        } catch {
+            try Task.checkCancellation()
+            guard appModel.session?.user.id == loadingUserID, !appModel.isDeletingAccount else {
+                throw CancellationError()
+            }
+            guard voice.mediaURL != nil,
+                  let refreshedURL = await appModel.signedMediaURL(
+                    for: voice.mediaObjectKey,
+                    forceRefresh: true
+                  ) else {
+                throw error
+            }
+            return try await load(from: refreshedURL)
         }
     }
 }
@@ -2264,6 +2428,7 @@ private struct VoiceDetailView: View {
                 try await VoicePhotoLibrarySaver.save(image)
                 appModel.noticeMessage = "已保存到相册"
             } catch {
+                print("[VoiceDetailView] Failed to save heart voice image: \(error)")
                 appModel.errorMessage = NekoUserFacingError.message(for: error, fallback: "保存失败，请重试")
             }
         }
@@ -2291,13 +2456,12 @@ private struct VoiceDetailView: View {
             catName: catName,
             mbti: persona?.mbti.nonEmpty ?? "猫咪人格",
             personalityTitle: persona?.type.nonEmpty ?? "专属小性格",
-            personalityTags: Array((voice.share?.tags ?? voice.tags).prefix(3)),
+            sceneTags: Array(voice.sceneTags.prefix(3)),
             photo: photo,
             generatedVoice: voice.text,
-            shareHeadline: voice.share?.headline.nonEmpty ?? voice.text,
-            insightSummary: voice.share?.insight.nonEmpty ?? voice.subtext?.nonEmpty ?? analysisText
+            analysisText: analysisText
         )
-        guard let image = VoiceShareImageRenderer.render(data: data) else {
+        guard let image = await VoiceShareImageRenderer.render(data: data) else {
             throw VoiceShareError.renderFailed
         }
         return image
@@ -5357,10 +5521,11 @@ private struct PublishSuccessScreen: View {
         Task { @MainActor in
             defer { isGeneratingShareImage = false }
             do {
-                let image = try makeShareImage()
+                let image = try await makeShareImage()
                 try await VoicePhotoLibrarySaver.save(image)
-                appModel.noticeMessage = "已保存，可以去晒晒它的小心思了"
+                appModel.noticeMessage = "已保存到相册"
             } catch {
+                print("[VoicePublishSuccessView] Failed to save heart voice image: \(error)")
                 appModel.errorMessage = NekoUserFacingError.message(for: error, fallback: "保存分享图失败，请稍后再试。")
             }
         }
@@ -5374,7 +5539,7 @@ private struct PublishSuccessScreen: View {
         Task { @MainActor in
             defer { isGeneratingShareImage = false }
             do {
-                shareImage = try makeShareImage()
+                shareImage = try await makeShareImage()
                 showsSystemShare = true
             } catch {
                 appModel.errorMessage = NekoUserFacingError.message(for: error, fallback: "分享图生成失败，请稍后再试。")
@@ -5383,53 +5548,26 @@ private struct PublishSuccessScreen: View {
     }
 
     @MainActor
-    private func makeShareImage() throws -> UIImage {
+    private func makeShareImage() async throws -> UIImage {
         guard let photoPreviewImage, let voice else {
             throw VoiceShareError.missingContent
-        }
-
-        var tags: [String] = []
-        for tag in (persona?.tags ?? []) + voice.tags {
-            let cleaned = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleaned.isEmpty, !tags.contains(cleaned) else { continue }
-            tags.append(cleaned)
         }
 
         let data = VoiceShareCardData(
             catName: catName,
             mbti: persona?.mbti.nonEmpty ?? "猫咪人格",
             personalityTitle: persona?.type.nonEmpty ?? "专属小性格",
-            personalityTags: Array((voice.share?.tags.isEmpty == false ? voice.share?.tags ?? [] : tags).prefix(3)),
+            sceneTags: Array(voice.sceneTags.prefix(3)),
             photo: photoPreviewImage,
             generatedVoice: voice.text,
-            shareHeadline: voice.share?.headline.nonEmpty ?? voice.text,
-            insightSummary: shareInsightSummary(for: voice)
+            analysisText: voice.analysisText
+                ?? "它似乎在表达：这个瞬间里，它正在用自己的方式向你靠近。"
         )
 
-        guard let image = VoiceShareImageRenderer.render(data: data) else {
+        guard let image = await VoiceShareImageRenderer.render(data: data) else {
             throw VoiceShareError.renderFailed
         }
         return image
-    }
-
-    private func shareInsightSummary(for voice: CatVoiceResult) -> String {
-        let source: String
-        if let insight = voice.share?.insight.nonEmpty {
-            source = insight
-        } else if let interpretation = voice.analysis?.personalityInterpretation.nonEmpty {
-            source = interpretation
-        } else if let summary = voice.analysis?.observation.nonEmpty {
-            source = summary
-        } else if let personaAnalysis = persona?.analysis.nonEmpty {
-            source = personaAnalysis
-        } else {
-            source = "它正用自己的方式观察世界，也悄悄表达对你的信任。"
-        }
-        let normalized: String = source
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        guard normalized.count > 35 else { return normalized }
-        return String(normalized.prefix(34)) + "…"
     }
 }
 #endif
@@ -5673,6 +5811,10 @@ private struct VoiceResultCard: View {
             )
             .aspectRatio(3 / 4, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+
+            if !isLoading, let sceneTags = voice?.sceneTags, !sceneTags.isEmpty {
+                VoiceSceneTagsRow(tags: sceneTags)
+            }
 
             VoiceInsightBlock(analysis: isLoading ? nil : voice?.analysis, fallbackText: analysisText, isLoading: isLoading)
         }
@@ -5920,8 +6062,7 @@ private struct PublishSuccessVoiceCard: View {
     let voice: CatVoiceResult?
 
     private var tags: [String] {
-        let next = voice?.tags ?? []
-        return next.isEmpty ? ["💗 想念", "😼 傲娇"] : next
+        voice?.sceneTags ?? []
     }
 
     var body: some View {
@@ -6183,17 +6324,8 @@ private struct VoicePreviewCard: View {
                     .foregroundStyle(NekoTheme.muted)
             }
 
-            if !voice.tags.isEmpty {
-                HStack {
-                    ForEach(voice.tags.prefix(3), id: \.self) { tag in
-                        Text(tag)
-                            .nekoText(.tiny)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(NekoTheme.softPink.opacity(0.72), in: Capsule())
-                            .foregroundStyle(NekoTheme.soulViolet)
-                    }
-                }
+            if !voice.sceneTags.isEmpty {
+                VoiceSceneTagsRow(tags: voice.sceneTags)
             }
         }
         .padding(18)

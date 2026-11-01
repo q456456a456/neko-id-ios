@@ -22,6 +22,9 @@ enum NekoTheme {
     static let soulPink = Color(red: 0.898, green: 0.667, blue: 0.800)
     static let softPink = Color(red: 0.964, green: 0.862, blue: 0.910)
     static let softLilac = Color(red: 0.914, green: 0.843, blue: 0.984)
+    static let dangerRed = Color(red: 0.820, green: 0.310, blue: 0.380)
+    static let dangerSurface = Color(red: 0.992, green: 0.925, blue: 0.941)
+    static let dangerBorder = Color(red: 0.820, green: 0.310, blue: 0.380).opacity(0.18)
     static let accent = Color(red: 0.749, green: 0.639, blue: 0.949)
     static let tabActive = Color(red: 0.714, green: 0.604, blue: 0.937)
     static let tabInactive = Color(red: 0.482, green: 0.447, blue: 0.565)
@@ -165,6 +168,7 @@ enum NekoTypography {
         case body
         case support
         case button
+        case actionSheetLabel
         case flowTitle
         case flowSupport
         case flowStep
@@ -198,6 +202,7 @@ enum NekoTypography {
             case .body: 16
             case .support: 14
             case .button: 17
+            case .actionSheetLabel: 16
             case .flowTitle: 24
             case .flowSupport: 14
             case .flowStep: 14
@@ -233,6 +238,7 @@ enum NekoTypography {
             case .body: 24
             case .support: 20
             case .button: 22
+            case .actionSheetLabel: 22
             case .flowTitle: 32
             case .flowSupport: 20
             case .flowStep: 20
@@ -261,7 +267,7 @@ enum NekoTypography {
 
         var weight: Font.Weight {
             switch self {
-            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .flowTitle, .voiceInsightTitle, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
+            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .actionSheetLabel, .flowTitle, .voiceInsightTitle, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
                 .semibold
             case .flowStep, .voiceBubble, .tabBarLabel, .badge, .eyebrow, .caption, .iconSmall, .iconMedium:
                 .medium
@@ -482,6 +488,61 @@ struct NekoSecondaryButtonStyle: ButtonStyle {
             }
             .shadow(color: NekoTheme.soulViolet.opacity(0.10), radius: 18, x: 0, y: 8)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
+    }
+}
+
+enum NekoBottomActionMetrics {
+    static let height: CGFloat = 54
+    static let cornerRadius: CGFloat = 22
+    static let iconSize: CGFloat = 20
+    static let labelSpacing: CGFloat = 8
+}
+
+enum NekoActionSheetMetrics {
+    static let iconDiameter: CGFloat = 46
+    static let iconSize: CGFloat = 21
+}
+
+struct NekoBottomPrimaryActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .nekoText(.button)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: NekoBottomActionMetrics.height)
+            .background(
+                NekoTheme.primaryGradient,
+                in: RoundedRectangle(
+                    cornerRadius: NekoBottomActionMetrics.cornerRadius,
+                    style: .continuous
+                )
+            )
+            .opacity(configuration.isPressed ? 0.86 : 1)
+    }
+}
+
+struct NekoBottomSecondaryActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .nekoText(.button)
+            .foregroundStyle(NekoTheme.ink)
+            .frame(maxWidth: .infinity)
+            .frame(height: NekoBottomActionMetrics.height)
+            .background(
+                NekoTheme.cardWhite,
+                in: RoundedRectangle(
+                    cornerRadius: NekoBottomActionMetrics.cornerRadius,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: NekoBottomActionMetrics.cornerRadius,
+                    style: .continuous
+                )
+                .stroke(NekoTheme.softLilac, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
 

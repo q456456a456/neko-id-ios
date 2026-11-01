@@ -14,7 +14,7 @@ enum HeartVoiceLayout {
     static let bubbleHeight: CGFloat = 92
     static let bubbleInset: CGFloat = 16
     static let subjectClearance: CGFloat = 18
-    static let actionHeight: CGFloat = 54
+    static let actionHeight = NekoBottomActionMetrics.height
     static let stageTopInset: CGFloat = 8
     static let navigationInset: CGFloat = 12
     static let navigationTopInset: CGFloat = 20
@@ -557,48 +557,28 @@ struct HeartVoiceBottomActionBar: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onSave) {
-                Label(isBusy ? "保存中…" : "保存图片", systemImage: "square.and.arrow.down")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: HeartVoiceLayout.actionHeight)
+                HStack(spacing: NekoBottomActionMetrics.labelSpacing) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: NekoBottomActionMetrics.iconSize, weight: .medium))
+                    Text(isBusy ? "保存中…" : "保存图片")
+                }
             }
-            .buttonStyle(HeartVoiceSecondaryButtonStyle())
+            .buttonStyle(NekoBottomSecondaryActionButtonStyle())
             .disabled(isBusy)
 
             Button(action: onShare) {
-                Label("分享心声", systemImage: "paperplane.fill")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: HeartVoiceLayout.actionHeight)
+                HStack(spacing: NekoBottomActionMetrics.labelSpacing) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: NekoBottomActionMetrics.iconSize, weight: .medium))
+                    Text("分享心声")
+                }
             }
-            .buttonStyle(HeartVoicePrimaryButtonStyle())
+            .buttonStyle(NekoBottomPrimaryActionButtonStyle())
             .disabled(isBusy)
         }
         .padding(.horizontal, HeartVoiceLayout.pageMargin)
         .padding(.top, HeartVoiceLayout.actionTopInset)
         .padding(.bottom, HeartVoiceLayout.actionBottomInset)
         .background(Color.white.opacity(0.92).ignoresSafeArea(edges: .bottom))
-    }
-}
-
-private struct HeartVoicePrimaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .nekoText(.button)
-            .foregroundStyle(.white)
-            .background(NekoTheme.primaryGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .opacity(configuration.isPressed ? 0.86 : 1)
-    }
-}
-
-private struct HeartVoiceSecondaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .nekoText(.button)
-            .foregroundStyle(NekoTheme.ink)
-            .background(NekoTheme.cardWhite, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(NekoTheme.softLilac, lineWidth: 1)
-            }
-            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
