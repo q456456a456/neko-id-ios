@@ -8,9 +8,8 @@
 import Foundation
 
 enum AppConfig {
-    // Temporary direct-IP endpoint for pre-ICP Mainland China testing.
-    // Switch back to https://api.nekoid.cn before App Store submission.
-    static let productionWebURL = URL(string: "http://14.103.91.205")!
+    // Mainland China API endpoint. Use the domain with verified HTTPS.
+    static let productionWebURL = URL(string: "https://api.nekoid.cn")!
     static let serverRequestTimeout: TimeInterval = 90
     static let serverResourceTimeout: TimeInterval = 120
     static let maxAvatarImageBytes = 10 * 1024 * 1024

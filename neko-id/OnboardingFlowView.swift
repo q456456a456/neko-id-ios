@@ -37,6 +37,7 @@ struct NativeOnboardingFlowView: View {
     @State private var didHydrateExistingProfile = false
     @State private var pendingSaveAfterLogin = false
     @State private var showsUnsavedResultConfirmation = false
+    @State private var showsExistingAccountLogin = false
 
     var body: some View {
         ZStack {
@@ -46,9 +47,12 @@ struct NativeOnboardingFlowView: View {
                 switch step {
                 case .welcome:
                     OnboardingWelcomeScreen(
-                        onExit: appModel.catProfile == nil ? nil : {
+                        onExit: appModel.session == nil ? nil : {
                             appModel.cancelOnboardingIfPossible()
                         },
+                        onLogin: appModel.session == nil ? {
+                            showsExistingAccountLogin = true
+                        } : nil,
                         onStart: {
                             goForward()
                         }
@@ -115,7 +119,7 @@ struct NativeOnboardingFlowView: View {
                     hint: "",
                     confirmText: "离开",
                     cancelText: "继续查看",
-                    usesPersonaResultButtonStyles: true,
+                    buttonAppearance: .compactPersonaExit,
                     danger: true,
                     onConfirm: {
                         showsUnsavedResultConfirmation = false
@@ -158,6 +162,18 @@ struct NativeOnboardingFlowView: View {
             pendingSaveAfterLogin = false
             saveResult()
         }
+        .fullScreenCover(isPresented: $showsExistingAccountLogin) {
+            LoginView(
+                title: "登录喵一下",
+                subtitle: "登录后，找回你的猫咪档案和心声。",
+                allowDismiss: true,
+                reloadCloudStateAfterLogin: true,
+                onAuthenticated: { showsExistingAccountLogin = false },
+                onCancel: { showsExistingAccountLogin = false }
+            )
+            .nekoDismissKeyboardOnTap()
+            .nekoToastHost(errorMessage: $appModel.errorMessage, noticeMessage: $appModel.noticeMessage)
+        }
         .fullScreenCover(isPresented: $showsCamera) {
             NekoCameraView(
                 onClose: { showsCamera = false },
@@ -173,7 +189,7 @@ struct NativeOnboardingFlowView: View {
         guard !appModel.isBusy, step != .analyzing, !isValidatingProfile, !isValidatingVideo else {
             return false
         }
-        return step.rawValue > NativeOnboardingStep.welcome.rawValue || appModel.catProfile != nil
+        return step.rawValue > NativeOnboardingStep.welcome.rawValue || appModel.session != nil
     }
 
     private func handleEdgeSwipeBack() {
@@ -184,7 +200,7 @@ struct NativeOnboardingFlowView: View {
 
         if step.rawValue > NativeOnboardingStep.welcome.rawValue {
             goBack()
-        } else if appModel.catProfile != nil {
+        } else if appModel.session != nil {
             appModel.cancelOnboardingIfPossible()
         }
     }
@@ -654,6 +670,7 @@ private struct NekoOnboardingBackground: View {
 
 private struct OnboardingWelcomeScreen: View {
     let onExit: (() -> Void)?
+    let onLogin: (() -> Void)?
     let onStart: () -> Void
 
     var body: some View {
@@ -709,6 +726,25 @@ private struct OnboardingWelcomeScreen: View {
                 }
                 .padding(.horizontal, 28)
                 .safeAreaPadding(.bottom, 16)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if let onLogin {
+                Button(action: onLogin) {
+                    HStack(spacing: 4) {
+                        Text("已有账号，去登录")
+                        Image(systemName: "chevron.right")
+                            .accessibilityHidden(true)
+                    }
+                    .nekoText(.support)
+                    .foregroundStyle(NekoTheme.inkSoft)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .padding(.trailing, 24)
+                .accessibilityIdentifier("onboarding.existingAccountLogin")
             }
         }
     }

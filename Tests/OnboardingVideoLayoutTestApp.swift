@@ -46,7 +46,7 @@ private enum OnboardingVideoLayoutChecks {
     static func checkCard(_ clip: OnboardingVideoClip, width: CGFloat, directory: URL, label: String) -> Bool {
         let padding: CGFloat = 48
         let height = width * 4 / 3
-        let content = VideoClipCard(clip: clip, onRemove: {})
+        let content = VideoPreviewCard(clip: clip, onRemove: {})
             .frame(width: width, height: height)
             .padding(padding)
             .background(Color(red: 1, green: 0, blue: 0))

@@ -124,20 +124,12 @@ private struct VoiceSharePhotoStage: View {
     var body: some View {
         GeometryReader { proxy in
             let stageSize = proxy.size
-            let bubbleWidthRatio = SubjectLayoutEngine.bubbleWidthRatio(
-                for: subject,
-                detectionFinished: true
-            )
-            let bubbleWidth = stageSize.width * bubbleWidthRatio
-            let bubbleHeight = measuredBubbleHeight(
-                text: data.generatedVoice,
-                width: bubbleWidth
-            )
             let layout = SubjectLayoutEngine.layout(
                 image: data.photo,
                 stageSize: stageSize,
                 subject: subject,
-                bubbleSize: CGSize(width: bubbleWidth, height: bubbleHeight)
+                catName: data.catName,
+                text: data.generatedVoice
             )
 
             ZStack(alignment: .topLeading) {
@@ -148,7 +140,7 @@ private struct VoiceSharePhotoStage: View {
                     .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
                     .position(x: layout.imageFrame.midX, y: layout.imageFrame.midY)
 
-                VoiceShareSpeechBubble(
+                SpeechBubbleView(
                     catName: data.catName,
                     text: data.generatedVoice,
                     placement: layout.bubblePlacement
@@ -161,50 +153,6 @@ private struct VoiceSharePhotoStage: View {
         }
     }
 
-    private func measuredBubbleHeight(text: String, width: CGFloat) -> CGFloat {
-        let textWidth = max(1, width - VoiceShareLayout.bubblePadding * 2)
-        let estimatedCharactersPerLine = max(5, Int(textWidth / 12))
-        let estimatedLineCount = max(
-            1,
-            Int(ceil(Double(text.count) / Double(estimatedCharactersPerLine)))
-        )
-        let contentHeight = CGFloat(estimatedLineCount) * 16 + 18
-            + VoiceShareLayout.bubblePadding * 2
-        return max(VoiceShareLayout.bubbleMinimumHeight, min(112, contentHeight))
-    }
-}
-
-private struct VoiceShareSpeechBubble: View {
-    let catName: String
-    let text: String
-    let placement: HeartVoiceBubblePlacement
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(catName)
-                .nekoText(.tiny)
-                .foregroundStyle(NekoTheme.muted)
-                .lineLimit(1)
-            Text(text)
-                .nekoText(.micro)
-                .foregroundStyle(NekoTheme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(VoiceShareLayout.bubblePadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(NekoTheme.softLilac.opacity(0.92), lineWidth: 1)
-        }
-        .overlay(alignment: placement == .topLeft ? .bottomTrailing : .bottomLeading) {
-            HeartVoiceBubbleTail()
-                .fill(Color.white.opacity(0.90))
-                .frame(width: 12, height: 8)
-                .scaleEffect(x: placement == .topLeft ? -1 : 1, y: 1)
-                .offset(x: placement == .topLeft ? -10 : 10, y: 5)
-        }
-    }
 }
 
 private struct VoiceShareTagFlowLayout: Layout {
@@ -414,4 +362,3 @@ enum VoiceShareError: LocalizedError {
         }
     }
 }
-

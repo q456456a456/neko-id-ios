@@ -207,7 +207,7 @@ enum NekoTypography {
             case .flowSupport: 14
             case .flowStep: 14
             case .flowInput: 16
-            case .voiceBubble: 16
+            case .voiceBubble: 15
             case .voiceInsightTitle: 16
             case .voiceInsightBody: 15
             case .tabBarLabel: 13

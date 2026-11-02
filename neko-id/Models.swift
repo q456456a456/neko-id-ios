@@ -717,7 +717,9 @@ struct CatVoiceResult: Codable, Equatable, Identifiable {
             let cleaned = value
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .replacingOccurrences(of: "#", with: "")
-            guard cleaned.count >= 4, cleaned.count <= 10, !result.contains(cleaned) else { continue }
+            // New generations use 2–5 characters; retain older 6–10-character
+            // labels when decoding saved voices instead of silently dropping them.
+            guard cleaned.count >= 2, cleaned.count <= 10, !result.contains(cleaned) else { continue }
             result.append(cleaned)
             if result.count == 3 { break }
         }

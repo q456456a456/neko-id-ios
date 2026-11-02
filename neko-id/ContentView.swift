@@ -38,6 +38,23 @@ struct ContentView: View {
         .task {
             await appModel.bootstrap()
         }
+        .overlay {
+            if appModel.isProfileRequiredPromptPresented {
+                ConfirmSheetOverlay(
+                    title: "先创建猫咪档案",
+                    hint: "生成心声前，先创建猫咪档案，让 AI 更了解它。",
+                    confirmText: "去创建档案",
+                    buttonAppearance: .personaResult,
+                    danger: false,
+                    onConfirm: {
+                        appModel.startOnboarding()
+                    },
+                    onCancel: {
+                        appModel.isProfileRequiredPromptPresented = false
+                    }
+                )
+            }
+        }
         .nekoToastHost(
             errorMessage: $appModel.errorMessage,
             noticeMessage: $appModel.noticeMessage
@@ -311,7 +328,7 @@ private struct LaunchingView: View {
     }
 }
 
-private struct LoginView: View {
+struct LoginView: View {
     @EnvironmentObject private var appModel: NekoAppModel
     let title: String
     let subtitle: String
@@ -378,6 +395,13 @@ private struct LoginView: View {
             }
         }
         .background(NekoBackground())
+        .nekoEdgeSwipeBack(
+            isEnabled: allowDismiss && !isBusy && !isConsentSheetPresented
+                && !isPrivacyPolicyPresented && !isTermsOfServicePresented
+        ) {
+            focusedField = nil
+            onCancel()
+        }
         .sheet(isPresented: $isPrivacyPolicyPresented) {
             NavigationStack {
                 PrivacyPolicyView()
@@ -1060,61 +1084,54 @@ private struct HomeView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         MainTabPageTitle(title: "首页")
 
-                        if let profile = appModel.catProfile {
-                            HStack(spacing: 8) {
-                                Text("💭")
-                                    .nekoText(.cardTitle)
-                                Text("猫咪心声")
-                                    .nekoText(.button)
-                                    .foregroundStyle(NekoTheme.ink)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 24)
+                        HStack(spacing: 8) {
+                            Text("💭")
+                                .nekoText(.cardTitle)
+                            Text("猫咪心声")
+                                .nekoText(.button)
+                                .foregroundStyle(NekoTheme.ink)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 24)
 
-                            if !homeVoices.isEmpty || !appModel.pendingVoicePublishes.isEmpty {
-                                VStack(spacing: 18) {
-                                    ForEach(appModel.pendingVoicePublishes) { pending in
-                                        PendingVoicePublishCard(
-                                            pending: pending,
-                                            catName: profile.name,
-                                            onRetry: { appModel.retryPendingVoicePublish(id: pending.id) }
-                                        )
-                                    }
-                                    ForEach(voiceGroups) { group in
-                                        VStack(spacing: 10) {
-                                            DayDivider(label: group.label)
-                                            ForEach(group.voices, id: \.id) { voice in
-                                                TimelineVoiceRow(
-                                                    availableWidth: max(proxy.size.width - 40, 1),
-                                                    voice: voice,
-                                                    profile: profile,
-                                                    onSelect: {
-                                                        selectedVoice = voice
-                                                        isVoiceDetailPresented = true
-                                                    },
-                                                    onMore: {
-                                                        actionVoice = voice
-                                                    }
-                                                )
-                                            }
+                        if let profile = appModel.catProfile,
+                           !homeVoices.isEmpty || !appModel.pendingVoicePublishes.isEmpty {
+                            VStack(spacing: 18) {
+                                ForEach(appModel.pendingVoicePublishes) { pending in
+                                    PendingVoicePublishCard(
+                                        pending: pending,
+                                        catName: profile.name,
+                                        onRetry: { appModel.retryPendingVoicePublish(id: pending.id) }
+                                    )
+                                }
+                                ForEach(voiceGroups) { group in
+                                    VStack(spacing: 10) {
+                                        DayDivider(label: group.label)
+                                        ForEach(group.voices, id: \.id) { voice in
+                                            TimelineVoiceRow(
+                                                availableWidth: max(proxy.size.width - 40, 1),
+                                                voice: voice,
+                                                profile: profile,
+                                                onSelect: {
+                                                    selectedVoice = voice
+                                                    isVoiceDetailPresented = true
+                                                },
+                                                onMore: {
+                                                    actionVoice = voice
+                                                }
+                                            )
                                         }
                                     }
                                 }
-                                .padding(.horizontal, 20)
-                                .padding(.top, 12)
-                            } else {
-                                EmptyFeedCard(profile: profile) {
-                                    isPublishSheetPresented = true
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.top, 14)
-                            }
-                        } else {
-                            MissingProfileCard {
-                                appModel.startOnboarding()
                             }
                             .padding(.horizontal, 20)
-                            .padding(.top, 24)
+                            .padding(.top, 12)
+                        } else {
+                            EmptyFeedCard(profile: appModel.catProfile) {
+                                isPublishSheetPresented = appModel.requestVoiceGeneration()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 14)
                         }
                     }
                     .padding(.bottom, 156)
@@ -1125,7 +1142,7 @@ private struct HomeView: View {
             HomeTabBar(
                 active: .home,
                 onHome: {},
-                onPublish: { isPublishSheetPresented = true },
+                onPublish: { isPublishSheetPresented = appModel.requestVoiceGeneration() },
                 onAccount: onAccount
             )
             .zIndex(110)
@@ -1269,7 +1286,7 @@ private struct HomeVoiceGroup: Identifiable {
 }
 
 private struct EmptyFeedCard: View {
-    let profile: CatProfile
+    let profile: CatProfile?
     let onPublish: () -> Void
 
     var body: some View {
@@ -1281,7 +1298,7 @@ private struct EmptyFeedCard: View {
                         .frame(width: 76, height: 76)
                         .blur(radius: 2)
 
-                    CatAvatarView(localImage: nil, remoteURL: profile.avatarURL, objectKey: profile.avatarObjectKey, size: 56)
+                    CatAvatarView(localImage: nil, remoteURL: profile?.avatarURL, objectKey: profile?.avatarObjectKey, size: 56)
                         .padding(10)
                         .background(NekoTheme.photoPlaceholderGradient, in: Circle())
                         .shadow(color: NekoTheme.soulViolet.opacity(0.18), radius: 24, x: 0, y: 10)
@@ -2678,7 +2695,11 @@ private struct MeView: View {
 
                         MeSection(title: "我的猫咪") {
                             MeRowButton(icon: "pawprint.fill", title: "猫咪档案", sub: "基本信息与人格") {
-                                isEditProfilePresented = true
+                                if appModel.catProfile == nil {
+                                    appModel.startOnboarding()
+                                } else {
+                                    isEditProfilePresented = true
+                                }
                             }
                             MeRowButton(icon: "quote.bubble.fill", title: "猫咪心声", sub: "查看和管理所有心声") {
                                 isManageVoicesPresented = true
@@ -2702,7 +2723,7 @@ private struct MeView: View {
             HomeTabBar(
                 active: .me,
                 onHome: onHome,
-                onPublish: { isPublishSheetPresented = true },
+                onPublish: { isPublishSheetPresented = appModel.requestVoiceGeneration() },
                 onAccount: {}
             )
             .zIndex(110)
@@ -3705,7 +3726,7 @@ private struct ManageVoicesView: View {
                     Spacer()
                 } else if voices.isEmpty {
                     ManageVoicesEmptyState {
-                        isPublishSheetPresented = true
+                        isPublishSheetPresented = appModel.requestVoiceGeneration()
                     }
                     .padding(.horizontal, 32)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -3780,7 +3801,7 @@ private struct ManageVoicesView: View {
                 .environmentObject(appModel)
             } else {
                 ManageVoicesEmptyState {
-                    isPublishSheetPresented = true
+                    isPublishSheetPresented = appModel.requestVoiceGeneration()
                 }
                 .padding(24)
                 .background { NekoBackground() }
@@ -4066,14 +4087,25 @@ private struct ManageVoiceCard: View {
 }
 
 struct ConfirmSheetOverlay: View {
+    enum ButtonAppearance {
+        case standard
+        case compactPersonaExit
+        // User-approved reference: match the result page's 52pt capsule buttons.
+        case personaResult
+    }
+
     let title: String
     let hint: String
     let confirmText: String
     var cancelText: String = "取消"
-    var usesPersonaResultButtonStyles = false
+    var buttonAppearance: ButtonAppearance = .standard
     let danger: Bool
     let onConfirm: () -> Void
     let onCancel: () -> Void
+
+    private var usesCompactPersonaButtons: Bool {
+        buttonAppearance == .compactPersonaExit
+    }
 
     // Local geometry follows Design System v1 §§4, 5 and 8. The project has no
     // shared spacing/radius tokens yet; do not introduce a separate size scale.
@@ -4124,13 +4156,19 @@ struct ConfirmSheetOverlay: View {
                         .padding(.top, Layout.textSpacing)
                 }
 
-                HStack(spacing: usesPersonaResultButtonStyles ? Layout.confirmationActionsSpacing : Layout.compactSpacing) {
-                    if usesPersonaResultButtonStyles {
+                HStack(spacing: usesCompactPersonaButtons ? Layout.confirmationActionsSpacing : Layout.compactSpacing) {
+                    switch buttonAppearance {
+                    case .compactPersonaExit:
                         Button(cancelText, action: onCancel)
                             .buttonStyle(PersonaResultActionButtonStyle(isPrimary: true, size: .confirmation))
                         Button(confirmText, action: onConfirm)
                             .buttonStyle(PersonaResultActionButtonStyle(isPrimary: false, size: .confirmation))
-                    } else {
+                    case .personaResult:
+                        Button(cancelText, action: onCancel)
+                            .buttonStyle(PersonaResultActionButtonStyle(isPrimary: false))
+                        Button(confirmText, action: onConfirm)
+                            .buttonStyle(PersonaResultActionButtonStyle(isPrimary: true))
+                    case .standard:
                         Button(cancelText, action: onCancel)
                             .nekoText(.button)
                             .foregroundStyle(NekoTheme.soulViolet)
@@ -4162,7 +4200,7 @@ struct ConfirmSheetOverlay: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: usesPersonaResultButtonStyles ? Layout.confirmationActionsMaxWidth : .infinity)
+                .frame(maxWidth: usesCompactPersonaButtons ? Layout.confirmationActionsMaxWidth : .infinity)
                 .padding(.top, Layout.sectionSpacing)
             }
             .padding(.horizontal, Layout.contentPadding)
@@ -5790,7 +5828,7 @@ private struct PublishBottomCTA: View {
     }
 }
 
-private struct VoiceResultCard: View {
+struct VoiceResultCard: View {
     let catName: String
     let photoPreviewImage: UIImage?
     let voice: CatVoiceResult?
@@ -5809,7 +5847,6 @@ private struct VoiceResultCard: View {
                 detectionFinished: detectionFinished,
                 showsLoadingIndicator: isLoading
             )
-            .aspectRatio(3 / 4, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
 
             if !isLoading, let sceneTags = voice?.sceneTags, !sceneTags.isEmpty {
@@ -5863,48 +5900,11 @@ private struct VoiceResultPhotoStage: View {
     let showsLoadingIndicator: Bool
 
     var body: some View {
-        GeometryReader { proxy in
-            let widthRatio = SubjectLayoutEngine.bubbleWidthRatio(
-                for: subject,
-                detectionFinished: detectionFinished
-            )
-            let bubbleSize = CGSize(
-                width: proxy.size.width * widthRatio,
-                height: HeartVoiceLayout.bubbleHeight
-            )
-            let layout = SubjectLayoutEngine.layout(
-                image: image,
-                stageSize: proxy.size,
-                subject: subject,
-                bubbleSize: bubbleSize
-            )
-            let stageBounds = CGRect(origin: .zero, size: proxy.size)
-                .insetBy(dx: HeartVoiceLayout.bubbleInset, dy: HeartVoiceLayout.bubbleInset)
-            let bubbleFrame = layout.bubbleFrame.clamped(to: stageBounds)
-
-            ZStack(alignment: .topLeading) {
-                NekoTheme.photoPlaceholderGradient
-                    .overlay(alignment: .topLeading) {
-                        if let image {
-                            Image(uiImage: image)
-                                .resizable()
-                                .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
-                                .position(x: layout.imageFrame.midX, y: layout.imageFrame.midY)
-                        }
-                    }
-
-                VoiceResultSpeechBubble(
-                    catName: catName,
-                    text: text,
-                    showsLoadingIndicator: showsLoadingIndicator,
-                    placement: layout.bubblePlacement
-                )
-                    .frame(width: bubbleFrame.width, height: bubbleFrame.height, alignment: .topLeading)
-                    .position(x: bubbleFrame.midX, y: bubbleFrame.midY)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        }
+        PhotoStageView(
+            image: image, catName: catName, voiceText: text,
+            subject: subject, detectionFinished: detectionFinished,
+            showsLoadingIndicator: showsLoadingIndicator
+        )
     }
 }
 
@@ -5916,49 +5916,6 @@ private extension CGRect {
             width: min(width, bounds.width),
             height: min(height, bounds.height)
         )
-    }
-}
-
-private struct VoiceResultSpeechBubble: View {
-    let catName: String
-    let text: String
-    let showsLoadingIndicator: Bool
-    let placement: HeartVoiceBubblePlacement
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(catName)
-                .nekoText(.flowStep)
-                .foregroundStyle(NekoTheme.muted)
-                .lineLimit(1)
-
-            HStack(spacing: 6) {
-                if showsLoadingIndicator {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(NekoTheme.soulViolet)
-                }
-                Text(text)
-                    .nekoText(.voiceBubble)
-                    .foregroundStyle(NekoTheme.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(HeartVoiceLayout.bubblePadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(NekoTheme.cardWhite.opacity(0.96), in: Capsule())
-        .overlay {
-            Capsule().stroke(NekoTheme.softLilac, lineWidth: 1)
-        }
-        .overlay(alignment: placement == .topLeft ? .bottomTrailing : .bottomLeading) {
-            HeartVoiceBubbleTail()
-                .fill(NekoTheme.cardWhite.opacity(0.96))
-                .frame(width: 18, height: 12)
-                .scaleEffect(x: placement == .topLeft ? -1 : 1, y: 1)
-                .offset(x: placement == .topLeft ? -24 : 24, y: 8)
-        }
     }
 }
 
@@ -5994,6 +5951,8 @@ private struct VoiceInsightBlock: View {
             } else {
                 Text(compactAnalysis)
                     .nekoText(.voiceInsightBody)
+                    .lineLimit(5)
+                    .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

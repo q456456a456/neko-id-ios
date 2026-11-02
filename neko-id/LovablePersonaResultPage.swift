@@ -61,31 +61,47 @@ struct LovablePersonaResultPage: View {
                         personaMbti: personaMbti,
                         coreDescription: coreDescription,
                         contentWidth: proxy.size.width,
-                        viewportHeight: proxy.size.height,
+                        viewportHeight: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom,
+                        contentOverlap: LovableResultLayout.panelRadius,
                         onAvatarImageLoaded: { loadedAvatarImage = $0 }
                     )
                     .overlay(alignment: .top) {
                         SafeAreaTopBar(onBack: onBack)
-                            .padding(.horizontal, 20)
-                            .padding(.top, proxy.safeAreaInsets.top + 10)
+                            .padding(.horizontal, LovableResultLayout.pageMargin)
+                            .padding(.top, proxy.safeAreaInsets.top + LovableResultLayout.compactGap)
                     }
 
-                    LovablePersonaDimensionsSection(
-                        catName: displayName,
-                        dimensions: persona.dimensions
-                    )
+                    VStack(alignment: .leading, spacing: 0) {
+                        LovablePersonaDimensionsSection(
+                            catName: displayName,
+                            dimensions: persona.dimensions
+                        )
 
-                    LovableCatInsightSection(
-                        catName: displayName,
-                        insights: persona.insights
-                    )
+                        LovableCatInsightSection(
+                            catName: displayName,
+                            insights: persona.insights
+                        )
 
-                    LovableBondSummarySection(
-                        catName: displayName,
-                        quote: persona.bondSummary.quote
-                    )
+                        LovableBondSummarySection(
+                            catName: displayName,
+                            quote: persona.bondSummary.quote
+                        )
 
-                    Color.clear.frame(height: 24)
+                        Color.clear.frame(height: LovableResultLayout.pageMargin)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        LovableResultStyle.bgBottom
+                            .overlay(alignment: .top) {
+                                LovableResultStyle.resultBackground
+                                    .frame(height: proxy.size.height * 0.4)
+                            }
+                            .clipShape(UnevenRoundedRectangle(
+                                topLeadingRadius: LovableResultLayout.panelRadius,
+                                topTrailingRadius: LovableResultLayout.panelRadius
+                            ))
+                    }
+                    .padding(.top, -LovableResultLayout.panelRadius)
                 }
                 .frame(width: proxy.size.width, alignment: .leading)
             }
@@ -96,7 +112,9 @@ struct LovablePersonaResultPage: View {
                 LovableResultBottomActions(
                     isSaving: isSaving,
                     saveDisabled: saveDisabled,
-                    bottomInset: max(proxy.safeAreaInsets.bottom, 10),
+                    // The system safe area supplies the reference's home-indicator
+                    // clearance; do not add another strip below the buttons.
+                    bottomInset: 0,
                     contentWidth: proxy.size.width,
                     onRestart: onRestart,
                     onSave: onSave
@@ -207,9 +225,11 @@ private enum LovableResultStyle {
     static let heroCopyShadow = Color.black.opacity(0.20)
     static let primaryStart = Color(red: 0.714, green: 0.604, blue: 0.937) // #B69AEF
     static let primaryEnd = Color(red: 0.902, green: 0.722, blue: 0.812)   // #E6B8CF
-    static let heroTitleStart = Color(red: 0.659, green: 0.545, blue: 0.918) // #A88BEA
-    static let heroTitleMid = Color(red: 0.784, green: 0.588, blue: 0.878)   // #C896E0
-    static let heroTitleEnd = Color(red: 0.937, green: 0.686, blue: 0.784)   // #EFAFC8
+    // Explicit reference-design exception: only the final two title characters
+    // share this purple-to-pink gradient, never the whole title or other UI.
+    static let heroTitleStart = Color(red: 0.49, green: 0.22, blue: 0.65)
+    static let heroTitleEnd = Color(red: 0.84, green: 0.42, blue: 0.62)
+    static let identityInk = Color(red: 0.40, green: 0.20, blue: 0.59)
 
     static let resultBackground = LinearGradient(
         colors: [bgTop, bgMid, bgBottom],
@@ -224,11 +244,26 @@ private enum LovableResultStyle {
     )
 
     static let heroTitleGradient = LinearGradient(
-        colors: [heroTitleStart, heroTitleMid, heroTitleEnd],
+        colors: [heroTitleStart, heroTitleEnd],
         startPoint: .leading,
         endPoint: .trailing
     )
 
+}
+
+// Design System v1 §§4–5 geometry. There are no shared spacing/radius tokens
+// yet; these names only reuse its existing grid, not a new page-specific scale.
+private enum LovableResultLayout {
+    static let pageMargin: CGFloat = 24
+    static let cardMargin: CGFloat = 20
+    static let cardPadding: CGFloat = 20
+    static let sectionPadding: CGFloat = 12
+    static let compactGap: CGFloat = 8
+    static let textGap: CGFloat = 4
+    static let titleGap: CGFloat = 12
+    static let cardRadius: CGFloat = 24
+    static let panelRadius: CGFloat = 28
+    static let dimensionRowHeight: CGFloat = 52
 }
 
 private enum LovablePersonaCopy {
@@ -293,28 +328,43 @@ private enum LovablePersonaCopy {
     }
 }
 
-private enum LovablePersonaTitleLayout {
-    static func lines(for title: String) -> [String] {
-        let chars = Array(title)
-        let count = chars.count
-        guard count > 6 else { return [title] }
-        let splitIndex = bestSplitIndex(chars)
-        return [String(chars[..<splitIndex]), String(chars[splitIndex...])]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+private enum LovablePersonaTitleStyle {
+    static func text(_ title: String) -> Text {
+        // Follow the corrected reference ("从容随和大" + "方派"). Character
+        // suffixes preserve Unicode clusters; short/empty titles stay solid.
+        guard title.count > 2 else {
+            return Text(title).foregroundStyle(LovableResultStyle.heroCopyInk)
+        }
+        let accent = String(title.suffix(2))
+        let prefix = String(title.dropLast(2))
+        // One Text keeps the existing shaping and wrapping. The accent is one
+        // styled run, so its two characters share a continuous gradient.
+        return Text("\(Text(prefix).foregroundStyle(LovableResultStyle.heroCopyInk))\(Text(accent).foregroundStyle(LovableResultStyle.heroTitleGradient))")
     }
 
-    private static func bestSplitIndex(_ chars: [Character]) -> Int {
-        let count = chars.count
-        let validRange = 3...max(3, count - 3)
-        if let possessive = chars.firstIndex(of: "的"),
-           validRange.contains(possessive + 1) {
-            return possessive + 1
+    static func font(for title: String) -> Font {
+        // DS v1 §3: 38 / 34 / 30pt. Keep this editorial rule local rather than
+        // changing legacy typography tokens consumed by other screens.
+        let size: CGFloat = title.count <= 6 ? 38 : (title.count <= 10 ? 34 : 30)
+        for name in ["Songti SC Semibold", "SongtiSC-Semibold", "Songti SC Bold", "SongtiSC-Bold", "STSong"] {
+            if UIFont(name: name, size: size) != nil {
+                return .custom(name, size: size)
+            }
         }
-        let middle = Double(count) / 2
-        return validRange.min { left, right in
-            abs(Double(left) - middle) < abs(Double(right) - middle)
-        } ?? max(3, count - 3)
+        return .system(size: size, weight: .semibold, design: .serif)
+    }
+
+    static func preferredWidth(for title: String, availableWidth: CGFloat) -> CGFloat {
+        let width = max(1, availableWidth)
+        let size: CGFloat = title.count <= 6 ? 38 : (title.count <= 10 ? 34 : 30)
+        let font = ["Songti SC Semibold", "SongtiSC-Semibold", "Songti SC Bold", "SongtiSC-Bold", "STSong"]
+            .compactMap { UIFont(name: $0, size: size) }.first
+            ?? UIFont.systemFont(ofSize: size, weight: .semibold)
+        let unwrappedWidth = (title as NSString).size(withAttributes: [.font: font]).width
+        guard unwrappedWidth > width else { return width }
+        // Balance a wrapped title without inserting newlines, changing its
+        // text or shrinking its font; avoid an isolated one-character suffix.
+        return min(width, ceil(unwrappedWidth / 2 + size))
     }
 }
 
@@ -376,23 +426,14 @@ struct LovableResultHero: View {
     let coreDescription: String
     let contentWidth: CGFloat
     let viewportHeight: CGFloat
+    var contentOverlap: CGFloat = 0
     var onAvatarImageLoaded: (UIImage?) -> Void = { _ in }
     @State private var resolvedImage: UIImage?
 
     private var heroHeight: CGFloat {
-        min(max(viewportHeight * 0.58, 460), 560)
-    }
-
-    /// Until the API supplies a face focal point, use the source aspect ratio to
-    /// keep portrait ears high and reserve a quiet column for cover copy.
-    private var photoOffset: CGSize {
-        guard let image = avatarImage ?? resolvedImage, image.size.width > 0, image.size.height > 0 else {
-            return CGSize(width: 7, height: -2)
-        }
-        let ratio = image.size.width / image.size.height
-        if ratio > 1.15 { return CGSize(width: 10, height: -4) }
-        if ratio < 0.82 { return CGSize(width: 5, height: 4) }
-        return CGSize(width: 7, height: -2)
+        // The reference gives the photograph about 56% of the viewport. The
+        // extra 28pt is covered by the rounded content panel, not extra whitespace.
+        min(max(viewportHeight * 0.56, contentWidth * 1.1), 560) + contentOverlap
     }
 
     var body: some View {
@@ -404,10 +445,21 @@ struct LovableResultHero: View {
         .clipped()
     }
 
+    @ViewBuilder
     private var photograph: some View {
-        ZStack(alignment: .bottomLeading) {
+        if let image = avatarImage ?? resolvedImage {
+            Image(uiImage: image)
+                .resizable()
+                // A wide close-up must not be enlarged into a portrait crop
+                // that cuts off the ears. Portraits retain the full-bleed Hero.
+                .aspectRatio(contentMode: image.size.width > image.size.height ? .fit : .fill)
+                .frame(width: contentWidth, height: heroHeight, alignment: .top)
+                .background(LovableResultStyle.bgTop)
+                .clipped()
+                .onAppear { onAvatarImageLoaded(image) }
+        } else {
             LovableAvatarImage(
-                image: avatarImage,
+                image: nil,
                 remoteURL: avatarURL,
                 objectKey: avatarObjectKey,
                 contentMode: .fill,
@@ -416,58 +468,86 @@ struct LovableResultHero: View {
                     onAvatarImageLoaded(image)
                 }
             )
-            .scaleEffect(1.012, anchor: .topTrailing)
-            .offset(photoOffset)
-
+            .frame(width: contentWidth, height: heroHeight)
         }
-        .frame(width: contentWidth, height: heroHeight)
     }
 
     private var coverCopy: some View {
-        let titleLines = LovablePersonaTitleLayout.lines(for: personaType)
-
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text(catName)
-                    .nekoPersonaText(.secondary)
-                Text(personaMbti)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: LovableResultLayout.compactGap) {
+                LovablePersonaIdentityIcon()
+                    .frame(width: NekoTypography.TextStyle.iconSmall.size, height: NekoTypography.TextStyle.iconSmall.size)
+                    .accessibilityHidden(true)
+                Text("\(catName) · \(personaMbti)")
                     .nekoPersonaText(.secondary)
             }
-            .foregroundStyle(LovableResultStyle.heroCopyInk)
-            .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
+            .foregroundStyle(LovableResultStyle.identityInk)
             .lineLimit(1)
+            .padding(.horizontal, LovableResultLayout.titleGap)
+            .padding(.vertical, LovableResultLayout.compactGap)
+            .background(NekoTheme.softLilac.opacity(0.55), in: Capsule())
+            .background(.white.opacity(0.94), in: Capsule())
+            .accessibilityElement(children: .combine)
 
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(titleLines.enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .nekoPersonaText(.heroTitle)
-                        .lineLimit(1)
-                }
-            }
-            .foregroundStyle(LovableResultStyle.heroCopyInk)
-            .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
-            .padding(.top, 12)
+            LovablePersonaTitleStyle.text(personaType)
+                .font(LovablePersonaTitleStyle.font(for: personaType))
+                .lineSpacing(LovableResultLayout.textGap)
+                .tracking(0)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(
+                    width: LovablePersonaTitleStyle.preferredWidth(
+                        for: personaType,
+                        availableWidth: contentWidth - LovableResultLayout.pageMargin * 2
+                    ),
+                    alignment: .leading
+                )
+                .padding(.top, LovableResultLayout.titleGap)
 
             Text(coreDescription)
                 .nekoPersonaText(.body)
                 .foregroundStyle(LovableResultStyle.heroCopyInk)
-                .shadow(color: LovableResultStyle.heroCopyShadow, radius: 2.5, x: 0, y: 1)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
+                .padding(.top, LovableResultLayout.compactGap)
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 24)
+        .padding(.horizontal, LovableResultLayout.pageMargin)
+        .padding(.bottom, LovableResultLayout.pageMargin + contentOverlap)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .bottom) {
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: Color(red: 0.972, green: 0.958, blue: 0.990).opacity(0.18), location: 0.44),
-                    .init(color: Color(red: 0.972, green: 0.958, blue: 0.990).opacity(0.42), location: 1),
+                    .init(color: LovableResultStyle.bgTop.opacity(0.50), location: 0.20),
+                    .init(color: LovableResultStyle.bgTop.opacity(0.78), location: 0.58),
+                    .init(color: LovableResultStyle.bgTop.opacity(0.94), location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
+        }
+    }
+}
+
+/// The small filled cat-head mark in the supplied identity capsule, not a new
+/// decorative icon family. Keep its silhouette and color local to this Hero.
+private struct LovablePersonaIdentityIcon: View {
+    var body: some View {
+        Canvas { context, size in
+            let w = size.width
+            let h = size.height
+            var head = Path()
+            head.move(to: CGPoint(x: w * 0.12, y: h * 0.42))
+            head.addQuadCurve(to: CGPoint(x: w * 0.12, y: h * 0.04), control: CGPoint(x: w * 0.06, y: 0))
+            head.addLine(to: CGPoint(x: w * 0.38, y: h * 0.24))
+            head.addQuadCurve(to: CGPoint(x: w * 0.62, y: h * 0.24), control: CGPoint(x: w * 0.50, y: h * 0.18))
+            head.addLine(to: CGPoint(x: w * 0.88, y: h * 0.04))
+            head.addQuadCurve(to: CGPoint(x: w * 0.88, y: h * 0.42), control: CGPoint(x: w * 0.94, y: 0))
+            head.addCurve(to: CGPoint(x: w * 0.50, y: h * 0.98), control1: CGPoint(x: w * 1.08, y: h * 0.88), control2: CGPoint(x: w * 0.78, y: h * 0.98))
+            head.addCurve(to: CGPoint(x: w * 0.12, y: h * 0.42), control1: CGPoint(x: w * 0.22, y: h * 0.98), control2: CGPoint(x: -w * 0.08, y: h * 0.88))
+            context.fill(head, with: .color(LovableResultStyle.primaryStart))
+            for x in [0.32, 0.64] {
+                context.fill(Path(ellipseIn: CGRect(x: w * x, y: h * 0.55, width: w * 0.10, height: h * 0.13)), with: .color(.white.opacity(0.9)))
+            }
         }
     }
 }
@@ -657,26 +737,23 @@ private struct LovablePersonaDimensionsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LovableResultLayout.compactGap) {
             Text("\(catName)的四个行为维度")
                 .nekoPersonaText(.sectionTitle)
-                .foregroundStyle(LovableResultStyle.ink)
+                .foregroundStyle(LovableResultStyle.heroCopyInk)
+                .padding(.horizontal, LovableResultLayout.textGap)
 
             VStack(spacing: 0) {
                 ForEach(orderedDimensions) { dimension in
                     LovablePersonaDimensionRow(dimension: dimension)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
-            .background(.white.opacity(0.50), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(LovableResultStyle.primaryStart.opacity(0.10), lineWidth: 1)
-            }
+            .padding(.horizontal, LovableResultLayout.cardPadding)
+            .padding(.vertical, LovableResultLayout.textGap)
+            .background(.white.opacity(0.68), in: RoundedRectangle(cornerRadius: LovableResultLayout.cardRadius, style: .continuous))
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+        .padding(.horizontal, LovableResultLayout.cardMargin)
+        .padding(.top, LovableResultLayout.sectionPadding)
     }
 }
 
@@ -695,22 +772,25 @@ private struct LovablePersonaDimensionRow: View {
 
     private var emphasis: (size: CGFloat, opacity: Double) {
         switch dimension.strength {
-        case .weak: (8, 0.56)
-        case .medium: (10, 0.72)
+        case .weak: (12, 0.72)
+        case .medium: (12, 0.84)
         case .strong: (12, 0.90)
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LovableResultLayout.textGap) {
             Text(dimension.name)
-                .nekoPersonaText(.cardTitle)
-                .foregroundStyle(LovableResultStyle.ink)
+                // The DS card title is 17pt Semibold, matching the existing
+                // button font token; use its specified 24pt line-height here.
+                .font(NekoTypography.personaFont(.button))
+                .lineSpacing(24 - NekoTypography.PersonaTextStyle.button.size)
+                .foregroundStyle(LovableResultStyle.heroCopyInk)
 
-            HStack(spacing: 10) {
+            HStack(spacing: LovableResultLayout.compactGap) {
                 Text(dimension.leftLabel)
                     .nekoPersonaText(.secondary)
-                    .foregroundStyle(LovableResultStyle.muted)
+                    .foregroundStyle(LovableResultStyle.inkSoft)
                     .lineLimit(1)
                     .frame(width: 64, alignment: .leading)
 
@@ -734,12 +814,12 @@ private struct LovablePersonaDimensionRow: View {
 
                 Text(dimension.rightLabel)
                     .nekoPersonaText(.secondary)
-                    .foregroundStyle(LovableResultStyle.muted)
+                    .foregroundStyle(LovableResultStyle.inkSoft)
                     .lineLimit(1)
                     .frame(width: 64, alignment: .trailing)
             }
         }
-        .frame(height: 64, alignment: .center)
+        .frame(minHeight: LovableResultLayout.dimensionRowHeight, alignment: .center)
     }
 }
 
@@ -829,7 +909,7 @@ private struct LovableBondSummarySection: View {
     }
 }
 
-/// Shared with the unsaved-result sheet at the user's request. Preserve the
+/// Shared with the unsaved-result and profile-creation sheets at the user's request. Preserve the
 /// reference result page's 52pt capsule, colors and shadows as a scoped exception
 /// to the generic 54pt / 22pt-radius button rules. The user-requested compact
 /// confirmation variant uses a 36pt surface with a 44pt hit area; other result

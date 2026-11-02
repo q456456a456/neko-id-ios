@@ -34,6 +34,7 @@ final class NekoAppModel: ObservableObject {
     @Published private(set) var voices: [CatVoiceResult] = []
     @Published private(set) var pendingVoicePublishes: [PendingVoicePublish] = []
     @Published var loginPrompt: NekoLoginPrompt?
+    @Published var isProfileRequiredPromptPresented = false
     @Published var isBusy = false
     @Published private(set) var isDeletingAccount = false
     @Published var errorMessage: String?
@@ -477,7 +478,6 @@ final class NekoAppModel: ObservableObject {
 
     func generateCatVoicePreview(imageData: Data, scene: String) async throws -> CatVoiceResult {
         guard let profile = catProfile else {
-            phase = .onboarding
             throw NekoAppError.missingCatProfile
         }
 
@@ -499,7 +499,6 @@ final class NekoAppModel: ObservableObject {
         showNotice: Bool = false
     ) async throws -> CatVoiceResult {
         guard let profile = catProfile else {
-            phase = .onboarding
             throw NekoAppError.missingCatProfile
         }
 
@@ -564,6 +563,7 @@ final class NekoAppModel: ObservableObject {
         pendingVoicePublishes = []
         signedMediaCache = [:]
         loginPrompt = nil
+        isProfileRequiredPromptPresented = false
         NekoRemoteImageCache.shared.removeAll()
         URLCache.shared.removeAllCachedResponses()
         phase = .onboarding
@@ -589,12 +589,22 @@ final class NekoAppModel: ObservableObject {
         noticeMessage = "账号已注销，云端资料已删除。"
     }
 
+    func requestVoiceGeneration() -> Bool {
+        guard catProfile != nil else {
+            isProfileRequiredPromptPresented = true
+            return false
+        }
+        isProfileRequiredPromptPresented = false
+        return true
+    }
+
     func startOnboarding() {
+        isProfileRequiredPromptPresented = false
         phase = .onboarding
     }
 
     func cancelOnboardingIfPossible() {
-        guard catProfile != nil else { return }
+        guard session != nil else { return }
         phase = .home
     }
 
@@ -666,7 +676,7 @@ final class NekoAppModel: ObservableObject {
         catProfile = cloudState.profile
         persona = cloudState.persona
         voices = cloudState.voices
-        phase = cloudState.profile == nil ? .onboarding : .home
+        phase = .home
     }
 
     private func runBusy(_ operation: () async throws -> Void) async {

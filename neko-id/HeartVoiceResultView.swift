@@ -8,19 +8,110 @@ enum HeartVoiceLayout {
     static let stageHeightRatio: CGFloat = 0.70
     static let minimumStageHeight: CGFloat = 500
     static let maximumStageHeight: CGFloat = 680
-    static let bubbleWidthRatio: CGFloat = 0.48
-    static let fallbackBubbleWidthRatio: CGFloat = 0.42
-    static let largeSubjectBubbleWidthRatio: CGFloat = 0.36
-    static let bubbleHeight: CGFloat = 92
+    static let bubbleMinimumWidthRatio: CGFloat = 0.36
+    static let bubbleMaximumWidthRatio: CGFloat = 0.72
+    static let bubbleBodyLineLimit = 3
+    static let bubbleContentSpacing: CGFloat = 4
+    static let bubbleRadius: CGFloat = 24
     static let bubbleInset: CGFloat = 16
     static let subjectClearance: CGFloat = 18
-    static let actionHeight = NekoBottomActionMetrics.height
+    static let actionHeight: CGFloat = PersonaResultActionButtonStyle.Size.regular.visualHeight
     static let stageTopInset: CGFloat = 8
     static let navigationInset: CGFloat = 12
     static let navigationTopInset: CGFloat = 20
     static let bubblePadding: CGFloat = 12
     static let actionTopInset: CGFloat = 12
-    static let actionBottomInset: CGFloat = 8
+    static let actionBottomInset: CGFloat = 4
+}
+
+/// Measure the same typography used by SpeechBubbleView, including explicit
+/// newlines. Never estimate height from a fixed number of Chinese characters.
+enum HeartVoiceBubbleMetrics {
+    private static func lineHeightLimit(style: NekoTypography.TextStyle, lines: Int) -> CGFloat {
+        let font = UIFont.systemFont(ofSize: style.size, weight: .medium)
+        return ceil(font.lineHeight * CGFloat(lines) + style.lineSpacing * CGFloat(lines - 1))
+    }
+
+    static func size(catName: String, text: String, width: CGFloat, showsLoadingIndicator: Bool = false) -> CGSize {
+        let contentWidth = max(1, width - 2 * HeartVoiceLayout.bubblePadding)
+        let loadingWidth: CGFloat = showsLoadingIndicator ? 20 : 0
+        let nameHeight = min(textSize(catName, style: .caption, width: contentWidth).height,
+                             lineHeightLimit(style: .caption, lines: 1))
+        let bodyHeight = min(textSize(text, style: .voiceBubble, width: max(1, contentWidth - loadingWidth)).height,
+                             lineHeightLimit(style: .voiceBubble, lines: HeartVoiceLayout.bubbleBodyLineLimit))
+        return CGSize(
+            width: width,
+            height: ceil(nameHeight + HeartVoiceLayout.bubbleContentSpacing + bodyHeight
+                + 2 * HeartVoiceLayout.bubblePadding + 4)
+        )
+    }
+
+    static func fitsInLines(
+        text: String, width: CGFloat,
+        lines: Int = HeartVoiceLayout.bubbleBodyLineLimit,
+        showsLoadingIndicator: Bool = false
+    ) -> Bool {
+        let contentWidth = max(1, width - 2 * HeartVoiceLayout.bubblePadding - (showsLoadingIndicator ? 20 : 0))
+        let height = textSize(text, style: .voiceBubble, width: contentWidth).height
+        return height <= lineHeightLimit(style: .voiceBubble, lines: lines)
+    }
+
+    /// Find the line-wrap boundary rather than relying only on a handful of
+    /// width samples, which can miss a fully readable, face-safe layout.
+    static func minimumFittingWidth(
+        text: String, lines: Int, minimum: CGFloat, maximum: CGFloat,
+        showsLoadingIndicator: Bool
+    ) -> CGFloat? {
+        func fits(_ width: CGFloat) -> Bool {
+            fitsInLines(text: text, width: width, lines: lines, showsLoadingIndicator: showsLoadingIndicator)
+        }
+        guard fits(maximum) else { return nil }
+        if fits(minimum) { return minimum }
+        var lower = minimum
+        var upper = maximum
+        while upper - lower > 0.5 {
+            let middle = (lower + upper) / 2
+            if fits(middle) { upper = middle } else { lower = middle }
+        }
+        return min(maximum, ceil(upper))
+    }
+
+    static func naturalWidth(catName: String, text: String) -> CGFloat {
+        max(
+            textSize(catName, style: .caption, width: 10_000).width,
+            textSize(text, style: .voiceBubble, width: 10_000).width
+        ) + 2 * HeartVoiceLayout.bubblePadding + 4
+    }
+
+    private static func textSize(_ text: String, style: NekoTypography.TextStyle, width: CGFloat) -> CGSize {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = style.lineSpacing
+        paragraph.lineBreakMode = .byWordWrapping
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [
+                .font: UIFont.systemFont(ofSize: style.size, weight: .medium),
+                .paragraphStyle: paragraph,
+            ],
+            context: nil
+        )
+        return CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+    }
+}
+
+/// Text never stretches the photo: long voices are truncated inside the bubble.
+struct HeartVoiceStageSizingLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: width * 4 / 3)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            subview.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+        }
+    }
 }
 
 struct HeartVoiceSubject: Equatable {
@@ -115,20 +206,88 @@ struct HeartVoiceStageLayout {
 }
 
 enum SubjectLayoutEngine {
-    static func bubbleWidthRatio(
-        for subject: HeartVoiceSubject?,
-        detectionFinished: Bool
-    ) -> CGFloat {
-        guard detectionFinished, let subject else {
-            return HeartVoiceLayout.fallbackBubbleWidthRatio
+    private struct BubbleCandidate {
+        let layout: HeartVoiceStageLayout
+        let staysInsidePhoto: Bool
+        let faceOverlap: CGFloat
+        let fitsText: Bool
+    }
+
+    static func layout(
+        image: UIImage?, stageSize: CGSize, subject: HeartVoiceSubject?,
+        catName: String, text: String, showsLoadingIndicator: Bool = false
+    ) -> HeartVoiceStageLayout {
+        let availableWidth = max(1, stageSize.width - 2 * HeartVoiceLayout.bubbleInset)
+        let naturalWidth = HeartVoiceBubbleMetrics.naturalWidth(catName: catName, text: text)
+            + (showsLoadingIndicator ? 20 : 0)
+        let minimumWidth = min(availableWidth, naturalWidth, max(120, stageSize.width * HeartVoiceLayout.bubbleMinimumWidthRatio))
+        let maximumWidth = min(availableWidth, max(minimumWidth, min(naturalWidth, stageSize.width * HeartVoiceLayout.bubbleMaximumWidthRatio)))
+        let preferredWidth = min(maximumWidth, max(minimumWidth, sqrt(naturalWidth * NekoTypography.TextStyle.voiceBubble.lineHeight * 2)))
+        // Keep the existing width range and crop. Add exact line-wrap and face
+        // clearance boundaries so a coarse width sample cannot force truncation.
+        var widths = [minimumWidth, preferredWidth, maximumWidth]
+        widths += [0.25, 0.5, 0.75].map { minimumWidth + (maximumWidth - minimumWidth) * $0 }
+        for lines in 1...HeartVoiceLayout.bubbleBodyLineLimit {
+            if let width = HeartVoiceBubbleMetrics.minimumFittingWidth(
+                text: text, lines: lines, minimum: minimumWidth, maximum: maximumWidth,
+                showsLoadingIndicator: showsLoadingIndicator
+            ) {
+                widths.append(width)
+            }
         }
-        if usesLargeSubjectBubble(for: subject) {
-            return HeartVoiceLayout.largeSubjectBubbleWidthRatio
+        let imageFrame = focalAspectFillFrame(imageSize: image?.size ?? stageSize, stageSize: stageSize, subject: subject)
+        let faceFrame = subject?.catFaceBoundingBox.map { map($0, through: imageFrame) }
+        let catFrame = subject.map { map($0.catBoundingBox, through: imageFrame) }
+        let safeFace = faceFrame?.insetBy(dx: -HeartVoiceLayout.subjectClearance, dy: -HeartVoiceLayout.subjectClearance)
+        if let safeFace {
+            for width in [safeFace.minX - HeartVoiceLayout.bubbleInset,
+                          stageSize.width - HeartVoiceLayout.bubbleInset - safeFace.maxX]
+                where width >= minimumWidth && width <= maximumWidth {
+                widths.append(width)
+            }
         }
-        if usesCompactBubble(for: subject) {
-            return HeartVoiceLayout.fallbackBubbleWidthRatio
+        // Preserve the existing top-right fallback until subject detection finishes.
+        let placements: [HeartVoiceBubblePlacement] = subject == nil ? [.topRight] : HeartVoiceBubblePlacement.allCases
+        let candidates = Set(widths).sorted().flatMap { width -> [BubbleCandidate] in
+            let size = HeartVoiceBubbleMetrics.size(catName: catName, text: text, width: width, showsLoadingIndicator: showsLoadingIndicator)
+            let fitsText = HeartVoiceBubbleMetrics.fitsInLines(text: text, width: width, showsLoadingIndicator: showsLoadingIndicator)
+            return placements.map { placement in
+                let bubbleFrame = frame(for: placement, stageSize: stageSize, bubbleSize: size)
+                return BubbleCandidate(
+                    layout: HeartVoiceStageLayout(imageFrame: imageFrame, bubbleFrame: bubbleFrame, bubblePlacement: placement),
+                    staysInsidePhoto: size.width <= availableWidth && size.height <= stageSize.height - 2 * HeartVoiceLayout.bubbleInset,
+                    faceOverlap: safeFace.map { overlapRatio($0, bubbleFrame) } ?? 0,
+                    fitsText: fitsText
+                )
+            }
         }
-        return HeartVoiceLayout.bubbleWidthRatio
+        let anchor = faceFrame ?? catFrame
+        let center = anchor.map { $0.midX / max(stageSize.width, 1) }
+        let preferredSide: HeartVoiceBubblePlacement?
+        if let center {
+            preferredSide = center < 0.42 ? .topRight : (center > 0.58 ? .topLeft : nil)
+        } else {
+            preferredSide = .topRight
+        }
+        func placementScore(_ candidate: BubbleCandidate) -> CGFloat {
+            score(candidate.layout.bubbleFrame, stageSize: stageSize, catFrame: catFrame, faceFrame: faceFrame,
+                  backgroundScore: backgroundScore(image: image, candidate: candidate.layout.bubbleFrame, imageFrame: imageFrame))
+                + (candidate.layout.bubblePlacement == preferredSide ? 24 : 0)
+        }
+        // Strict priorities: stay in the photo → avoid the protected face →
+        // show all text → use the narrowest fitting width. Body/background
+        // preferences only break ties, never make a readable voice truncate.
+        // If no safe full-fit option exists, retain three-line truncation and
+        // show as much as possible at the widest equally face-safe width.
+        return candidates.min { lhs, rhs in
+            if lhs.staysInsidePhoto != rhs.staysInsidePhoto { return lhs.staysInsidePhoto }
+            if lhs.faceOverlap != rhs.faceOverlap { return lhs.faceOverlap < rhs.faceOverlap }
+            if lhs.fitsText != rhs.fitsText { return lhs.fitsText }
+            let leftWidth = lhs.layout.bubbleFrame.width
+            let rightWidth = rhs.layout.bubbleFrame.width
+            if leftWidth != rightWidth { return lhs.fitsText ? leftWidth < rightWidth : leftWidth > rightWidth }
+            return placementScore(lhs) > placementScore(rhs)
+        }!.layout
     }
 
     static func layout(
@@ -227,21 +386,6 @@ enum SubjectLayoutEngine {
         return frame
     }
 
-    static func usesCompactBubble(for subject: HeartVoiceSubject?) -> Bool {
-        guard let subject else { return true }
-        let faceNeedsTopClearance = subject.catFaceBoundingBox.map {
-            $0.width >= 0.36 && $0.minY < 0.36
-        } ?? false
-        return usesLargeSubjectBubble(for: subject) || faceNeedsTopClearance
-    }
-
-    private static func usesLargeSubjectBubble(for subject: HeartVoiceSubject) -> Bool {
-        let box = subject.catBoundingBox
-        return box.width >= 0.72
-            || box.height >= 0.78
-            || box.width * box.height >= 0.48
-    }
-
     private static func clampedOrigin(_ value: CGFloat, renderedLength: CGFloat, stageLength: CGFloat) -> CGFloat {
         min(0, max(stageLength - renderedLength, value))
     }
@@ -280,8 +424,7 @@ enum SubjectLayoutEngine {
     ) -> HeartVoiceBubblePlacement {
         guard let subjectAnchor else { return .topRight }
         let centerRatio = subjectAnchor.midX / max(stageSize.width, 1)
-        if centerRatio < 0.42 { return .topRight }
-        if centerRatio > 0.58 { return .topLeft }
+        let preferredSide: HeartVoiceBubblePlacement? = centerRatio < 0.42 ? .topRight : (centerRatio > 0.58 ? .topLeft : nil)
 
         return candidates.max {
             score(
@@ -290,13 +433,13 @@ enum SubjectLayoutEngine {
                 catFrame: catFrame,
                 faceFrame: faceFrame,
                 backgroundScore: backgroundScore(image: image, candidate: $0.1, imageFrame: imageFrame)
-            ) < score(
+            ) + ($0.0 == preferredSide ? 24 : 0) < score(
                 $1.1,
                 stageSize: stageSize,
                 catFrame: catFrame,
                 faceFrame: faceFrame,
                 backgroundScore: backgroundScore(image: image, candidate: $1.1, imageFrame: imageFrame)
-            )
+            ) + ($1.0 == preferredSide ? 24 : 0)
         }?.0 ?? .topRight
     }
 
@@ -309,7 +452,7 @@ enum SubjectLayoutEngine {
     ) -> CGFloat {
         var value = backgroundScore
         let safeFace = faceFrame?.insetBy(dx: -HeartVoiceLayout.subjectClearance, dy: -HeartVoiceLayout.subjectClearance)
-        if let safeFace { value -= overlapRatio(frame, safeFace) * 1_000 }
+        if let safeFace { value -= overlapRatio(safeFace, frame) * 10_000 }
         if let catFrame { value -= overlapRatio(frame, catFrame) * 320 }
 
         let safeBounds = CGRect(origin: .zero, size: stageSize).insetBy(dx: HeartVoiceLayout.bubbleInset, dy: HeartVoiceLayout.bubbleInset)
@@ -405,7 +548,7 @@ struct HeartVoiceResultView<Content: View>: View {
                         .nekoText(.moduleTitle)
                         .foregroundStyle(NekoTheme.ink)
 
-                    // The preview and saved detail share the exact same square
+                    // The preview and saved detail share the exact same portrait
                     // photo, bounded speech bubble and AI interpretation card.
                     content
                 }
@@ -430,44 +573,42 @@ struct PhotoStageView: View {
     let voiceText: String
     let subject: HeartVoiceSubject?
     let detectionFinished: Bool
+    var showsLoadingIndicator = false
 
     var body: some View {
-        GeometryReader { proxy in
-            let stageSize = proxy.size
-            let widthRatio = SubjectLayoutEngine.bubbleWidthRatio(
-                for: subject,
-                detectionFinished: detectionFinished
-            )
-            let bubbleSize = CGSize(
-                width: stageSize.width * widthRatio,
-                height: HeartVoiceLayout.bubbleHeight
-            )
-            let layout = SubjectLayoutEngine.layout(
-                image: image,
-                stageSize: stageSize,
-                subject: detectionFinished ? subject : nil,
-                bubbleSize: bubbleSize
-            )
-
-            ZStack(alignment: .topLeading) {
-                NekoTheme.photoPlaceholderGradient
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
-                        .position(x: layout.imageFrame.midX, y: layout.imageFrame.midY)
-                }
-
-                SpeechBubbleView(
+        HeartVoiceStageSizingLayout() {
+            GeometryReader { proxy in
+                let stageSize = proxy.size
+                let layout = SubjectLayoutEngine.layout(
+                    image: image,
+                    stageSize: stageSize,
+                    subject: detectionFinished ? subject : nil,
                     catName: catName,
                     text: voiceText,
-                    placement: layout.bubblePlacement
+                    showsLoadingIndicator: showsLoadingIndicator
                 )
-                    .frame(width: layout.bubbleFrame.width, height: layout.bubbleFrame.height)
-                    .position(x: layout.bubbleFrame.midX, y: layout.bubbleFrame.midY)
+
+                ZStack(alignment: .topLeading) {
+                    NekoTheme.photoPlaceholderGradient
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
+                            .position(x: layout.imageFrame.midX, y: layout.imageFrame.midY)
+                    }
+
+                    SpeechBubbleView(
+                        catName: catName,
+                        text: voiceText,
+                        placement: layout.bubblePlacement,
+                        showsLoadingIndicator: showsLoadingIndicator
+                    )
+                        .frame(width: layout.bubbleFrame.width, height: layout.bubbleFrame.height)
+                        .position(x: layout.bubbleFrame.midX, y: layout.bubbleFrame.midY)
+                }
+                .frame(width: stageSize.width, height: stageSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: HeartVoiceLayout.stageRadius, style: .continuous))
             }
-            .frame(width: stageSize.width, height: stageSize.height)
-            .clipShape(RoundedRectangle(cornerRadius: HeartVoiceLayout.stageRadius, style: .continuous))
         }
     }
 }
@@ -476,30 +617,42 @@ struct SpeechBubbleView: View {
     let catName: String
     let text: String
     let placement: HeartVoiceBubblePlacement
+    var showsLoadingIndicator = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: HeartVoiceLayout.bubbleContentSpacing) {
             Text(catName)
-                .nekoText(.support)
+                .nekoText(.caption)
                 .foregroundStyle(NekoTheme.muted)
                 .lineLimit(1)
-            Text(text)
-                .nekoText(.voiceBubble)
-                .foregroundStyle(NekoTheme.ink)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
+                .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 8) {
+                if showsLoadingIndicator {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(NekoTheme.soulViolet)
+                        .frame(width: 12, height: NekoTypography.TextStyle.voiceBubble.lineHeight)
+                }
+                Text(text)
+                    .nekoText(.voiceBubble)
+                    .foregroundStyle(NekoTheme.ink)
+                    .lineLimit(HeartVoiceLayout.bubbleBodyLineLimit)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(HeartVoiceLayout.bubblePadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(NekoTheme.cardWhite.opacity(0.96), in: RoundedRectangle(cornerRadius: HeartVoiceLayout.bubbleRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(NekoTheme.softLilac.opacity(0.90), lineWidth: 1)
+            RoundedRectangle(cornerRadius: HeartVoiceLayout.bubbleRadius, style: .continuous)
+                .stroke(NekoTheme.softLilac, lineWidth: 1)
         }
         .overlay(alignment: placement == .topLeft ? .bottomTrailing : .bottomLeading) {
             HeartVoiceBubbleTail()
-                .fill(Color.white.opacity(0.90))
+                .fill(NekoTheme.cardWhite.opacity(0.96))
                 .frame(width: 18, height: 12)
                 .scaleEffect(x: placement == .topLeft ? -1 : 1, y: 1)
                 .offset(x: placement == .topLeft ? -24 : 24, y: 8)
@@ -563,7 +716,7 @@ struct HeartVoiceBottomActionBar: View {
                     Text(isBusy ? "保存中…" : "保存图片")
                 }
             }
-            .buttonStyle(NekoBottomSecondaryActionButtonStyle())
+            .buttonStyle(HeartVoiceSecondaryButtonStyle())
             .disabled(isBusy)
 
             Button(action: onShare) {
@@ -573,12 +726,42 @@ struct HeartVoiceBottomActionBar: View {
                     Text("分享心声")
                 }
             }
-            .buttonStyle(NekoBottomPrimaryActionButtonStyle())
+            .buttonStyle(HeartVoicePrimaryButtonStyle())
             .disabled(isBusy)
         }
         .padding(.horizontal, HeartVoiceLayout.pageMargin)
         .padding(.top, HeartVoiceLayout.actionTopInset)
         .padding(.bottom, HeartVoiceLayout.actionBottomInset)
         .background(Color.white.opacity(0.92).ignoresSafeArea(edges: .bottom))
+    }
+}
+
+// Match the user-selected persona result reference's capsule and 52pt height,
+// while preserving this page's typography and existing color tokens.
+private struct HeartVoicePrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .nekoText(.button)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: HeartVoiceLayout.actionHeight)
+            .background(NekoTheme.primaryGradient, in: Capsule())
+            .opacity(configuration.isPressed ? 0.86 : 1)
+    }
+}
+
+private struct HeartVoiceSecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .nekoText(.button)
+            .foregroundStyle(NekoTheme.ink)
+            .frame(maxWidth: .infinity)
+            .frame(height: HeartVoiceLayout.actionHeight)
+            .background(NekoTheme.cardWhite, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(NekoTheme.softLilac, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
