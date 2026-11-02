@@ -173,7 +173,9 @@ enum NekoTypography {
         case flowSupport
         case flowStep
         case flowInput
+        case voicePageTitle
         case voiceBubble
+        case voiceTimestamp
         case voiceInsightTitle
         case voiceInsightBody
         case tabBarLabel
@@ -207,7 +209,9 @@ enum NekoTypography {
             case .flowSupport: 14
             case .flowStep: 14
             case .flowInput: 16
-            case .voiceBubble: 15
+            case .voicePageTitle: 22
+            case .voiceBubble: 16
+            case .voiceTimestamp: 13
             case .voiceInsightTitle: 16
             case .voiceInsightBody: 15
             case .tabBarLabel: 13
@@ -243,7 +247,9 @@ enum NekoTypography {
             case .flowSupport: 20
             case .flowStep: 20
             case .flowInput: 24
+            case .voicePageTitle: 30
             case .voiceBubble: 22
+            case .voiceTimestamp: 18
             case .voiceInsightTitle: 22
             case .voiceInsightBody: 23
             case .tabBarLabel: 18
@@ -267,7 +273,7 @@ enum NekoTypography {
 
         var weight: Font.Weight {
             switch self {
-            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .actionSheetLabel, .flowTitle, .voiceInsightTitle, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
+            case .pageTitle, .mainTitle, .moduleTitle, .cardTitle, .button, .actionSheetLabel, .flowTitle, .voicePageTitle, .voiceInsightTitle, .iconLarge, .personaTitleLarge, .personaTitleMedium, .personaTitleSmall:
                 .semibold
             case .flowStep, .voiceBubble, .tabBarLabel, .badge, .eyebrow, .caption, .iconSmall, .iconMedium:
                 .medium

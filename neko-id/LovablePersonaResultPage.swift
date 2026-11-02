@@ -967,7 +967,7 @@ private struct LovableResultBottomActions: View {
             Button("重新识别", action: onRestart)
                 .buttonStyle(PersonaResultActionButtonStyle(isPrimary: false))
 
-            Button(isSaving ? "保存中…" : "保存结果", action: onSave)
+            Button(isSaving ? "保存中…" : "存入档案", action: onSave)
                 .buttonStyle(PersonaResultActionButtonStyle(isPrimary: true))
                 .disabled(saveDisabled || isSaving)
                 .opacity(saveDisabled ? 0.58 : 1)

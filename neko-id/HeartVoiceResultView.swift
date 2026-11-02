@@ -545,7 +545,7 @@ struct HeartVoiceResultView<Content: View>: View {
                     }
 
                     Text("这是它想对你说的话")
-                        .nekoText(.moduleTitle)
+                        .nekoText(.voicePageTitle)
                         .foregroundStyle(NekoTheme.ink)
 
                     // The preview and saved detail share the exact same portrait

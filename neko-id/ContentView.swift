@@ -1103,13 +1103,15 @@ private struct HomeView: View {
                                         catName: profile.name,
                                         onRetry: { appModel.retryPendingVoicePublish(id: pending.id) }
                                     )
+                                    .padding(.horizontal, 20)
                                 }
                                 ForEach(voiceGroups) { group in
                                     VStack(spacing: 10) {
                                         DayDivider(label: group.label)
+                                            .padding(.horizontal, 20)
                                         ForEach(group.voices, id: \.id) { voice in
                                             TimelineVoiceRow(
-                                                availableWidth: max(proxy.size.width - 40, 1),
+                                                availableWidth: proxy.size.width,
                                                 voice: voice,
                                                 profile: profile,
                                                 onSelect: {
@@ -1124,7 +1126,6 @@ private struct HomeView: View {
                                     }
                                 }
                             }
-                            .padding(.horizontal, 20)
                             .padding(.top, 12)
                         } else {
                             EmptyFeedCard(profile: appModel.catProfile) {
@@ -1423,20 +1424,23 @@ private struct TimelineVoiceRow: View {
     let onSelect: () -> Void
     let onMore: () -> Void
 
-    private let timestampWidth: CGFloat = 52
+    private let timestampWidth: CGFloat = 40
+    private let rowSpacing: CGFloat = 16
+    private let trailingMargin: CGFloat = 20
 
     private var cardWidth: CGFloat {
-        min(max(availableWidth - timestampWidth - 12, 1), 296)
+        max(availableWidth - timestampWidth - rowSpacing - trailingMargin, 1)
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: rowSpacing) {
             VStack(spacing: 6) {
                 VoiceTimestampText(voice: voice, stackedYear: true)
-                    .nekoText(.tiny)
+                    .nekoText(.voiceTimestamp)
                     .foregroundStyle(NekoTheme.soulViolet)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Circle()
                     .fill(NekoTheme.primaryGradient)
                     .frame(width: 7, height: 7)
@@ -1576,10 +1580,10 @@ private struct VoiceTagChip: View {
 
     var body: some View {
         Text(tag)
-            .nekoText(.flowStep)
+            .nekoText(.caption)
             .foregroundStyle(NekoTheme.soulViolet)
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .fixedSize(horizontal: true, vertical: true)
             .padding(.horizontal, compact ? 12 : 16)
             .padding(.vertical, 6)
             .background(
@@ -1632,10 +1636,10 @@ private struct VoiceFeedCard: View {
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text(profile.name)
-                                .nekoText(.tiny)
+                                .nekoText(.support)
                                 .foregroundStyle(NekoTheme.muted)
                             Text("💭 \(voice.text)")
-                                .nekoText(.micro)
+                                .nekoText(.voiceBubble)
                                 .foregroundStyle(NekoTheme.ink)
                         }
                         .padding(.horizontal, 14)
@@ -1653,14 +1657,6 @@ private struct VoiceFeedCard: View {
                         NekoFlowLayout(spacing: 8, lineSpacing: 7) {
                             ForEach(Array(voice.sceneTags.prefix(3)), id: \.self) { tag in
                                 VoiceTagChip(tag: tag, compact: true)
-                            }
-
-                            if let location = voice.location, !location.isEmpty {
-                                Text("· \(location)")
-                                    .nekoText(.tiny)
-                                    .foregroundStyle(NekoTheme.muted)
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
