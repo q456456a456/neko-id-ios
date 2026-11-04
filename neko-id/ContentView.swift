@@ -1417,6 +1417,76 @@ private struct ThoughtBubbleLabel: View {
     }
 }
 
+// Keep the compact rail and card positions from the current home layout.
+// Insets and vertical spacing use the Design System's existing 4/8pt grid.
+private enum HomeVoiceTimelineLayout {
+    static let railWidth: CGFloat = 40
+    static let rowSpacing: CGFloat = 16
+    static let trailingMargin: CGFloat = 20
+    static let timestampInset: CGFloat = 4
+    static let timestampWidth = railWidth + rowSpacing - timestampInset
+    static let timestampHeight: CGFloat = 20
+    static let markerSpacing: CGFloat = 8
+
+    static func cardWidth(availableWidth: CGFloat) -> CGFloat {
+        max(availableWidth - railWidth - rowSpacing - trailingMargin, 1)
+    }
+}
+
+private struct HomeVoiceTimelineRail: View {
+    @Environment(\.timeZone) private var timeZone
+    let voice: CatVoiceResult
+
+    /// Relative times stay intact on one line. Cross-year dates use YY-MM-DD
+    /// in this compact gutter; accessibility keeps the full year.
+    static func presentationLabel(_ label: String) -> String {
+        let parts = label.split(separator: "\n")
+        if parts.count == 2, parts[0].count == 4, parts[0].allSatisfy({ $0.isNumber }) {
+            return "\(parts[0].suffix(2))-\(parts[1])"
+        }
+        return label
+    }
+
+    var body: some View {
+        VStack(spacing: HomeVoiceTimelineLayout.markerSpacing) {
+            // Text is an overlay so minute refreshes and different text widths
+            // cannot change the circle's position or the vertical rail's x/y.
+            Color.clear
+                .frame(height: HomeVoiceTimelineLayout.timestampHeight)
+                .overlay(alignment: .bottomLeading) {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        let label = voice.displayTime(at: context.date, timeZone: timeZone, stackedYear: true)
+                        Text(Self.presentationLabel(label))
+                            .nekoText(.tiny)
+                            .foregroundStyle(NekoTheme.soulViolet)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: HomeVoiceTimelineLayout.timestampWidth, alignment: .leading)
+                            .accessibilityLabel(label.replacingOccurrences(of: "\n", with: "年"))
+                    }
+                    .offset(x: HomeVoiceTimelineLayout.timestampInset)
+                }
+
+            Circle()
+                .fill(NekoTheme.primaryGradient)
+                .frame(width: 7, height: 7)
+                .overlay {
+                    Circle().stroke(Color.white.opacity(0.9), lineWidth: 4)
+                }
+            Rectangle()
+                .fill(LinearGradient(colors: [NekoTheme.softLilac.opacity(0.8), .clear], startPoint: .top, endPoint: .bottom))
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
+        }
+        .frame(width: HomeVoiceTimelineLayout.railWidth)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
+    }
+}
+
 private struct TimelineVoiceRow: View {
     let availableWidth: CGFloat
     let voice: CatVoiceResult
@@ -1424,35 +1494,13 @@ private struct TimelineVoiceRow: View {
     let onSelect: () -> Void
     let onMore: () -> Void
 
-    private let timestampWidth: CGFloat = 40
-    private let rowSpacing: CGFloat = 16
-    private let trailingMargin: CGFloat = 20
-
     private var cardWidth: CGFloat {
-        max(availableWidth - timestampWidth - rowSpacing - trailingMargin, 1)
+        HomeVoiceTimelineLayout.cardWidth(availableWidth: availableWidth)
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: rowSpacing) {
-            VStack(spacing: 6) {
-                VoiceTimestampText(voice: voice, stackedYear: true)
-                    .nekoText(.voiceTimestamp)
-                    .foregroundStyle(NekoTheme.soulViolet)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Circle()
-                    .fill(NekoTheme.primaryGradient)
-                    .frame(width: 7, height: 7)
-                    .overlay {
-                        Circle().stroke(Color.white.opacity(0.9), lineWidth: 4)
-                    }
-                Rectangle()
-                    .fill(LinearGradient(colors: [NekoTheme.softLilac.opacity(0.8), .clear], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 1)
-                    .frame(maxHeight: .infinity)
-            }
-            .frame(width: timestampWidth)
+        HStack(alignment: .top, spacing: HomeVoiceTimelineLayout.rowSpacing) {
+            HomeVoiceTimelineRail(voice: voice)
 
             VoiceFeedCard(voice: voice, profile: profile, onSelect: onSelect, onMore: onMore)
                 .frame(width: cardWidth)
@@ -1649,6 +1697,9 @@ private struct VoiceFeedCard: View {
                         .shadow(color: NekoTheme.ink.opacity(0.10), radius: 20, x: 0, y: 10)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    // Visual clipping alone does not clip hit testing. A tall
+                    // photo must not intercept the previous card's footer.
+                    .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -1660,6 +1711,7 @@ private struct VoiceFeedCard: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1669,9 +1721,14 @@ private struct VoiceFeedCard: View {
                             .nekoText(.cardTitle)
                             .foregroundStyle(NekoTheme.muted)
                             .frame(width: 28, height: 28)
-                            .background(Color.clear, in: Circle())
+                            // 44pt hit target on the existing 4/8pt grid. The
+                            // negative outer inset preserves the 28pt layout.
+                            .padding(8)
+                            .contentShape(Rectangle())
+                            .padding(-8)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("更多心声操作")
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 10)
@@ -2172,10 +2229,13 @@ private struct VoiceActionSheet: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
             .padding(.bottom, 20)
-            .background(
-                Color(red: 0.992, green: 0.984, blue: 1.0).opacity(0.96),
-                in: UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32, style: .continuous)
-            )
+            .background {
+                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32, style: .continuous)
+                    .fill(.white)
+                    // Only the surface reaches the screen edge. Keep the
+                    // actions above the home indicator with their existing padding.
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
             .shadow(color: NekoTheme.ink.opacity(0.12), radius: 20, x: 0, y: -8)
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))

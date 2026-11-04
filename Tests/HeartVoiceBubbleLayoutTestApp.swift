@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Vision
 
 // Runs the shipping bubble, photo stage, shared preview/detail card and export
 // renderer in a separate simulator bundle. No network or user accounts involved.
@@ -18,6 +19,16 @@ struct HeartVoiceBubbleLayoutTestApp: App {
 private enum BubbleLayoutChecks {
     static let regressionText = "柜台这块地视野真不错，那边货架上又有什么动静？"
     static let longText = "我先趴在柜台上看看左边，那边有什么动静可别漏了。你可以陪我一起安静地等一会儿，等我观察清楚，再决定要不要过去看看。"
+    static let shopVoice = "爪子先揣起来歇会儿，店里来来往往的动静我都盯紧着呢。"
+    static let chairAnalysis = "它趴在椅子底下探出头，抬起一只爪子朝镜头挥动。\n\n即便地方窄小，想伸手主动抓两下的劲头可一点没收敛。"
+    // macOS Vision on the user's 900x1200 counter-cat photo. Keep this real
+    // geometry in the mandatory suite even when the private photo is absent.
+    static let shopHostSubject: HeartVoiceSubject = {
+        let body = CGRect(x: 0.12025671993456147, y: 1 - 0.18886100455594487 - 0.5644890962593513,
+                          width: 0.7617187147339188, height: 0.5644890962593513)
+        return HeartVoiceSubject(catBoundingBox: body, catFaceBoundingBox: CGRect(
+            x: body.midX - body.width * 0.72 / 2, y: body.minY, width: body.width * 0.72, height: body.height * 0.46))
+    }()
     static let photo = UIImage(named: "neko-noble")!
     static let leftSubject = HeartVoiceSubject(
         catBoundingBox: CGRect(x: 0.04, y: 0.32, width: 0.56, height: 0.64),
@@ -167,7 +178,23 @@ private enum BubbleLayoutChecks {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let run = ProcessInfo.processInfo.environment["NEKO_LAYOUT_RUN"] ?? "latest"
         let baseline = ProcessInfo.processInfo.environment["NEKO_BUBBLE_BASELINE"] == "1"
+        if let chairURL = Bundle.main.url(forResource: "share-user-chair", withExtension: "jpg") {
+            chairShareCheck(fixtureURL: chairURL, directory: directory)
+        }
+        let originalURL = Bundle.main.url(forResource: "share-user-original", withExtension: "jpg")
+        let screenshotURL = Bundle.main.url(forResource: "share-user-screenshot", withExtension: "jpg")
+        if let fixtureURL = originalURL ?? screenshotURL {
+            await screenshotShareCheck(fixtureURL: fixtureURL, isOriginal: originalURL != nil, directory: directory)
+            if ProcessInfo.processInfo.environment["NEKO_SHARE_FIXTURE_ONLY"] == "1" {
+                try! "Fixture export finished. See user-screenshot-share-check.txt\n".write(
+                    to: directory.appendingPathComponent("bubble-checks-\(run).txt"), atomically: true, encoding: .utf8)
+                return
+            }
+        }
         let priorityReport = readabilityChecks(directory: directory, baseline: baseline)
+        let sharePriorityReport = shareReadabilityChecks(directory: directory, baseline: baseline)
+        let shareReport = shareBubbleChecks(directory: directory)
+        shareCanvasChecks(directory: directory)
         var checks = 0
         let messages = ["再陪我一会儿。", regressionText, longText,
                         "先看看 👀\n别着急，我还没准备好。\n过来陪我坐一会儿吧。",
@@ -240,11 +267,390 @@ private enum BubbleLayoutChecks {
             let data = VoiceShareCardData(catName: "丸子", mbti: "ISFP", personalityTitle: "慢热观察派", sceneTags: ["安静观察"],
                                          photo: photo, generatedVoice: text, analysisText: "它在安静观察周围的动静。")
             guard let poster = await VoiceShareImageRenderer.render(data: data) else { preconditionFailure("Export failed") }
-            precondition(poster.size == CGSize(width: 360, height: 480), "Long export must truncate, not stretch the photo/poster")
+            precondition(poster.size.width == 360 && poster.size.height >= 528, "Share canvas must reserve footer whitespace")
             save(poster, "export-\(index)", in: directory)
         }
-        try! "PASS: \(checks) capped-text/bounds/coverage cases; three-line truncation; adaptive width/height; fixed 3:4 photo; face avoidance; loading/name; four screen sizes; fixed-size export.\n\(priorityReport)\n".write(
+        try! "PASS: \(checks) capped-text/bounds/coverage cases; three-line truncation; adaptive width/height; fixed 3:4 photo; face avoidance; loading/name; four screen sizes; content-sized export and watermark.\n\(priorityReport)\n\(shareReport)\n\(sharePriorityReport)\n".write(
             to: directory.appendingPathComponent("bubble-checks-\(run).txt"), atomically: true, encoding: .utf8
         )
+    }
+
+    static func screenshotShareCheck(fixtureURL: URL, isOriginal: Bool, directory: URL) async {
+        let screenshot = UIImage(contentsOfFile: fixtureURL.path)!
+        // User supplied a detail-page screenshot, not the unannotated source.
+        // Keep its photo area intact, including its existing bubble; do not
+        // fabricate missing pixels. Original-photo tests are separate.
+        let image = isOriginal ? screenshot : UIImage(cgImage: screenshot.cgImage!.cropping(to: CGRect(x: 61, y: 578, width: 1084, height: 1446))!)
+        save(image, "user-screenshot-photo-region", in: directory)
+        let detectedSubject = await HeartVoiceSubjectDetector.detect(in: image)
+        // Measured on this original image with macOS Vision, not a synthetic
+        // face fixture. See inspect-share-subject.swift. Vision's simulator
+        // implementation returns nil; that must not bypass the regression.
+        let subject = detectedSubject ?? (isOriginal ? shopHostSubject : nil)
+        let stage = CGSize(width: 320, height: 220)
+        let layout = VoiceShareBubbleLayout.make(image: image, stageSize: stage, subject: subject, catName: "丸子", text: shopVoice)
+        let data = VoiceShareCardData(catName: "丸子", mbti: "ESTP-A", personalityTitle: "坦率直球的玩伴型",
+                                     sceneTags: ["揣起小手", "趴柜台", "瞅瞅那边"], photo: image,
+                                     generatedVoice: shopVoice,
+                                     analysisText: "整只猫揣着小手趴在玻璃柜台上，扭头盯着侧面。\n\n姿势放得很松弛，但周围稍有风吹草动就立刻转头盯上。")
+        let poster = VoiceShareImageRenderer.render(data: data, subject: subject)!
+        save(poster, "user-screenshot-share-poster", in: directory)
+        verifyShareWatermark(poster)
+        let ocr = VNRecognizeTextRequest()
+        ocr.recognitionLevel = .accurate
+        ocr.recognitionLanguages = ["zh-Hans", "en-US"]
+        // Header/analysis compaction moves the photo; inspect the real export,
+        // not a hardcoded crop from the former header's coordinates.
+        try! VNImageRequestHandler(cgImage: poster.cgImage!).perform([ocr])
+        let recognized = (ocr.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined()
+        try! "Subject: \(String(describing: subject))\n220pt photo geometry probe (export is content-sized): \(layout.stage)\nLines: \(layout.bodyLineLimit)\nPadding: \(layout.contentPadding)\nFits: \(HeartVoiceBubbleMetrics.fitsInLines(text: shopVoice, width: layout.stage.bubbleFrame.width, lines: layout.bodyLineLimit, contentPadding: layout.contentPadding))\nPoster OCR: \(recognized)\n".write(
+            to: directory.appendingPathComponent("user-screenshot-share-check.txt"), atomically: true, encoding: .utf8)
+        if isOriginal {
+            precondition(subject != nil, "The real-photo regression must exercise face avoidance")
+            precondition(recognized.contains(shopVoice), "Real-photo export still truncates the voice: \(recognized)")
+            precondition(layout.stage.bubbleFrame.width > 120, "Real-photo export fell back to the original narrow bubble")
+        }
+    }
+
+    static func chairShareCheck(fixtureURL: URL, directory: URL) {
+        let image = UIImage(contentsOfFile: fixtureURL.path)!
+        // Measured with the same host Vision request on this cached chair-cat
+        // image. Keep private user media out of source control.
+        let body = CGRect(x: 0.12611608134840982, y: 1 - 0.36677628405784335 - 0.4592927799530717,
+                          width: 0.8200892505584979, height: 0.4592927799530717)
+        let subject = HeartVoiceSubject(catBoundingBox: body, catFaceBoundingBox: CGRect(
+            x: body.midX - body.width * 0.72 / 2, y: body.minY, width: body.width * 0.72, height: body.height * 0.46))
+        let data = VoiceShareCardData(catName: "丸子", mbti: "ESTP-A", personalityTitle: "坦率直球的玩伴型",
+                                     sceneTags: ["椅底探头", "隔空出爪", "想抓一下"], photo: image,
+                                     generatedVoice: "藏在椅子底下也能抓着你，别动，看我的爪子！", analysisText: chairAnalysis)
+        let poster = VoiceShareImageRenderer.render(data: data, subject: subject)!
+        save(poster, "chair-share-compact", in: directory)
+        verifyShareWatermark(poster)
+        let ocr = VNRecognizeTextRequest()
+        ocr.recognitionLevel = .accurate
+        ocr.recognitionLanguages = ["zh-Hans", "en-US"]
+        try! VNImageRequestHandler(cgImage: poster.cgImage!).perform([ocr])
+        let text = (ocr.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined()
+        precondition(text.components(separatedBy: "喵一下").count == 2, "Brand should appear only once, in the footer")
+        precondition(text.contains("没收敛"), "The second analysis sentence was lost")
+        try! text.write(to: directory.appendingPathComponent("chair-share-ocr.txt"), atomically: true, encoding: .utf8)
+    }
+
+    static func verifyShareWatermark(_ poster: UIImage) {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans", "en-US"]
+        // Inspect the footer separately so a brand elsewhere cannot mask a
+        // missing or clipped watermark.
+        let image = poster.cgImage!
+        let footerHeight = ceil(CGFloat(image.height) * 0.20)
+        let footer = image.cropping(to: CGRect(x: 0, y: CGFloat(image.height) - footerHeight,
+                                               width: CGFloat(image.width), height: footerHeight))!
+        try! VNImageRequestHandler(cgImage: footer).perform([request])
+        let watermark = (request.results ?? []).first { observation in
+            let text = observation.topCandidates(1).first?.string ?? ""
+            return text.contains("喵一下") && text.contains("读懂它的小世界")
+        }
+        precondition(watermark != nil, "Brand watermark was clipped or missing from the footer")
+        let gap = watermark!.boundingBox.minY * CGFloat(footer.height) / poster.scale
+        precondition(gap >= 23 && gap <= 32, "Watermark must retain 24pt bottom padding, actual visible gap: \(gap)")
+    }
+
+    static func shareCanvasChecks(directory: URL) {
+        var spacingReport: [String] = []
+        for headerHeight: CGFloat in [45, 80] {
+            for insightHeight: CGFloat in [40, 135, 200, 360] {
+                let layout = VoiceSharePosterStack.geometry(width: 320, headerHeight: headerHeight,
+                                                           insightHeight: insightHeight, watermarkHeight: 18)
+                let photo = layout.frames[1]
+                let insight = layout.frames[2]
+                let watermark = layout.frames[3]
+                precondition(abs(watermark.minY - insight.maxY - 16) < 0.01,
+                             "Unused canvas space must enlarge the photo, not the footer gap")
+                precondition(abs(insight.minY - photo.maxY - 8) < 0.01, "Photo/card gap changed")
+                precondition(photo.height >= 220 && layout.size.height >= 490, "Content/extended canvas must stay visible")
+                precondition(abs(layout.size.height - watermark.maxY) < 0.01, "Footer must end at the content boundary")
+                let expectedPhotoHeight = max(220, 490 - headerHeight - insightHeight - 18 - 16 - 16)
+                precondition(abs(photo.height - expectedPhotoHeight) < 0.01, "Photo failed to consume all available height")
+                if headerHeight == 45 && insightHeight == 135 {
+                    precondition(photo.height == 260, "Compact screenshot regression must enlarge the photo")
+                }
+                spacingReport.append("header=\(headerHeight), insight=\(insightHeight), photo=\(photo.height), footer gap=\(watermark.minY - insight.maxY), canvas=\(layout.size.height + 38)")
+            }
+        }
+        try! spacingReport.joined(separator: "\n").write(to: directory.appendingPathComponent("share-photo-space.txt"),
+                                                       atomically: true, encoding: .utf8)
+        for (raw, expected) in [
+            ("第一句。\n\n第二句。", "第一句。 第二句。"),
+            ("  第一段。\r\n \r\n第二段。  ", "第一段。 第二段。"),
+            ("A playful cat.\n\nIt wants to play.", "A playful cat. It wants to play."),
+            ("第一句。\u{2028}\u{2029}第二句。", "第一句。 第二句。"),
+            ("\n  \r\n", "")
+        ] {
+            precondition(VoiceShareCard.compactAnalysis(raw) == expected, "Export paragraph formatting regressed")
+        }
+        let longAnalysis = String(String(repeating: "它把小爪子揣好，眼睛却没闲着。", count: 6).prefix(80))
+        for (index, analysis) in ["它安静地趴着，偶尔抬头看看你。", longAnalysis, chairAnalysis].enumerated() {
+            let data = VoiceShareCardData(catName: "丸子", mbti: "ESTP-A", personalityTitle: "坦率直球的玩伴型",
+                                         sceneTags: ["悄悄观察动静", "揣起两只小手", "偶尔抬头张望"], photo: photo,
+                                         generatedVoice: shopVoice, analysisText: analysis)
+            let poster = VoiceShareImageRenderer.render(data: data, subject: leftSubject)!
+            precondition(poster.size.width == 360 && poster.size.height >= 528, "Extended canvas has the wrong size")
+            precondition(poster.cgImage!.width == 1080, "Export width/scale must not change")
+            verifyShareWatermark(poster)
+            save(poster, "share-footer-\(index)", in: directory)
+            if index == 2 {
+                let compact = VoiceShareCardData(catName: data.catName, mbti: data.mbti, personalityTitle: data.personalityTitle,
+                                                sceneTags: data.sceneTags, photo: data.photo, generatedVoice: data.generatedVoice,
+                                                analysisText: analysis.replacingOccurrences(of: "\n\n", with: " "))
+                let compactPoster = VoiceShareImageRenderer.render(data: compact, subject: leftSubject)!
+                precondition(poster.pngData() == compactPoster.pngData(), "Blank-line input must render exactly like a continuous paragraph")
+            }
+        }
+    }
+
+    // Independent exhaustive width search, including cases where no full fit
+    // exists. A valid wider bubble must not be discarded by the old fallback.
+    static func shareReadabilityChecks(directory: URL, baseline: Bool) -> String {
+        func visibleCount(_ text: String, width: CGFloat, lines: Int, padding: CGFloat) -> Int {
+            if HeartVoiceBubbleMetrics.fitsInLines(text: text, width: width, lines: lines, contentPadding: padding) { return text.count }
+            // Linear prefix scan in the oracle (production may use binary search).
+            return (0..<text.count).last { count in
+                HeartVoiceBubbleMetrics.fitsInLines(text: String(text.prefix(count)) + "…", width: width, lines: lines,
+                                                   contentPadding: padding)
+            } ?? 0
+        }
+        let texts = [shopVoice, longText, String(repeating: "小爪子先揣好，再看看店里有什么动静。", count: 6)]
+        let faces = [CGRect(x: 0.20, y: 0.05, width: 0.60, height: 0.60),
+                     CGRect(x: 0.35, y: 0.10, width: 0.60, height: 0.80),
+                     CGRect(x: 0.05, y: 0.10, width: 0.60, height: 0.80),
+                     CGRect(x: 0.30, y: 0.05, width: 0.40, height: 0.70),
+                     CGRect(x: 0, y: 0.44, width: 1, height: 0.10)]
+        var failures: [String] = []
+        var details: [String] = []
+        var cases = 0
+        for height: CGFloat in [220, 265] {
+            let stage = CGSize(width: 320, height: height)
+            let bounds = CGRect(origin: .zero, size: stage).insetBy(dx: 16, dy: 16)
+            for (faceIndex, face) in faces.enumerated() {
+                let subject = HeartVoiceSubject(catBoundingBox: face, catFaceBoundingBox: face)
+                let facePixels = CGRect(x: face.minX * stage.width, y: face.minY * stage.height,
+                                        width: face.width * stage.width, height: face.height * stage.height)
+                for (textIndex, text) in texts.enumerated() {
+                    let chosen = VoiceShareBubbleLayout.make(image: nil, stageSize: stage, subject: subject, catName: "丸子", text: text)
+                    let chosenCount = visibleCount(text, width: chosen.stage.bubbleFrame.width, lines: chosen.bodyLineLimit,
+                                                   padding: chosen.contentPadding)
+                    var bestCount = 0
+                    var bestWidth: CGFloat = 0
+                    for width in stride(from: ceil(stage.width * 0.36), through: floor(stage.width * 0.72), by: 1) {
+                        for lines in 3...5 {
+                            let size = HeartVoiceBubbleMetrics.size(catName: "丸子", text: text, width: width, bodyLineLimit: lines)
+                            let count = visibleCount(text, width: width, lines: lines, padding: HeartVoiceLayout.bubblePadding)
+                            guard count > bestCount else { continue }
+                            for y in [bounds.minY, bounds.maxY - size.height] {
+                                for x in [bounds.minX, bounds.maxX - width] {
+                                    let frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
+                                    let coverage = CGRect(x: x, y: frame.minY, width: width, height: size.height + 8)
+                                    let intersection = coverage.intersection(facePixels)
+                                    let overlap = intersection.isNull ? 0 : intersection.width * intersection.height / (facePixels.width * facePixels.height)
+                                    if bounds.contains(frame), width * coverage.height <= stage.width * height * 0.40, overlap <= 1.0 / 3.0 {
+                                        bestCount = count
+                                        bestWidth = width
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let label = "\(Int(height))/face-\(faceIndex)/text-\(textIndex)"
+                    let detail = "\(label): \(chosenCount)/\(text.count) chars, width \(chosen.stage.bubbleFrame.width), \(chosen.bodyLineLimit) lines; oracle \(bestCount) chars at \(bestWidth)pt"
+                    details.append(detail)
+                    if chosenCount < bestCount { failures.append(detail) }
+                    cases += 1
+                }
+            }
+        }
+        let report = "Share readability: \(cases) cases, \(failures.count) failures"
+        try! (report + "\n" + details.joined(separator: "\n")).write(
+            to: directory.appendingPathComponent("share-readability-priority.txt"), atomically: true, encoding: .utf8)
+        if !baseline { precondition(failures.isEmpty, report + "\n" + failures.joined(separator: "\n")) }
+        return report
+    }
+
+    static func shareBubbleChecks(directory: URL) -> String {
+        // A regression fixture, not a transcription of the hidden screenshot ending.
+        let shareText = "藏在椅子底下也能抓着你，别动，看我伸爪抓住你！"
+        let messages = ["再陪我一会儿。", shareText, shopVoice, regressionText, longText,
+                        "先看看 👀\n别着急\n等一下\n我来啦", String(repeating: "先看看\n", count: 50)]
+        let rightFace = CGRect(x: 0.52, y: 0.20, width: 0.43, height: 0.65)
+        let relaxedFace = CGRect(x: 0.35, y: 0.10, width: 0.60, height: 0.80)
+        let faces: [CGRect?] = [nil, rightFace,
+            CGRect(x: 0.05, y: 0.20, width: 0.43, height: 0.65),
+            CGRect(x: 0.20, y: 0.05, width: 0.60, height: 0.60),
+            CGRect(x: 0.30, y: 0.72, width: 0.40, height: 0.20),
+            CGRect(x: 0.03, y: 0.03, width: 0.94, height: 0.94), relaxedFace,
+            CGRect(x: 0.05, y: 0.10, width: 0.60, height: 0.80),
+            CGRect(x: 0, y: 0.44, width: 1, height: 0.10),
+            CGRect(x: 0.40, y: 0.25, width: 0.20, height: 0.20)]
+        var cases = 0
+        var recovered = 0
+        var partialFaceFits = 0
+        for height: CGFloat in [220, 265] {
+            let stage = CGSize(width: 320, height: height)
+            let bounds = CGRect(origin: .zero, size: stage).insetBy(dx: 16, dy: 16)
+            for face in faces {
+                let subject = face.map { HeartVoiceSubject(catBoundingBox: $0, catFaceBoundingBox: $0) }
+                let visibleFace = face.map {
+                    CGRect(x: $0.minX * stage.width, y: $0.minY * stage.height,
+                           width: $0.width * stage.width, height: $0.height * stage.height)
+                        .intersection(CGRect(origin: .zero, size: stage))
+                }
+                func overlap(_ frame: CGRect) -> CGFloat {
+                    guard let visibleFace else { return 0 }
+                    let coverage = CGRect(x: frame.minX, y: frame.minY, width: frame.width,
+                                          height: frame.height + HeartVoiceLayout.bubbleTailOverflow)
+                    let intersection = coverage.intersection(visibleFace)
+                    return intersection.isNull ? 0 : intersection.width * intersection.height / (visibleFace.width * visibleFace.height)
+                }
+                for text in messages {
+                    let old = SubjectLayoutEngine.layout(image: nil, stageSize: stage, subject: subject, catName: "丸子", text: text)
+                    let chosen = VoiceShareBubbleLayout.make(image: nil, stageSize: stage, subject: subject, catName: "丸子", text: text)
+                    let frame = chosen.stage.bubbleFrame
+                    precondition(chosen.stage.imageFrame == old.imageFrame, "Share changed the existing image crop")
+                    precondition(bounds.contains(frame), "Share bubble escaped photo")
+                    precondition(overlap(frame) <= 1.0 / 3.0, "Share covered more than a third of the visible face (including tail)")
+                    precondition((1...5).contains(chosen.bodyLineLimit), "Share removed the line cap")
+                    precondition(frame.width * (frame.height + HeartVoiceLayout.bubbleTailOverflow) <= stage.width * stage.height * 0.40,
+                                 "Share bubble covered too much photo")
+                    let oldFits = HeartVoiceBubbleMetrics.fitsInLines(text: text, width: old.bubbleFrame.width)
+                    let fits = HeartVoiceBubbleMetrics.fitsInLines(text: text, width: frame.width, lines: chosen.bodyLineLimit,
+                                                                 contentPadding: chosen.contentPadding)
+                    if oldFits && overlap(old.bubbleFrame) == 0 {
+                        precondition(chosen.bodyLineLimit == 3 && frame == old.bubbleFrame, "Share changed a readable bubble or enlarged a truncated fallback")
+                    } else if !oldFits && fits {
+                        recovered += 1
+                    }
+                    if fits && overlap(frame) > 0 { partialFaceFits += 1 }
+                    let rendered = render(SpeechBubbleView(catName: "丸子", text: text, placement: chosen.stage.bubblePlacement,
+                                                          bodyLineLimit: chosen.bodyLineLimit, contentPadding: chosen.contentPadding), width: frame.width)
+                    precondition(rendered.size.height <= frame.height + 1, "Share undermeasured text height")
+                    if face == rightFace && text == shareText {
+                        precondition(!oldFits && fits, "Share must reveal the regression text within its face budget")
+                        save(rendered, "share-regression-bubble-\(Int(height))", in: directory)
+                    }
+                    if face == relaxedFace && text == shareText {
+                        precondition(!oldFits && fits && overlap(frame) > 0 && overlap(frame) <= 1.0 / 3.0,
+                                     "Must use the new face budget instead of retaining three-line truncation")
+                    }
+                    cases += 1
+                }
+            }
+        }
+        // Exercise the real poster view with a deterministic, labelled face-zone
+        // fixture. This is a layout test diagram, not a user photo or new UI.
+        let stage = CGSize(width: 320, height: 220)
+        let facePixels = CGRect(x: relaxedFace.minX * stage.width, y: relaxedFace.minY * stage.height,
+                                width: relaxedFace.width * stage.width, height: relaxedFace.height * stage.height)
+        let fixture = UIGraphicsImageRenderer(size: stage).image { context in
+            UIColor.systemGray6.setFill()
+            context.fill(CGRect(origin: .zero, size: stage))
+            UIColor.systemGray4.setFill()
+            context.fill(facePixels)
+            ("猫脸区域" as NSString).draw(at: CGPoint(x: facePixels.minX + 20, y: facePixels.midY),
+                                      withAttributes: [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor.black])
+        }
+        let subject = HeartVoiceSubject(catBoundingBox: relaxedFace, catFaceBoundingBox: relaxedFace)
+        let old = SubjectLayoutEngine.layout(image: fixture, stageSize: stage, subject: subject, catName: "丸子", text: shareText)
+        let chosen = VoiceShareBubbleLayout.make(image: fixture, stageSize: stage, subject: subject, catName: "丸子", text: shareText)
+        for (name, layout, lines, padding) in [("before", old, 3, HeartVoiceLayout.bubblePadding),
+                                             ("after", chosen.stage, chosen.bodyLineLimit, chosen.contentPadding)] {
+            let stageView = ZStack(alignment: .topLeading) {
+                Image(uiImage: fixture).resizable().frame(width: stage.width, height: stage.height)
+                SpeechBubbleView(catName: "丸子", text: shareText, placement: layout.bubblePlacement, bodyLineLimit: lines,
+                                 contentPadding: padding)
+                    .frame(width: layout.bubbleFrame.width, height: layout.bubbleFrame.height)
+                    .position(x: layout.bubbleFrame.midX, y: layout.bubbleFrame.midY)
+            }.frame(width: stage.width, height: stage.height)
+            save(render(stageView, width: stage.width), "share-regression-\(name)", in: directory)
+        }
+        let data = VoiceShareCardData(catName: "丸子", mbti: "ESTP-A", personalityTitle: "坦率直球的玩伴型",
+                                     sceneTags: ["椅底探头", "隔空划爪", "想抓一下"], photo: fixture,
+                                     generatedVoice: shareText, analysisText: "它趴在椅子底下探出头，抬起一只爪子朝镜头挥动。")
+        let posterRenderer = ImageRenderer(content: VoiceShareCard(data: data, subject: subject))
+        posterRenderer.proposedSize = ProposedViewSize(width: 360, height: nil)
+        posterRenderer.scale = 3
+        let poster = posterRenderer.uiImage!
+        precondition(poster.cgImage!.width == 1080 && poster.cgImage!.height >= 1584, "Share export lacks added footer space")
+        save(poster, "share-regression-poster", in: directory)
+        // Verify the actual export, not just idealized stage measurements: the
+        // poster's flexible photo height changes the crop and face-safe width.
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans", "en-US"]
+        try! VNImageRequestHandler(cgImage: poster.cgImage!).perform([request])
+        let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined()
+        precondition(visibleText.contains("住你"), "Actual share poster still hides the regression voice ending: \(visibleText)")
+
+        // Exact user-supplied wording. The face zone is a controlled fixture,
+        // not a claim that we recovered the original photo/detection results.
+        let shopLayout = VoiceShareBubbleLayout.make(image: fixture, stageSize: stage, subject: subject, catName: "丸子", text: shopVoice)
+        let oldShopLayout = SubjectLayoutEngine.layout(image: fixture, stageSize: stage, subject: subject, catName: "丸子", text: shopVoice)
+        precondition(shopLayout.bodyLineLimit == 3 && shopLayout.stage.bubbleFrame.width > oldShopLayout.bubbleFrame.width,
+                     "The 26-character shop voice should widen instead of staying in a five-line column")
+        let shopData = VoiceShareCardData(catName: "丸子", mbti: "ESTP-A", personalityTitle: "坦率直球的玩伴型",
+                                         sceneTags: ["揣起小手", "趴柜台", "瞅瞅那边"], photo: fixture,
+                                         generatedVoice: shopVoice, analysisText: "整只猫揣着小手趴在玻璃柜台上，扭头盯着侧面。")
+        let shopRenderer = ImageRenderer(content: VoiceShareCard(data: shopData, subject: subject))
+        shopRenderer.proposedSize = ProposedViewSize(width: 360, height: nil)
+        shopRenderer.scale = 3
+        let shopPoster = shopRenderer.uiImage!
+        save(shopPoster, "share-shop-voice-poster", in: directory)
+        try! VNImageRequestHandler(cgImage: shopPoster.cgImage!).perform([request])
+        let shopVisibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined()
+        precondition(shopVisibleText.contains("盯紧着呢"), "Export still truncates the user's exact voice: \(shopVisibleText)")
+        let began = Date()
+        for _ in 0..<10 {
+            _ = VoiceShareBubbleLayout.make(image: fixture, stageSize: stage, subject: subject, catName: "丸子", text: shopVoice)
+        }
+        let averageMilliseconds = Date().timeIntervalSince(began) * 100
+        try! "Exact voice: \(shopVoice)\nWidth: \(oldShopLayout.bubbleFrame.width) -> \(shopLayout.stage.bubbleFrame.width)pt; body lines: \(shopLayout.bodyLineLimit)\nOCR: \(shopVisibleText)\nAverage layout time: \(averageMilliseconds)ms (10 runs, simulator)\n".write(
+            to: directory.appendingPathComponent("share-shop-voice.txt"), atomically: true, encoding: .utf8)
+        precondition(recovered > 0, "Share regression suite must exercise previously truncated text")
+        precondition(partialFaceFits > 0, "Share suite must exercise the one-third face allowance")
+        // A real crop/face regression, not a square grey photo: the previous
+        // suite bypassed the bug because it never exercised this portrait crop.
+        let portrait = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 1200)).image { context in
+            UIColor.systemGray6.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 900, height: 1200))
+        }
+        var portraitReport: [String] = []
+        for height: CGFloat in [220, 265] {
+            let stage = CGSize(width: 320, height: height)
+            let layout = VoiceShareBubbleLayout.make(image: portrait, stageSize: stage, subject: shopHostSubject,
+                                                    catName: "丸子", text: shopVoice)
+            let frame = layout.stage.bubbleFrame
+            let old = SubjectLayoutEngine.layout(image: portrait, stageSize: stage, subject: shopHostSubject,
+                                                 catName: "丸子", text: shopVoice)
+            precondition(layout.stage.imageFrame == old.imageFrame, "Compact export changed the photo crop")
+            let face = shopHostSubject.catFaceBoundingBox!
+            let crop = layout.stage.imageFrame
+            let faceFrame = CGRect(x: crop.minX + face.minX * crop.width, y: crop.minY + face.minY * crop.height,
+                                   width: face.width * crop.width, height: face.height * crop.height)
+                .intersection(CGRect(origin: .zero, size: stage))
+            let coverage = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height + 8)
+            let intersection = faceFrame.intersection(coverage)
+            let faceRatio = intersection.isNull ? 0 : intersection.width * intersection.height / (faceFrame.width * faceFrame.height)
+            let areaRatio = coverage.width * coverage.height / (stage.width * stage.height)
+            precondition(faceRatio <= 1.0 / 3.0 && areaRatio <= 0.40, "Compact export exceeded a coverage budget")
+            precondition(HeartVoiceBubbleMetrics.fitsInLines(text: shopVoice, width: frame.width, lines: layout.bodyLineLimit,
+                                                            contentPadding: layout.contentPadding), "Real crop still truncates the shop voice")
+            let rendered = render(SpeechBubbleView(catName: "丸子", text: shopVoice, placement: layout.stage.bubblePlacement,
+                                                  bodyLineLimit: layout.bodyLineLimit, contentPadding: layout.contentPadding), width: frame.width)
+            precondition(rendered.size.height <= frame.height + 1, "Compact padding text measurement disagrees with rendering")
+            if height == 220 { precondition(layout.contentPadding == 8 && frame.width > 120, "Crowded real crop never used compact padding") }
+            portraitReport.append("\(Int(height))pt photo: bubble \(frame), padding \(layout.contentPadding), face overlap \(faceRatio), photo coverage \(areaRatio)")
+        }
+        try! portraitReport.joined(separator: "\n").write(to: directory.appendingPathComponent("real-portrait-regression.txt"),
+                                                        atomically: true, encoding: .utf8)
+        return "PASS: \(cases) share layout cases; \(recovered) truncated voices recovered; \(partialFaceFits) full fits within one-third face budget; crop retained; max five lines/40% area; readable fallback; 1080px-wide content-sized poster."
     }
 }
