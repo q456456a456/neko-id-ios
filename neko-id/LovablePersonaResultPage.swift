@@ -65,11 +65,6 @@ struct LovablePersonaResultPage: View {
                         contentOverlap: LovableResultLayout.panelRadius,
                         onAvatarImageLoaded: { loadedAvatarImage = $0 }
                     )
-                    .overlay(alignment: .top) {
-                        SafeAreaTopBar(onBack: onBack)
-                            .padding(.horizontal, LovableResultLayout.pageMargin)
-                            .padding(.top, proxy.safeAreaInsets.top + LovableResultLayout.compactGap)
-                    }
 
                     VStack(alignment: .leading, spacing: 0) {
                         LovablePersonaDimensionsSection(
@@ -119,6 +114,16 @@ struct LovablePersonaResultPage: View {
                     onRestart: onRestart,
                     onSave: onSave
                 )
+            }
+        }
+        // Keep navigation in the safe-area viewport, not in the scrolling hero.
+        // GeometryReader already starts below the top safe area; adding that
+        // inset again here would move the button down on notched devices.
+        .overlay(alignment: .top) {
+            if onBack != nil {
+                SafeAreaTopBar(onBack: onBack)
+                    .padding(.horizontal, LovableResultLayout.pageMargin)
+                    .padding(.top, LovableResultLayout.compactGap)
             }
         }
         .navigationBarBackButtonHidden(true)

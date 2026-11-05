@@ -988,8 +988,9 @@ private struct OnboardingVideoScreen: View {
                                 .offset(x: 110, y: 86)
 
                             VStack(spacing: 0) {
-                                Text("▶")
-                                    .nekoText(.moduleTitle)
+                                Image(systemName: "play.fill")
+                                    .symbolRenderingMode(.monochrome)
+                                    .nekoText(.iconMedium)
                                     .foregroundStyle(.white)
                                     .frame(width: 64, height: 64)
                                     .background(
