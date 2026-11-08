@@ -5403,46 +5403,48 @@ private struct PublishPreviewScreen: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    PublishTopBar(stepText: "STEP 03 / 03", onBack: onBack) {
-                        Color.clear.frame(width: 36, height: 36)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Text("✦")
-                                .foregroundStyle(NekoTheme.soulViolet)
-                            Text(statusText)
-                        }
-                        .nekoText(.flowSupport)
-                        .foregroundStyle(PublishWebStyle.step)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(.white.opacity(0.75), in: Capsule())
-
-                        Text("这是它想对你说的话")
-                            .nekoText(.flowTitle)
-                            .foregroundStyle(NekoTheme.ink)
-                    }
-                    .padding(.horizontal, 28)
-                    .padding(.top, 20)
-
-                    VoiceResultCard(
-                        catName: catName,
-                        photoPreviewImage: photoPreviewImage,
-                        voice: draftVoice,
-                        isLoading: isGeneratingVoice
-                    )
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
+            VStack(spacing: 0) {
+                PublishTopBar(stepText: "STEP 03 / 03", onBack: onBack) {
+                    Color.clear.frame(width: 36, height: 36)
                 }
-                .frame(width: proxy.size.width, alignment: .leading)
                 .padding(.top, 52)
-                .padding(.bottom, 24)
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                actionBar
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                Text("✦")
+                                    .foregroundStyle(NekoTheme.soulViolet)
+                                Text(statusText)
+                            }
+                            .nekoText(.flowSupport)
+                            .foregroundStyle(PublishWebStyle.step)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(.white.opacity(0.75), in: Capsule())
+
+                            Text("这是它想对你说的话")
+                                .nekoText(.flowTitle)
+                                .foregroundStyle(NekoTheme.ink)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 20)
+
+                        VoiceResultCard(
+                            catName: catName,
+                            photoPreviewImage: photoPreviewImage,
+                            voice: draftVoice,
+                            isLoading: isGeneratingVoice
+                        )
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                    }
+                    .frame(width: proxy.size.width, alignment: .leading)
+                    .padding(.bottom, 24)
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    actionBar
+                }
             }
         }
     }
